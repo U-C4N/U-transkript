@@ -1,7 +1,3 @@
-"""
-TranscriptList class for managing available transcripts.
-"""
-
 from typing import List, Dict, Optional, Union
 from fetched_transcript import FetchedTranscript
 from exceptions import (

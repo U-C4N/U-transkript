@@ -1,8 +1,3 @@
-"""
-Custom exceptions for YouTube Transcript API.
-"""
-
-
 class TranscriptRetrievalError(Exception):
     """
     Base exception for transcript retrieval errors.

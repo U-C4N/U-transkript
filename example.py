@@ -1,7 +1,3 @@
-"""
-Example usage of YouTube Transcript API.
-"""
-
 from youtube_transcript import YouTubeTranscriptApi
 from formatters import get_formatter
 from exceptions import TranscriptRetrievalError

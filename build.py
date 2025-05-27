@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-U-Transkript paket oluşturma scripti
-"""
-
 import os
 import sys
 import subprocess

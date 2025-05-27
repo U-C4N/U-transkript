@@ -1,7 +1,3 @@
-"""
-Command Line Interface for YouTube Transcript API.
-"""
-
 import argparse
 import sys
 import json

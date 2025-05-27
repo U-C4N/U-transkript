@@ -1,7 +1,3 @@
-"""
-FetchedTranscript class for handling individual transcript data.
-"""
-
 import re
 import html
 import json

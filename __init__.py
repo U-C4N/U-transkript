@@ -1,24 +1,3 @@
-"""
-U-Transkript - YouTube videolarını AI ile çeviren Python paketi
-
-Bu paket, YouTube videolarından transcript çıkararak Google Gemini AI ile 
-istediğiniz dile çeviren modern ve kullanıcı dostu bir çözüm sunar.
-
-Temel Kullanım:
-    from u_transkript import AITranscriptTranslator
-    
-    translator = AITranscriptTranslator("YOUR_GEMINI_API_KEY")
-    result = translator.set_lang("Turkish").translate_transcript("VIDEO_ID")
-
-Özellikler:
-    - AI destekli çeviri (Google Gemini)
-    - 50+ dil desteği
-    - TXT, JSON, XML çıktı formatları
-    - Method chaining desteği
-    - Hata yönetimi
-    - Yüksek performans
-"""
-
 from .youtube_transcript import YouTubeTranscriptApi
 from .transcript_list import TranscriptList
 from .fetched_transcript import FetchedTranscript

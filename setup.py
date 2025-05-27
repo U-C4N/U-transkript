@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-U-Transkript - YouTube videolarını AI ile çeviren Python paketi
-"""
-
 from setuptools import setup, find_packages
 import os
 
@@ -20,21 +15,23 @@ setup(
     name="u-transkript",
     version="1.0.0",
     author="U-C4N",
-    author_email="contact@example.com",
+    author_email="noreply@deuz.ai",
     description="YouTube videolarını otomatik olarak çıkarıp AI ile çeviren güçlü Python kütüphanesi",
     long_description=read_readme(),
     long_description_content_type="text/markdown",
-    url="https://pypi.org/project/u-transkript/",
+    url="https://github.com/U-C4N/u-transkript",
     project_urls={
-        "Documentation": "https://pypi.org/project/u-transkript/",
+        "Documentation": "https://github.com/U-C4N/u-transkript/blob/main/README.md",
+        "Source": "https://github.com/U-C4N/u-transkript/",
+        "Tracker": "https://github.com/U-C4N/u-transkript/issues",
     },
+    license="MIT",
     packages=find_packages(where=".", exclude=["tests", "*.tests", "*.tests.*", "tests.*", "example", "build", "dist"]),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
         "Intended Audience :: Education",
         "Intended Audience :: Science/Research",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.7",

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-"""Kısa AI Çeviri Testi ve Dosyaya Kayıt"""
 from ai_translator import AITranscriptTranslator
 
 VIDEO_ID = "47Psu7KNeAE"  # Test için video ID

@@ -1,7 +1,3 @@
-"""
-Core YouTube Transcript API implementation.
-"""
-
 import json
 import re
 import requests

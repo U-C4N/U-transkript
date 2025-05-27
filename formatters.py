@@ -1,7 +1,3 @@
-"""
-Formatters for converting transcript data to different output formats.
-"""
-
 import json
 import html
 from typing import List, Dict, Any

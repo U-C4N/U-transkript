@@ -224,6 +224,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ## 📞 Contact
 
-- **GitHub**: [u-transkript](https://github.com/username/u-transkript)
+- **GitHub**: [u-transkript](https://github.com/U-C4N/u-transkript)
 - **PyPI**: [u-transkript](https://pypi.org/project/u-transkript/)
 - **Documentation**: [example.md](example.md)
