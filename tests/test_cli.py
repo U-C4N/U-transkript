@@ -4,6 +4,14 @@ import pytest
 
 
 def load_extract_video_id():
+    """
+    Dynamically loads and returns the `extract_video_id` function from the sibling `cli.py` module.
+    
+    Parses the source code of `cli.py` using the AST module to locate and extract the `extract_video_id` function definition. If the function is not found, raises a `RuntimeError`.
+    
+    Returns:
+        The `extract_video_id` function object.
+    """
     path = os.path.join(os.path.dirname(__file__), "..", "cli.py")
     with open(path, "r", encoding="utf-8") as f:
         source = f.read()

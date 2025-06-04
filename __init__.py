@@ -103,12 +103,30 @@ __package_info__ = {
 }
 
 def get_version():
+    """
+    Returns the current version of the package as a string.
+    """
     return __version__
 
 def get_info():
+    """
+    Returns the package information dictionary containing metadata such as name, version, description, author, license, Python version requirement, and keywords.
+    """
     return __package_info__
 
 def quick_translate(video_id: str, api_key: str, target_language: str = "Turkish", output_type: str = "txt"):
+    """
+    Translates the transcript of a YouTube video to a specified language and format.
+    
+    Args:
+        video_id: The YouTube video identifier.
+        api_key: API key for the transcript translation service.
+        target_language: The language to translate the transcript into. Defaults to "Turkish".
+        output_type: The desired output format (e.g., "txt", "json", "srt"). Defaults to "txt".
+    
+    Returns:
+        The translated transcript in the specified format.
+    """
     translator = AITranscriptTranslator(api_key)
     return translator.set_lang(target_language).set_type(output_type).translate_transcript(video_id)
 
