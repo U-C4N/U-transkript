@@ -29,7 +29,7 @@ __version__ = "1.0.0"
 __author__ = "U-Transkript Team"
 __email__ = "contact@u-transkript.com"
 __description__ = "YouTube videolarını otomatik olarak çıkarıp AI ile çeviren güçlü Python kütüphanesi"
-__url__ = "https://github.com/username/u-transkript"
+__url__ = "https://github.com/U-C4N/u-transkript"
 
 # Ana sınıf ve fonksiyonları dışa aktar
 __all__ = [
@@ -116,7 +116,7 @@ def _show_welcome_message():
         if hasattr(sys, 'ps1'):  # Etkileşimli modda çalışıyorsa
             print(f"🎬 U-Transkript v{__version__} yüklendi!")
             print("📖 Kullanım: from u_transkript import AITranscriptTranslator")
-            print("🔗 Dokümantasyon: https://github.com/username/u-transkript")
+            print("🔗 Dokümantasyon: https://github.com/U-C4N/u-transkript")
     except:
         pass  # Hata durumunda sessizce geç
 
