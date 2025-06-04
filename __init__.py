@@ -1,8 +1,19 @@
-from .youtube_transcript import YouTubeTranscriptApi
-from .transcript_list import TranscriptList
-from .fetched_transcript import FetchedTranscript
-from .ai_translator import AITranscriptTranslator
-from .exceptions import (
+import importlib
+
+_prefix = '.' if __package__ else ''
+
+youtube_transcript = importlib.import_module(f"{_prefix}youtube_transcript")
+transcript_list = importlib.import_module(f"{_prefix}transcript_list")
+fetched_transcript = importlib.import_module(f"{_prefix}fetched_transcript")
+ai_translator = importlib.import_module(f"{_prefix}ai_translator")
+exceptions = importlib.import_module(f"{_prefix}exceptions")
+formatters = importlib.import_module(f"{_prefix}formatters")
+
+YouTubeTranscriptApi = youtube_transcript.YouTubeTranscriptApi
+TranscriptList = transcript_list.TranscriptList
+FetchedTranscript = fetched_transcript.FetchedTranscript
+AITranscriptTranslator = ai_translator.AITranscriptTranslator
+(
     TranscriptRetrievalError,
     VideoUnavailable,
     TranscriptNotFound,
@@ -14,15 +25,35 @@ from .exceptions import (
     CookiesInvalid,
     FailedToCreateConsentCookie,
     NoTranscriptAvailable,
-    TooManyRequests
+    TooManyRequests,
+) = (
+    exceptions.TranscriptRetrievalError,
+    exceptions.VideoUnavailable,
+    exceptions.TranscriptNotFound,
+    exceptions.TranscriptDisabled,
+    exceptions.NoTranscriptFound,
+    exceptions.NotTranslatable,
+    exceptions.TranslationLanguageNotAvailable,
+    exceptions.CookiePathInvalid,
+    exceptions.CookiesInvalid,
+    exceptions.FailedToCreateConsentCookie,
+    exceptions.NoTranscriptAvailable,
+    exceptions.TooManyRequests,
 )
-from .formatters import (
+(
     Formatter,
     PrettyPrintFormatter,
     JSONFormatter,
     TextFormatter,
     SRTFormatter,
-    VTTFormatter
+    VTTFormatter,
+) = (
+    formatters.Formatter,
+    formatters.PrettyPrintFormatter,
+    formatters.JSONFormatter,
+    formatters.TextFormatter,
+    formatters.SRTFormatter,
+    formatters.VTTFormatter,
 )
 
 __version__ = "1.0.0"
@@ -31,17 +62,11 @@ __email__ = "contact@u-transkript.com"
 __description__ = "YouTube videolarını otomatik olarak çıkarıp AI ile çeviren güçlü Python kütüphanesi"
 __url__ = "https://github.com/username/u-transkript"
 
-# Ana sınıf ve fonksiyonları dışa aktar
 __all__ = [
-    # Ana AI çeviri sınıfı
     'AITranscriptTranslator',
-    
-    # YouTube transcript API sınıfları
     'YouTubeTranscriptApi',
     'TranscriptList',
     'FetchedTranscript',
-    
-    # Hata sınıfları
     'TranscriptRetrievalError',
     'VideoUnavailable',
     'TranscriptNotFound',
@@ -54,8 +79,6 @@ __all__ = [
     'FailedToCreateConsentCookie',
     'NoTranscriptAvailable',
     'TooManyRequests',
-    
-    # Formatter sınıfları
     'Formatter',
     'PrettyPrintFormatter',
     'JSONFormatter',
@@ -64,7 +87,6 @@ __all__ = [
     'VTTFormatter'
 ]
 
-# Paket bilgileri
 __package_info__ = {
     "name": "u-transkript",
     "version": __version__,
@@ -81,44 +103,22 @@ __package_info__ = {
 }
 
 def get_version():
-    """Paket versiyonunu döndür."""
     return __version__
 
 def get_info():
-    """Paket bilgilerini döndür."""
     return __package_info__
 
-# Hızlı başlangıç fonksiyonu
 def quick_translate(video_id: str, api_key: str, target_language: str = "Turkish", output_type: str = "txt"):
-    """
-    Hızlı çeviri fonksiyonu.
-    
-    Args:
-        video_id: YouTube video ID
-        api_key: Google Gemini API anahtarı
-        target_language: Hedef dil (varsayılan: "Turkish")
-        output_type: Çıktı formatı (varsayılan: "txt")
-    
-    Returns:
-        Çevrilmiş transcript
-    
-    Example:
-        result = quick_translate("dQw4w9WgXcQ", "YOUR_API_KEY", "Turkish")
-    """
     translator = AITranscriptTranslator(api_key)
     return translator.set_lang(target_language).set_type(output_type).translate_transcript(video_id)
 
-# Paket yüklendiğinde bilgi mesajı (opsiyonel)
-def _show_welcome_message():
-    """Paket yüklendiğinde hoş geldin mesajı göster."""
-    try:
-        import sys
-        if hasattr(sys, 'ps1'):  # Etkileşimli modda çalışıyorsa
-            print(f"🎬 U-Transkript v{__version__} yüklendi!")
-            print("📖 Kullanım: from u_transkript import AITranscriptTranslator")
-            print("🔗 Dokümantasyon: https://github.com/username/u-transkript")
-    except:
-        pass  # Hata durumunda sessizce geç
-
-# Paket import edildiğinde hoş geldin mesajını göster (opsiyonel)
+# def _show_welcome_message():
+#     try:
+#         import sys
+#         if hasattr(sys, 'ps1'):
+#             print(f"🎬 U-Transkript v{__version__} yüklendi!")
+#             print("📖 Kullanım: from u_transkript import AITranscriptTranslator")
+#             print("🔗 Dokümantasyon: https://github.com/username/u-transkript")
+#     except:
+#         pass
 # _show_welcome_message()
