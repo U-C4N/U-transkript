@@ -1,9 +1,9 @@
-include README.md
-include LICENSE
+include docs/README.md
+include MIT
 include requirements.txt
-include example.md
+include docs/example.md
 
-include *.py
+include src/*.py
 
 global-exclude __pycache__
 global-exclude *.py[co]

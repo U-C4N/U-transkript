@@ -4,6 +4,9 @@ import json
 import os
 from typing import List, Optional
 
+# Add src directory to path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
 from youtube_transcript import YouTubeTranscriptApi
 from formatters import get_formatter
 from exceptions import TranscriptRetrievalError

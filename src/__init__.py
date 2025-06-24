@@ -1,8 +1,8 @@
-from .youtube_transcript import YouTubeTranscriptApi
-from .transcript_list import TranscriptList
-from .fetched_transcript import FetchedTranscript
-from .ai_translator import AITranscriptTranslator
-from .exceptions import (
+from youtube_transcript import YouTubeTranscriptApi
+from transcript_list import TranscriptList
+from fetched_transcript import FetchedTranscript
+from ai_translator import AITranscriptTranslator
+from exceptions import (
     TranscriptRetrievalError,
     VideoUnavailable,
     TranscriptNotFound,
@@ -16,7 +16,7 @@ from .exceptions import (
     NoTranscriptAvailable,
     TooManyRequests
 )
-from .formatters import (
+from formatters import (
     Formatter,
     PrettyPrintFormatter,
     JSONFormatter,

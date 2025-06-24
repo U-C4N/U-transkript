@@ -26,7 +26,8 @@ setup(
         "Tracker": "https://github.com/U-C4N/u-transkript/issues",
     },
     license="MIT",
-    packages=find_packages(where=".", exclude=["tests", "*.tests", "*.tests.*", "tests.*", "example", "build", "dist"]),
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",
