@@ -2,6 +2,8 @@ import argparse
 import sys
 import json
 import os
+import re
+import requests
 from typing import List, Optional
 
 # Add src directory to path
@@ -15,27 +17,258 @@ from exceptions import TranscriptRetrievalError
 def extract_video_id(url_or_id: str) -> str:
     """
     Extract video ID from YouTube URL or return ID if already extracted.
-    
+
     Args:
         url_or_id: YouTube URL or video ID
-        
+
     Returns:
         Video ID
     """
     # Common YouTube URL patterns
     import re
-    
+
     patterns = [
         r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([a-zA-Z0-9_-]{11})',
         r'^([a-zA-Z0-9_-]{11})$'  # Direct video ID
     ]
-    
+
     for pattern in patterns:
         match = re.search(pattern, url_or_id)
         if match:
             return match.group(1)
-            
+
     raise ValueError(f"Could not extract video ID from: {url_or_id}")
+
+
+def build_youtube_channel_url(username: str) -> str:
+    """
+    Build YouTube channel URL from username.
+
+    Args:
+        username: YouTube username (with or without @)
+
+    Returns:
+        YouTube channel URL
+    """
+    # Clean username
+    username = username.strip()
+
+    # If it's already a full URL, return as is
+    if username.startswith('http'):
+        return username
+
+    # If it starts with UC (channel ID), use channel format
+    if username.startswith('UC') and len(username) == 24:
+        return f"https://www.youtube.com/channel/{username}/videos?sort=dd"
+
+    # Remove @ if present
+    if username.startswith('@'):
+        username = username[1:]
+
+    # Use handle format (newer format) with sort parameter to get latest videos
+    return f"https://www.youtube.com/@{username}/videos?sort=dd"
+
+
+def get_channel_video_ids(username: str, max_count: int = 10) -> List[str]:
+    """
+    Get video IDs from a YouTube channel using multiple page requests.
+
+    Args:
+        username: YouTube username (with or without @)
+        max_count: Maximum number of video IDs to return
+
+    Returns:
+        List of video IDs
+
+    Raises:
+        RuntimeError: If channel extraction fails
+        ValueError: If no videos found
+    """
+    channel_url = build_youtube_channel_url(username)
+
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+        all_video_ids = []
+
+        # Try both videos and uploads URL formats with sort parameter for latest videos
+        urls_to_try = [
+            channel_url,
+            channel_url.replace('/videos?sort=dd', '/uploads?sort=dd'),
+            channel_url.replace('/videos?sort=dd', '?sort=dd'),
+            channel_url.replace('@', 'c/'),
+            channel_url.replace('@', 'channel/').replace('/videos?sort=dd', '/videos?sort=dd'),
+        ]
+
+        for url in urls_to_try:
+            try:
+                response = requests.get(url, headers=headers)
+                response.raise_for_status()
+
+                # Extract video IDs from HTML using multiple regex patterns
+                video_id_patterns = [
+                    r'"videoId":"([a-zA-Z0-9_-]{11})"',
+                    r'/watch\?v=([a-zA-Z0-9_-]{11})',
+                    r'"watchEndpoint":{"videoId":"([a-zA-Z0-9_-]{11})"',
+                    r'watch\?v=([a-zA-Z0-9_-]{11})',
+                    r'"url":"/watch\?v=([a-zA-Z0-9_-]{11})"',
+                    r'href="/watch\?v=([a-zA-Z0-9_-]{11})"'
+                ]
+
+                for pattern in video_id_patterns:
+                    matches = re.findall(pattern, response.text)
+                    all_video_ids.extend(matches)
+
+            except:
+                continue
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_video_ids = []
+        for video_id in all_video_ids:
+            if video_id not in seen:
+                seen.add(video_id)
+                unique_video_ids.append(video_id)
+
+        # If we still don't have enough, try to get more with a different approach
+        if len(unique_video_ids) < max_count:
+            try:
+                main_url = channel_url.replace('/videos?sort=dd', '?sort=dd')
+                response = requests.get(main_url, headers=headers)
+                response.raise_for_status()
+
+                for pattern in video_id_patterns:
+                    matches = re.findall(pattern, response.text)
+                    for match in matches:
+                        if match not in seen:
+                            seen.add(match)
+                            unique_video_ids.append(match)
+            except:
+                pass
+
+        # Limit to requested count
+        unique_video_ids = unique_video_ids[:max_count]
+
+        if not unique_video_ids:
+            raise ValueError(f"No videos found for username: {username}")
+
+        return unique_video_ids
+
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to fetch channel page: {e}")
+    except Exception as e:
+        raise RuntimeError(f"Failed to extract video IDs: {e}")
+
+
+def download_channel_transcripts(username: str, max_count: int, args) -> None:
+    """
+    Download transcripts from a YouTube channel's latest videos.
+
+    Args:
+        username: YouTube username (with or without @)
+        max_count: Maximum number of videos to process
+        args: Parsed command line arguments
+
+    Raises:
+        RuntimeError: If yt-dlp fails or other errors occur
+    """
+    print(f"Getting video list for {username}...")
+
+    # Get video IDs
+    try:
+        video_ids = get_channel_video_ids(username, max_count)
+        print(f"Found {len(video_ids)} videos")
+    except Exception as e:
+        raise RuntimeError(f"Failed to get video list: {e}")
+
+    # Create output directory
+    clean_username = username.replace('@', '').replace('/', '_').replace('\\', '_')
+    output_dir = clean_username
+
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Created directory: {output_dir}")
+
+    # Setup proxy configuration
+    proxies = None
+    if args.proxy:
+        proxies = {
+            'http': args.proxy,
+            'https': args.proxy
+        }
+
+    # Process each video
+    successful_downloads = 0
+    failed_downloads = []
+
+    for i, video_id in enumerate(video_ids, 1):
+        print(f"Processing video {i}/{len(video_ids)}: {video_id}")
+
+        try:
+            # Get transcript for this video
+            transcript = YouTubeTranscriptApi.get_transcript(
+                video_id,
+                languages=args.languages,
+                proxies=proxies,
+                cookies=args.cookies,
+                preserve_formatting=args.preserve_formatting
+            )
+
+            # Format transcript
+            formatter = get_formatter(args.format)
+
+            # Prepare formatter options
+            formatter_kwargs = {}
+            if args.format == 'pretty':
+                formatter_kwargs['show_timestamps'] = True
+                formatter_kwargs['max_chars_per_line'] = 80
+            elif args.format == 'json':
+                formatter_kwargs['indent'] = 2
+                formatter_kwargs['ensure_ascii'] = False
+            elif args.format == 'text':
+                formatter_kwargs['separator'] = ' '
+
+            formatted_transcript = formatter.format_transcript(transcript, **formatter_kwargs)
+
+            # Determine file extension
+            file_ext = 'txt'
+            if args.format == 'json':
+                file_ext = 'json'
+            elif args.format == 'srt':
+                file_ext = 'srt'
+            elif args.format == 'vtt':
+                file_ext = 'vtt'
+
+            # Save to file
+            filename = f"{i}.{file_ext}"
+            filepath = os.path.join(output_dir, filename)
+
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(formatted_transcript)
+
+            print(f"  Success: Saved {filepath}")
+            successful_downloads += 1
+
+        except TranscriptRetrievalError as e:
+            print(f"  Failed: No transcript for {video_id}: {e}")
+            failed_downloads.append((video_id, str(e)))
+        except Exception as e:
+            print(f"  Error: Unexpected error for {video_id}: {e}")
+            failed_downloads.append((video_id, str(e)))
+
+    # Summary
+    print(f"\nDownload completed!")
+    print(f"Successfully downloaded: {successful_downloads}")
+    print(f"Failed downloads: {len(failed_downloads)}")
+
+    if failed_downloads:
+        print("\nFailed videos:")
+        for video_id, error in failed_downloads:
+            print(f"  {video_id}: {error}")
+
+    print(f"\nTranscripts saved in directory: {output_dir}")
 
 
 def main():
@@ -53,12 +286,27 @@ Examples:
   %(prog)s dQw4w9WgXcQ --format json
   %(prog)s dQw4w9WgXcQ --format srt --output transcript.srt
   %(prog)s dQw4w9WgXcQ --list-transcripts
+  %(prog)s --username @MrBeast --count 50
+  %(prog)s --username pewdiepie -n 20 --format json
         """
     )
     
     parser.add_argument(
         'video',
+        nargs='?',
         help='YouTube video URL or video ID'
+    )
+
+    parser.add_argument(
+        '--username', '-u',
+        help='YouTube username (with or without @) to download transcripts from their latest videos'
+    )
+
+    parser.add_argument(
+        '--count', '-n',
+        type=int,
+        default=10,
+        help='Number of latest videos to download transcripts from (default: 10, max: 100)'
     )
     
     parser.add_argument(
@@ -126,8 +374,33 @@ Examples:
     )
     
     args = parser.parse_args()
-    
+
     try:
+        # Validate arguments
+        if args.username and args.video:
+            print("Error: Cannot specify both video and username", file=sys.stderr)
+            sys.exit(1)
+
+        if not args.username and not args.video:
+            print("Error: Must specify either video or username", file=sys.stderr)
+            sys.exit(1)
+
+        # Validate count
+        if args.count < 1 or args.count > 100:
+            print("Error: Count must be between 1 and 100", file=sys.stderr)
+            sys.exit(1)
+
+        # Handle username mode (bulk download)
+        if args.username:
+            if args.list_transcripts:
+                print("Error: --list-transcripts is not supported with --username", file=sys.stderr)
+                sys.exit(1)
+
+            print(f"Bulk downloading transcripts for {args.username} (latest {args.count} videos)")
+            download_channel_transcripts(args.username, args.count, args)
+            return
+
+        # Handle single video mode (original functionality)
         # Extract video ID
         video_id = extract_video_id(args.video)
         
