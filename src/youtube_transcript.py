@@ -1,6 +1,7 @@
 import json
 import re
 import requests
+import time
 import urllib.parse
 from typing import List, Dict, Optional, Union
 from xml.etree import ElementTree
@@ -168,74 +169,132 @@ class YouTubeTranscriptApi:
         cls,
         video_id: str,
         proxies: Dict = None,
-        cookies: str = None
+        cookies: str = None,
+        max_retries: int = 3,
+        retry_delay: float = 1.0
     ) -> TranscriptList:
         """
         List all available transcripts for a video.
-        
+
         Args:
             video_id: YouTube video ID
             proxies: Proxy configuration for requests
             cookies: Cookie string for authentication
-            
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay between retries in seconds
+
         Returns:
             TranscriptList object containing all available transcripts
         """
-        try:
-            # First, get the video page to extract transcript data
-            watch_url = cls._WATCH_URL.format(video_id=video_id)
-            
-            session = requests.Session()
-            if proxies:
-                session.proxies.update(proxies)
-                
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            if cookies:
-                headers['Cookie'] = cookies
-                
-            response = session.get(watch_url, headers=headers)
-            
-            if response.status_code == 429:
-                raise TooManyRequests(video_id)
-            elif response.status_code != 200:
-                raise VideoUnavailable(video_id)
-                
-            # Extract transcript data from the page
-            transcript_data = cls._extract_transcript_data(response.text, video_id)
-            
-            if not transcript_data:
-                raise TranscriptNotFound(video_id)
-                
-            return TranscriptList(video_id, transcript_data, proxies=proxies, cookies=cookies)
-            
-        except (TranscriptRetrievalError, TooManyRequests):
-            raise
-        except Exception as e:
-            raise TranscriptRetrievalError(video_id, f"Failed to retrieve transcript list: {str(e)}")
+        last_exception = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                # First, get the video page to extract transcript data
+                watch_url = cls._WATCH_URL.format(video_id=video_id)
+
+                session = requests.Session()
+                if proxies:
+                    session.proxies.update(proxies)
+
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                }
+
+                if cookies:
+                    headers['Cookie'] = cookies
+
+                response = session.get(watch_url, headers=headers, timeout=30)
+
+                if response.status_code == 429:
+                    if attempt < max_retries:
+                        time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                        continue
+                    raise TooManyRequests(video_id)
+                elif response.status_code == 404:
+                    raise VideoUnavailable(video_id)
+                elif response.status_code != 200:
+                    if attempt < max_retries:
+                        time.sleep(retry_delay)
+                        continue
+                    raise VideoUnavailable(video_id)
+
+                # Extract transcript data from the page
+                transcript_data = cls._extract_transcript_data(response.text, video_id)
+
+                if not transcript_data:
+                    if attempt < max_retries:
+                        time.sleep(retry_delay)
+                        continue
+                    raise TranscriptNotFound(video_id)
+
+                return TranscriptList(video_id, transcript_data, proxies=proxies, cookies=cookies)
+
+            except (TranscriptRetrievalError, TooManyRequests, VideoUnavailable, TranscriptNotFound):
+                raise
+            except requests.exceptions.Timeout as e:
+                last_exception = TranscriptRetrievalError(video_id, f"Request timeout: {str(e)}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+            except requests.exceptions.ConnectionError as e:
+                last_exception = TranscriptRetrievalError(video_id, f"Connection error: {str(e)}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+            except Exception as e:
+                last_exception = TranscriptRetrievalError(video_id, f"Failed to retrieve transcript list: {str(e)}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+
+        # If all retries failed, raise the last exception
+        raise last_exception or TranscriptRetrievalError(video_id, "Failed to retrieve transcript list after all retries")
 
     @classmethod
     def _extract_transcript_data(cls, html_content: str, video_id: str) -> Dict:
         """
         Extract transcript data from YouTube video page HTML.
-        
+
         Args:
             html_content: HTML content of the video page
             video_id: YouTube video ID
-            
+
         Returns:
             Dictionary containing transcript data
         """
-        # Look for captions data in the HTML
+        # First, try to use Innertube API
+        try:
+            api_key = cls._extract_innertube_api_key(html_content)
+            if api_key:
+                innertube_data = cls._fetch_innertube_data(video_id, api_key)
+                if innertube_data:
+                    captions_data = cls._extract_captions_from_innertube(innertube_data)
+                    if captions_data:
+                        return cls._parse_transcript_data(captions_data, video_id)
+        except Exception:
+            pass  # Fallback to HTML parsing
+
+        # Fallback: Look for captions data in the HTML with improved patterns
         patterns = [
+            # Modern YouTube patterns
+            r'"captions":\s*\{[^}]*"playerCaptionsTracklistRenderer":\s*(\{.*?\})',
+            r'"playerCaptionsTracklistRenderer":\s*(\{.*?"captionTracks".*?\})',
+            r'ytInitialPlayerResponse["\']?:\s*(\{.*?\})',
+            r'var\s+ytInitialPlayerResponse\s*=\s*(\{.*?\});',
+            # Alternative patterns for different YouTube layouts
+            r'"captionTracks":\s*\[(.*?)\]',
+            r'"playerCaptionsRenderer":\s*(\{.*?\})',
+            # Backup patterns
             r'"captions":(\{.*?"playerCaptionsTracklistRenderer".*?\})',
-            r'"playerCaptionsTracklistRenderer":(\{.*?\})',
-            r'var ytInitialPlayerResponse = (\{.*?\});',
             r'ytInitialPlayerResponse":\s*(\{.*?\})\s*[,}]'
         ]
-        
+
         for pattern in patterns:
             match = re.search(pattern, html_content)
             if match:
@@ -246,7 +305,7 @@ class YouTubeTranscriptApi:
                         return cls._parse_transcript_data(captions_data, video_id)
                 except (json.JSONDecodeError, KeyError):
                     continue
-                    
+
         # If no captions found in initial data, try alternative extraction
         return cls._extract_alternative_transcript_data(html_content, video_id)
 
@@ -320,6 +379,88 @@ class YouTubeTranscriptApi:
         return transcript_data
 
     @classmethod
+    def _extract_innertube_api_key(cls, html_content: str) -> Optional[str]:
+        """
+        Extract Innertube API key from YouTube page HTML.
+
+        Args:
+            html_content: HTML content of the video page
+
+        Returns:
+            API key string or None if not found
+        """
+        patterns = [
+            r'"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"',
+            r'"innertubeApiKey":\s*"([a-zA-Z0-9_-]+)"',
+            r'"apiKey":\s*"([a-zA-Z0-9_-]+)"'
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, html_content)
+            if match:
+                return match.group(1)
+
+        return None
+
+    @classmethod
+    def _fetch_innertube_data(cls, video_id: str, api_key: str) -> Optional[Dict]:
+        """
+        Fetch transcript data from YouTube Innertube API.
+
+        Args:
+            video_id: YouTube video ID
+            api_key: Innertube API key
+
+        Returns:
+            Innertube response data or None if failed
+        """
+        url = f"https://www.youtube.com/youtubei/v1/player?key={api_key}"
+
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+
+        data = {
+            "context": {
+                "client": {
+                    "clientName": "WEB",
+                    "clientVersion": "2.20231201.01.00"
+                }
+            },
+            "videoId": video_id
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            if response.status_code == 200:
+                return response.json()
+        except Exception:
+            pass
+
+        return None
+
+    @classmethod
+    def _extract_captions_from_innertube(cls, innertube_data: Dict) -> Optional[Dict]:
+        """
+        Extract captions data from Innertube API response.
+
+        Args:
+            innertube_data: Response from Innertube API
+
+        Returns:
+            Captions data or None if not found
+        """
+        try:
+            captions = innertube_data.get('captions', {})
+            if 'playerCaptionsTracklistRenderer' in captions:
+                return captions['playerCaptionsTracklistRenderer']
+        except Exception:
+            pass
+
+        return None
+
+    @classmethod
     def _extract_alternative_transcript_data(cls, html_content: str, video_id: str) -> Dict:
         """
         Alternative method to extract transcript data if primary method fails.
@@ -327,7 +468,7 @@ class YouTubeTranscriptApi:
         # Look for any mention of timedtext or captions
         timedtext_pattern = r'["\']timedtext["\'].*?["\']([^"\']*)["\']'
         matches = re.findall(timedtext_pattern, html_content, re.IGNORECASE)
-        
+
         if matches:
             # This is a simplified fallback - in a real implementation,
             # you might need more sophisticated parsing
@@ -341,5 +482,5 @@ class YouTubeTranscriptApi:
                     'translation_languages': []
                 }]
             }
-            
+
         return {}

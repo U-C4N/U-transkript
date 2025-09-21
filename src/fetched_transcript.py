@@ -2,6 +2,7 @@ import re
 import html
 import json
 import requests
+import time
 import urllib.parse
 from typing import List, Dict, Optional
 from xml.etree import ElementTree
@@ -56,51 +57,87 @@ class FetchedTranscript:
         self._cookies = cookies
         self._fetched_data = None
 
-    def fetch(self, preserve_formatting: bool = False) -> List[Dict]:
+    def fetch(self, preserve_formatting: bool = False, max_retries: int = 3, retry_delay: float = 1.0) -> List[Dict]:
         """
         Fetch the transcript data.
-        
+
         Args:
             preserve_formatting: Whether to preserve HTML formatting in text
-            
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay between retries in seconds
+
         Returns:
             List of transcript entries with 'text', 'start', and 'duration' keys
         """
         if self._fetched_data is not None:
             return self._process_transcript_data(self._fetched_data, preserve_formatting)
-            
-        try:
-            session = requests.Session()
-            if self._proxies:
-                session.proxies.update(self._proxies)
-                
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            if self._cookies:
-                headers['Cookie'] = self._cookies
-                
-            response = session.get(self.url, headers=headers)
-            
-            if response.status_code == 429:
-                raise TooManyRequests(self.video_id)
-            elif response.status_code != 200:
-                raise TranscriptRetrievalError(
+
+        last_exception = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                session = requests.Session()
+                if self._proxies:
+                    session.proxies.update(self._proxies)
+
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+
+                if self._cookies:
+                    headers['Cookie'] = self._cookies
+
+                response = session.get(self.url, headers=headers, timeout=30)
+
+                if response.status_code == 429:
+                    if attempt < max_retries:
+                        time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                        continue
+                    raise TooManyRequests(self.video_id)
+                elif response.status_code != 200:
+                    if attempt < max_retries:
+                        time.sleep(retry_delay)
+                        continue
+                    raise TranscriptRetrievalError(
+                        self.video_id,
+                        f"Failed to fetch transcript: HTTP {response.status_code}"
+                    )
+
+                self._fetched_data = response.text
+                return self._process_transcript_data(self._fetched_data, preserve_formatting)
+
+            except TooManyRequests:
+                raise
+            except requests.exceptions.Timeout as e:
+                last_exception = TranscriptRetrievalError(
                     self.video_id,
-                    f"Failed to fetch transcript: HTTP {response.status_code}"
+                    f"Request timeout for language {self.language_code}: {str(e)}"
                 )
-                
-            self._fetched_data = response.text
-            return self._process_transcript_data(self._fetched_data, preserve_formatting)
-            
-        except TooManyRequests:
-            raise
-        except Exception as e:
-            raise TranscriptRetrievalError(
-                self.video_id,
-                f"Failed to fetch transcript for language {self.language_code}: {str(e)}"
-            )
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+            except requests.exceptions.ConnectionError as e:
+                last_exception = TranscriptRetrievalError(
+                    self.video_id,
+                    f"Connection error for language {self.language_code}: {str(e)}"
+                )
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+            except Exception as e:
+                last_exception = TranscriptRetrievalError(
+                    self.video_id,
+                    f"Failed to fetch transcript for language {self.language_code}: {str(e)}"
+                )
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+
+        # If all retries failed, raise the last exception
+        raise last_exception or TranscriptRetrievalError(
+            self.video_id,
+            f"Failed to fetch transcript for language {self.language_code} after all retries"
+        )
 
     def _process_transcript_data(self, xml_data: str, preserve_formatting: bool = False) -> List[Dict]:
         """

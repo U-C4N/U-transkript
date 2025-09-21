@@ -10,13 +10,13 @@ class AITranscriptTranslator:
     AI-powered transcript translator using Google Gemini API.
     """
     
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         """
         Initialize the AI translator.
-        
+
         Args:
             api_key: Google Gemini API key
-            model: Gemini model to use (default: gemini-2.0-flash-exp)
+            model: Gemini model to use (default: gemini-2.5-flash)
         """
         self.api_key = api_key
         self.model = model

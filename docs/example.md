@@ -35,7 +35,7 @@ from u_transkript import AITranscriptTranslator
 # Translator oluşturma
 translator = AITranscriptTranslator(
     api_key="YOUR_GEMINI_API_KEY",
-    model="gemini-2.0-flash-exp"  # Varsayılan model
+    model="gemini-2.5-flash"  # Varsayılan model
 )
 ```
 
@@ -57,9 +57,8 @@ Kullanılacak Gemini modelini belirler.
 
 ```python
 # Farklı modeller
-translator.set_model("gemini-2.0-flash-exp")    # Hızlı ve verimli
-translator.set_model("gemini-2.5-flash")        # Daha gelişmiş
-translator.set_model("gemini-pro")              # En güçlü model
+translator.set_model("gemini-2.5-flash")        # Hızlı ve dengeli
+translator.set_model("gemini-2.5-pro")         # En güçlü model
 ```
 
 #### `set_api(api_key)`
@@ -150,7 +149,7 @@ result = translator.translate_transcript("VIDEO_ID")
   ],
   "translated_text": "Merhaba Dünya",
   "translation_metadata": {
-    "model": "gemini-2.0-flash-exp",
+    "model": "gemini-2.5-flash",
     "timestamp": "2024-01-15T10:30:00"
   }
 }
@@ -166,7 +165,7 @@ result = translator.translate_transcript("VIDEO_ID")
     <metadata>
         <video_id>VIDEO_ID</video_id>
         <target_language>Turkish</target_language>
-        <model>gemini-2.0-flash-exp</model>
+        <model>gemini-2.5-flash</model>
         <timestamp>2024-01-15T10:30:00</timestamp>
     </metadata>
     <original_transcript>
@@ -247,7 +246,7 @@ except Exception as e:
 #### Model Seçimi
 ```python
 # Hızlı çeviri için
-translator.set_model("gemini-2.0-flash-exp")
+translator.set_model("gemini-2.5-flash")
 
 # Kaliteli çeviri için
 translator.set_model("gemini-2.5-flash")

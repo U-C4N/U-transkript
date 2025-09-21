@@ -156,9 +156,8 @@ with open("translation.json", "w", encoding="utf-8") as f:
 
 | Model | Speed | Quality | Usage |
 |-------|-----|--------|----------|
-| `gemini-2.0-flash-exp` | ⚡⚡⚡ | ⭐⭐⭐ | Fast translations |
-| `gemini-2.5-flash` | ⚡⚡ | ⭐⭐⭐⭐ | Balanced performance |
-| `gemini-pro` | ⚡ | ⭐⭐⭐⭐⭐ | Highest quality |
+| `gemini-2.5-flash` | ⚡⚡ | ⭐⭐⭐⭐ | Fast, balanced (recommended) |
+| `gemini-2.5-pro` | ⚡ | ⭐⭐⭐⭐⭐ | Highest quality |
 
 ## 🔍 Troubleshooting
 
