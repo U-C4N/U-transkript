@@ -46,3 +46,5 @@ ENV/
 
 # Claude Code local settings
 .claude/settings.local.json
+AGENTS.md
+.claude/settings.local.json

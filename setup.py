@@ -13,7 +13,7 @@ def read_requirements():
 
 setup(
     name="u-transkript",
-    version="1.0.0",
+    version="1.1.0",
     author="U-C4N",
     author_email="noreply@deuz.ai",
     description="YouTube videolarını otomatik olarak çıkarıp AI ile çeviren güçlü Python kütüphanesi",

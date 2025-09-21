@@ -15,6 +15,7 @@ U-Transkript is a modern and user-friendly Python package that extracts transcri
 🌍 **Multi-Language Support** - Ability to translate into 50+ languages
 📊 **Flexible Output Formats** - Get results in TXT, JSON, XML formats
 🔗 **Method Chaining** - Easy to use with chained function calls
+📁 **Bulk Download** - Download all videos from a user/channel at once
 ⚡ **Fast and Efficient** - Optimized performance
 🛡️ **Secure** - Error handling and secure API calls
 📝 **Detailed Documentation** - Comprehensive user guide
@@ -61,7 +62,7 @@ result = (translator
 | `set_api(api_key)` | Set the API key | `translator.set_api("YOUR_API_KEY")` |
 | `set_lang(language)` | Set the target language | `translator.set_lang("English")` |
 | `set_type(format)` | Set the output format | `translator.set_type("json")` |
-| `translate_transcript(video_id)` | Main translation function | `translator.translate_transcript("VIDEO_ID")` |
+| `bulk_download_user(username, target_lang)` | Download all videos from a user/channel | `translator.bulk_download_user("username", "English")` |
 
 ### Supported Output Formats
 
@@ -128,6 +129,20 @@ result = translator.translate_transcript(
     "VIDEO_ID",
     custom_prompt=custom_prompt
 )
+```
+
+### Bulk User Download (NEW v1.1.0)
+```python
+# Download all videos from a specific user/channel
+username = "username"  # YouTube channel username
+translator.bulk_download_user(username, target_lang="English")
+
+# This will create a folder with the username and download all video transcripts
+# Example output structure:
+# username/
+#   ├── video1_transcript.txt
+#   ├── video2_transcript.txt
+#   └── video3_transcript.txt
 ```
 
 ### Batch Processing
@@ -200,7 +215,7 @@ except Exception as e:
 
 ## 📈 Roadmap
 
-- [ ] **v1.1.0** - Batch processing support
+- [x] **v1.1.0** - ✅ Bulk user download support
 - [ ] **v1.2.0** - Caching system
 - [ ] **v1.3.0** - CLI interface
 - [ ] **v1.4.0** - Web interface
