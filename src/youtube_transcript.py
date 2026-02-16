@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import json
 import re
 import requests
 import time
 import urllib.parse
-from typing import List, Dict, Optional, Union
 from xml.etree import ElementTree
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry as URLLibRetry
 
 from exceptions import (
     TranscriptRetrievalError,
@@ -19,40 +22,108 @@ from exceptions import (
 )
 from transcript_list import TranscriptList
 from fetched_transcript import FetchedTranscript
+from utils.retry import retry
+
+# Module-level compiled regex patterns
+_PATTERN_INNERTUBE_API_KEY_1 = re.compile(r'"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"')
+_PATTERN_INNERTUBE_API_KEY_2 = re.compile(r'"innertubeApiKey":\s*"([a-zA-Z0-9_-]+)"')
+_PATTERN_INNERTUBE_API_KEY_3 = re.compile(r'"apiKey":\s*"([a-zA-Z0-9_-]+)"')
+
+_PATTERN_CAPTIONS_1 = re.compile(r'"captions":\s*\{[^}]*"playerCaptionsTracklistRenderer":\s*(\{.*?\})')
+_PATTERN_CAPTIONS_2 = re.compile(r'"playerCaptionsTracklistRenderer":\s*(\{.*?"captionTracks".*?\})')
+_PATTERN_CAPTIONS_3 = re.compile(r'ytInitialPlayerResponse["\']?:\s*(\{.*?\})')
+_PATTERN_CAPTIONS_4 = re.compile(r'var\s+ytInitialPlayerResponse\s*=\s*(\{.*?\});')
+_PATTERN_CAPTIONS_5 = re.compile(r'"captionTracks":\s*\[(.*?)\]')
+_PATTERN_CAPTIONS_6 = re.compile(r'"playerCaptionsRenderer":\s*(\{.*?\})')
+_PATTERN_CAPTIONS_7 = re.compile(r'"captions":(\{.*?"playerCaptionsTracklistRenderer".*?\})')
+_PATTERN_CAPTIONS_8 = re.compile(r'ytInitialPlayerResponse":\s*(\{.*?\})\s*[,}]')
+
+_CAPTION_PATTERNS = [
+    _PATTERN_CAPTIONS_1,
+    _PATTERN_CAPTIONS_2,
+    _PATTERN_CAPTIONS_3,
+    _PATTERN_CAPTIONS_4,
+    _PATTERN_CAPTIONS_5,
+    _PATTERN_CAPTIONS_6,
+    _PATTERN_CAPTIONS_7,
+    _PATTERN_CAPTIONS_8,
+]
+
+_INNERTUBE_API_KEY_PATTERNS = [
+    _PATTERN_INNERTUBE_API_KEY_1,
+    _PATTERN_INNERTUBE_API_KEY_2,
+    _PATTERN_INNERTUBE_API_KEY_3,
+]
+
+_PATTERN_TIMEDTEXT = re.compile(r'["\']timedtext["\'].*?["\']([^"\']*)["\']', re.IGNORECASE)
 
 
 class YouTubeTranscriptApi:
     """
     Main class for retrieving YouTube video transcripts.
     """
-    
+
     _WATCH_URL = 'https://www.youtube.com/watch?v={video_id}'
     _API_BASE_URL = 'https://www.youtube.com/api/timedtext'
-    
+
+    _session = None
+
+    @classmethod
+    def get_session(cls):
+        if cls._session is None:
+            cls._session = requests.Session()
+            # Configure connection pooling
+            adapter = HTTPAdapter(
+                pool_connections=10,
+                pool_maxsize=10,
+                max_retries=URLLibRetry(total=0)  # We handle retries ourselves
+            )
+            cls._session.mount("https://", adapter)
+            cls._session.mount("http://", adapter)
+            # Set default headers
+            cls._session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+        return cls._session
+
+    @classmethod
+    def close_session(cls):
+        if cls._session is not None:
+            cls._session.close()
+            cls._session = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close_session()
+        return False
+
     @classmethod
     def get_transcript(
         cls,
         video_id: str,
-        languages: List[str] = None,
-        proxies: Dict = None,
+        languages: list[str] = None,
+        proxies: dict | None = None,
         cookies: str = None,
         preserve_formatting: bool = False
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Retrieve transcript for a single video.
-        
+
         Args:
             video_id: YouTube video ID
             languages: List of language codes in order of preference
             proxies: Proxy configuration for requests
             cookies: Cookie string for authentication
             preserve_formatting: Whether to preserve HTML formatting
-            
+
         Returns:
             List of transcript entries with 'text', 'start', and 'duration' keys
         """
         transcript_list = cls.list_transcripts(video_id, proxies=proxies, cookies=cookies)
-        
+
         if languages:
             for language_code in languages:
                 try:
@@ -60,7 +131,7 @@ class YouTubeTranscriptApi:
                     return transcript.fetch(preserve_formatting=preserve_formatting)
                 except (NoTranscriptFound, TranscriptNotFound):
                     continue
-            
+
             # If no exact match found, try to get a translatable transcript
             try:
                 transcript = transcript_list.find_manually_created_transcript(languages)
@@ -74,7 +145,7 @@ class YouTubeTranscriptApi:
                             pass
             except (NoTranscriptFound, TranscriptNotFound):
                 pass
-                
+
             raise NoTranscriptFound(video_id, languages, transcript_list._transcript_data if hasattr(transcript_list, '_transcript_data') else {})
         else:
             # No specific languages requested, try common fallbacks
@@ -82,19 +153,19 @@ class YouTubeTranscriptApi:
                 # Attempt to find an English generated transcript
                 transcript = transcript_list.find_generated_transcript(['en'])
                 return transcript.fetch(preserve_formatting=preserve_formatting)
-            except NoTranscriptFound: 
+            except NoTranscriptFound:
                 try:
                     # Attempt to find an English manually created transcript
                     transcript = transcript_list.find_manually_created_transcript(['en'])
                     return transcript.fetch(preserve_formatting=preserve_formatting)
-                except NoTranscriptFound: 
+                except NoTranscriptFound:
                     # Fallback to the very first transcript available in the list
                     if transcript_list._transcript_data:
                         first_transcript_info_dict = None
-                        for lang_key in transcript_list._transcript_data: 
-                            if transcript_list._transcript_data[lang_key]: 
+                        for lang_key in transcript_list._transcript_data:
+                            if transcript_list._transcript_data[lang_key]:
                                 first_transcript_info_dict = transcript_list._transcript_data[lang_key][0]
-                                break 
+                                break
 
                         if first_transcript_info_dict:
                             actual_transcript_object = FetchedTranscript(
@@ -115,16 +186,16 @@ class YouTubeTranscriptApi:
     @classmethod
     def get_transcripts(
         cls,
-        video_ids: List[str],
-        languages: List[str] = None,
-        proxies: Dict = None,
+        video_ids: list[str],
+        languages: list[str] = None,
+        proxies: dict | None = None,
         cookies: str = None,
         preserve_formatting: bool = False,
         continue_on_failure: bool = False
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Retrieve transcripts for multiple videos.
-        
+
         Args:
             video_ids: List of YouTube video IDs
             languages: List of language codes in order of preference
@@ -132,12 +203,12 @@ class YouTubeTranscriptApi:
             cookies: Cookie string for authentication
             preserve_formatting: Whether to preserve HTML formatting
             continue_on_failure: Whether to continue if a video fails
-            
+
         Returns:
             List of dictionaries with video_id and transcript data
         """
         results = []
-        
+
         for video_id in video_ids:
             try:
                 transcript = cls.get_transcript(
@@ -161,14 +232,42 @@ class YouTubeTranscriptApi:
                     })
                 else:
                     raise e
-                    
+
         return results
+
+    @classmethod
+    @retry(
+        max_attempts=3,
+        backoff_factor=1.5,
+        jitter=True,
+        exceptions=(requests.exceptions.Timeout, requests.exceptions.ConnectionError),
+    )
+    def _fetch_video_page(cls, watch_url: str, proxies: dict | None = None, cookies: str = None):
+        """Fetch the YouTube video page with retry logic for transient errors."""
+        session = cls.get_session()
+
+        headers = {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+
+        if cookies:
+            headers['Cookie'] = cookies
+
+        kwargs = {'headers': headers, 'timeout': 30}
+        if proxies:
+            kwargs['proxies'] = proxies
+
+        response = session.get(watch_url, **kwargs)
+        return response
 
     @classmethod
     def list_transcripts(
         cls,
         video_id: str,
-        proxies: Dict = None,
+        proxies: dict | None = None,
         cookies: str = None,
         max_retries: int = 3,
         retry_delay: float = 1.0
@@ -190,30 +289,12 @@ class YouTubeTranscriptApi:
 
         for attempt in range(max_retries + 1):
             try:
-                # First, get the video page to extract transcript data
                 watch_url = cls._WATCH_URL.format(video_id=video_id)
-
-                session = requests.Session()
-                if proxies:
-                    session.proxies.update(proxies)
-
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
-                }
-
-                if cookies:
-                    headers['Cookie'] = cookies
-
-                response = session.get(watch_url, headers=headers, timeout=30)
+                response = cls._fetch_video_page(watch_url, proxies=proxies, cookies=cookies)
 
                 if response.status_code == 429:
                     if attempt < max_retries:
-                        time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                        time.sleep(retry_delay * (2 ** attempt))
                         continue
                     raise TooManyRequests(video_id)
                 elif response.status_code == 404:
@@ -257,7 +338,7 @@ class YouTubeTranscriptApi:
         raise last_exception or TranscriptRetrievalError(video_id, "Failed to retrieve transcript list after all retries")
 
     @classmethod
-    def _extract_transcript_data(cls, html_content: str, video_id: str) -> Dict:
+    def _extract_transcript_data(cls, html_content: str, video_id: str) -> dict:
         """
         Extract transcript data from YouTube video page HTML.
 
@@ -280,23 +361,9 @@ class YouTubeTranscriptApi:
         except Exception:
             pass  # Fallback to HTML parsing
 
-        # Fallback: Look for captions data in the HTML with improved patterns
-        patterns = [
-            # Modern YouTube patterns
-            r'"captions":\s*\{[^}]*"playerCaptionsTracklistRenderer":\s*(\{.*?\})',
-            r'"playerCaptionsTracklistRenderer":\s*(\{.*?"captionTracks".*?\})',
-            r'ytInitialPlayerResponse["\']?:\s*(\{.*?\})',
-            r'var\s+ytInitialPlayerResponse\s*=\s*(\{.*?\});',
-            # Alternative patterns for different YouTube layouts
-            r'"captionTracks":\s*\[(.*?)\]',
-            r'"playerCaptionsRenderer":\s*(\{.*?\})',
-            # Backup patterns
-            r'"captions":(\{.*?"playerCaptionsTracklistRenderer".*?\})',
-            r'ytInitialPlayerResponse":\s*(\{.*?\})\s*[,}]'
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, html_content)
+        # Fallback: Look for captions data in the HTML with pre-compiled patterns
+        for pattern in _CAPTION_PATTERNS:
+            match = pattern.search(html_content)
             if match:
                 try:
                     data = json.loads(match.group(1))
@@ -310,60 +377,73 @@ class YouTubeTranscriptApi:
         return cls._extract_alternative_transcript_data(html_content, video_id)
 
     @classmethod
-    def _find_captions_data(cls, data: Dict) -> Optional[Dict]:
+    def _find_captions_data(cls, data: dict) -> dict | None:
         """
         Recursively find captions data in nested dictionary.
         """
         if isinstance(data, dict):
             if 'playerCaptionsTracklistRenderer' in data:
                 return data['playerCaptionsTracklistRenderer']
-            
+
             for key, value in data.items():
                 if key == 'captions' and isinstance(value, dict):
                     if 'playerCaptionsTracklistRenderer' in value:
                         return value['playerCaptionsTracklistRenderer']
-                
+
                 result = cls._find_captions_data(value)
                 if result:
                     return result
-                    
+
         elif isinstance(data, list):
             for item in data:
                 result = cls._find_captions_data(item)
                 if result:
                     return result
-                    
+
         return None
 
     @classmethod
-    def _parse_transcript_data(cls, captions_data: Dict, video_id: str) -> Dict:
+    def _parse_transcript_data(cls, captions_data: dict, video_id: str) -> dict:
         """
         Parse captions data into transcript format.
         """
         transcript_data = {}
-        
+
         caption_tracks = captions_data.get('captionTracks', [])
         translation_languages = captions_data.get('translationLanguages', [])
-        
+
         for track in caption_tracks:
             language_code = track.get('languageCode', 'unknown')
             base_url = track.get('baseUrl', '')
-            
+
             if not base_url:
                 continue
-                
+
             # Determine if this is auto-generated
             is_auto = track.get('kind') == 'asr'
-            
+
+            # Language name can be in 'simpleText' (WEB) or 'runs[0].text' (ANDROID)
+            name_data = track.get('name', {})
+            if isinstance(name_data, dict):
+                language_name = name_data.get('simpleText', '')
+                if not language_name:
+                    runs = name_data.get('runs', [])
+                    if runs and isinstance(runs, list):
+                        language_name = runs[0].get('text', language_code)
+                    else:
+                        language_name = language_code
+            else:
+                language_name = str(name_data) if name_data else language_code
+
             transcript_info = {
                 'language_code': language_code,
-                'language': track.get('name', {}).get('simpleText', language_code),
+                'language': language_name,
                 'url': base_url,
                 'is_generated': is_auto,
                 'is_translatable': bool(translation_languages),
                 'translation_languages': []
             }
-            
+
             # Add translation languages if available
             if translation_languages:
                 for lang in translation_languages:
@@ -371,15 +451,15 @@ class YouTubeTranscriptApi:
                         'language_code': lang.get('languageCode', ''),
                         'language': lang.get('languageName', {}).get('simpleText', '')
                     })
-            
+
             if language_code not in transcript_data:
                 transcript_data[language_code] = []
             transcript_data[language_code].append(transcript_info)
-            
+
         return transcript_data
 
     @classmethod
-    def _extract_innertube_api_key(cls, html_content: str) -> Optional[str]:
+    def _extract_innertube_api_key(cls, html_content: str) -> str | None:
         """
         Extract Innertube API key from YouTube page HTML.
 
@@ -389,21 +469,15 @@ class YouTubeTranscriptApi:
         Returns:
             API key string or None if not found
         """
-        patterns = [
-            r'"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"',
-            r'"innertubeApiKey":\s*"([a-zA-Z0-9_-]+)"',
-            r'"apiKey":\s*"([a-zA-Z0-9_-]+)"'
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, html_content)
+        for pattern in _INNERTUBE_API_KEY_PATTERNS:
+            match = pattern.search(html_content)
             if match:
                 return match.group(1)
 
         return None
 
     @classmethod
-    def _fetch_innertube_data(cls, video_id: str, api_key: str) -> Optional[Dict]:
+    def _fetch_innertube_data(cls, video_id: str, api_key: str) -> dict | None:
         """
         Fetch transcript data from YouTube Innertube API.
 
@@ -418,21 +492,23 @@ class YouTubeTranscriptApi:
 
         headers = {
             'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
 
+        # Use ANDROID client to avoid PoToken requirement
+        # WEB client returns URLs with &exp=xpe that return empty content
         data = {
             "context": {
                 "client": {
-                    "clientName": "WEB",
-                    "clientVersion": "2.20231201.01.00"
+                    "clientName": "ANDROID",
+                    "clientVersion": "20.10.38"
                 }
             },
             "videoId": video_id
         }
 
         try:
-            response = requests.post(url, headers=headers, json=data)
+            session = cls.get_session()
+            response = session.post(url, headers=headers, json=data)
             if response.status_code == 200:
                 return response.json()
         except Exception:
@@ -441,7 +517,7 @@ class YouTubeTranscriptApi:
         return None
 
     @classmethod
-    def _extract_captions_from_innertube(cls, innertube_data: Dict) -> Optional[Dict]:
+    def _extract_captions_from_innertube(cls, innertube_data: dict) -> dict | None:
         """
         Extract captions data from Innertube API response.
 
@@ -461,17 +537,13 @@ class YouTubeTranscriptApi:
         return None
 
     @classmethod
-    def _extract_alternative_transcript_data(cls, html_content: str, video_id: str) -> Dict:
+    def _extract_alternative_transcript_data(cls, html_content: str, video_id: str) -> dict:
         """
         Alternative method to extract transcript data if primary method fails.
         """
-        # Look for any mention of timedtext or captions
-        timedtext_pattern = r'["\']timedtext["\'].*?["\']([^"\']*)["\']'
-        matches = re.findall(timedtext_pattern, html_content, re.IGNORECASE)
+        matches = _PATTERN_TIMEDTEXT.findall(html_content)
 
         if matches:
-            # This is a simplified fallback - in a real implementation,
-            # you might need more sophisticated parsing
             return {
                 'en': [{
                     'language_code': 'en',

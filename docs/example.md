@@ -65,7 +65,7 @@ translator.set_model("gemini-2.5-pro")         # En güçlü model
 Google Gemini API anahtarını ayarlar.
 
 ```python
-translator.set_api("AIzaSyCYr3thNQ7V_E-8Gg0vPGelz3I5btyWvO0")
+translator.set_api("YOUR_GEMINI_API_KEY")
 ```
 
 #### `set_lang(target_language)`

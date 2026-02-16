@@ -1,3 +1,4 @@
+import glob
 import os
 import sys
 import subprocess
@@ -7,7 +8,7 @@ def run_command(command, description):
     """Komut çalıştır ve sonucu göster."""
     print(f"🔄 {description}...")
     try:
-        result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
+        result = subprocess.run(command, shell=False, check=True, capture_output=True, text=True)
         print(f"✅ {description} başarılı!")
         return True
     except subprocess.CalledProcessError as e:
@@ -55,11 +56,11 @@ def build_package():
     print("📦 Paket oluşturuluyor...")
     
     # Source distribution oluştur
-    if not run_command("python setup.py sdist", "Source distribution oluşturma"):
+    if not run_command([sys.executable, "setup.py", "sdist"], "Source distribution oluşturma"):
         return False
-    
+
     # Wheel distribution oluştur
-    if not run_command("python setup.py bdist_wheel", "Wheel distribution oluşturma"):
+    if not run_command([sys.executable, "setup.py", "bdist_wheel"], "Wheel distribution oluşturma"):
         return False
     
     print("✅ Paket başarıyla oluşturuldu!")
@@ -68,31 +69,46 @@ def build_package():
 def check_package():
     """Oluşturulan paketi kontrol et."""
     print("🔍 Paket kontrol ediliyor...")
-    
-    if not run_command("twine check dist/*", "Paket doğrulama"):
+
+    dist_files = glob.glob("dist/*")
+    if not dist_files:
+        print("❌ dist/ dizininde dosya bulunamadı!")
         return False
-    
+
+    if not run_command(["twine", "check"] + dist_files, "Paket doğrulama"):
+        return False
+
     print("✅ Paket doğrulaması başarılı!")
     return True
 
 def upload_to_test_pypi():
     """Test PyPI'ye yükle."""
     print("🧪 Test PyPI'ye yükleniyor...")
-    
-    command = "twine upload --repository testpypi dist/*"
-    print(f"Komut: {command}")
+
+    dist_files = glob.glob("dist/*")
+    if not dist_files:
+        print("❌ dist/ dizininde dosya bulunamadı!")
+        return False
+
+    command = ["twine", "upload", "--repository", "testpypi"] + dist_files
+    print(f"Komut: twine upload --repository testpypi dist/*")
     print("⚠️  Test PyPI kullanıcı adı ve şifrenizi girmeniz gerekecek.")
-    
+
     return run_command(command, "Test PyPI yükleme")
 
 def upload_to_pypi():
     """PyPI'ye yükle."""
     print("🚀 PyPI'ye yükleniyor...")
-    
-    command = "twine upload dist/*"
-    print(f"Komut: {command}")
+
+    dist_files = glob.glob("dist/*")
+    if not dist_files:
+        print("❌ dist/ dizininde dosya bulunamadı!")
+        return False
+
+    command = ["twine", "upload"] + dist_files
+    print(f"Komut: twine upload dist/*")
     print("⚠️  PyPI kullanıcı adı ve şifrenizi girmeniz gerekecek.")
-    
+
     return run_command(command, "PyPI yükleme")
 
 def main():

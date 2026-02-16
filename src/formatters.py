@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import json
 import html
-from typing import List, Dict, Any
 from abc import ABC, abstractmethod
 
 
@@ -10,7 +11,7 @@ class Formatter(ABC):
     """
     
     @abstractmethod
-    def format_transcript(self, transcript: List[Dict], **kwargs) -> str:
+    def format_transcript(self, transcript: list[dict], **kwargs) -> str:
         """
         Format transcript data.
         
@@ -29,7 +30,7 @@ class PrettyPrintFormatter(Formatter):
     Formatter for human-readable output.
     """
     
-    def format_transcript(self, transcript: List[Dict], **kwargs) -> str:
+    def format_transcript(self, transcript: list[dict], **kwargs) -> str:
         """
         Format transcript for pretty printing.
         
@@ -78,7 +79,7 @@ class PrettyPrintFormatter(Formatter):
         else:
             return f"{minutes:02d}:{seconds:02d}"
 
-    def _wrap_text(self, text: str, max_chars: int) -> List[str]:
+    def _wrap_text(self, text: str, max_chars: int) -> list[str]:
         """
         Wrap text to specified character limit.
         """
@@ -109,7 +110,7 @@ class JSONFormatter(Formatter):
     Formatter for JSON output.
     """
     
-    def format_transcript(self, transcript: List[Dict], **kwargs) -> str:
+    def format_transcript(self, transcript: list[dict], **kwargs) -> str:
         """
         Format transcript as JSON.
         
@@ -131,7 +132,7 @@ class TextFormatter(Formatter):
     Formatter for plain text output.
     """
     
-    def format_transcript(self, transcript: List[Dict], **kwargs) -> str:
+    def format_transcript(self, transcript: list[dict], **kwargs) -> str:
         """
         Format transcript as plain text.
         
@@ -156,7 +157,7 @@ class SRTFormatter(Formatter):
     Formatter for SRT (SubRip) subtitle format.
     """
     
-    def format_transcript(self, transcript: List[Dict], **kwargs) -> str:
+    def format_transcript(self, transcript: list[dict], **kwargs) -> str:
         """
         Format transcript as SRT subtitles.
         
@@ -195,7 +196,7 @@ class VTTFormatter(Formatter):
     Formatter for WebVTT subtitle format.
     """
     
-    def format_transcript(self, transcript: List[Dict], **kwargs) -> str:
+    def format_transcript(self, transcript: list[dict], **kwargs) -> str:
         """
         Format transcript as WebVTT subtitles.
         

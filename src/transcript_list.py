@@ -1,4 +1,5 @@
-from typing import List, Dict, Optional, Union
+from __future__ import annotations
+
 from fetched_transcript import FetchedTranscript
 from exceptions import (
     NoTranscriptFound,
@@ -13,7 +14,7 @@ class TranscriptList:
     Represents a list of available transcripts for a YouTube video.
     """
     
-    def __init__(self, video_id: str, transcript_data: Dict, proxies: Dict = None, cookies: str = None):
+    def __init__(self, video_id: str, transcript_data: dict, proxies: dict | None = None, cookies: str | None = None):
         """
         Initialize TranscriptList.
         
@@ -66,91 +67,64 @@ class TranscriptList:
         """
         return len(self._transcripts)
 
-    def find_transcript(self, language_codes: List[str]) -> FetchedTranscript:
+    def _find_transcript_in(self, language_codes: list[str], transcript_pool: dict) -> FetchedTranscript:
         """
-        Find a transcript for one of the given language codes.
-        
+        Unified search: find a transcript from the given pool by language codes.
+
         Args:
             language_codes: List of language codes in order of preference
-            
+            transcript_pool: Dictionary of language_code -> FetchedTranscript
+
         Returns:
             FetchedTranscript object
-            
+
         Raises:
             NoTranscriptFound: If no transcript is found for any of the languages
         """
         for language_code in language_codes:
-            if language_code in self._transcripts:
-                return self._transcripts[language_code]
-                
+            if language_code in transcript_pool:
+                return transcript_pool[language_code]
+
         # Try to find a translatable transcript
         for language_code in language_codes:
-            for transcript in self._transcripts.values():
+            for transcript in transcript_pool.values():
                 if transcript.is_translatable:
                     try:
                         return transcript.translate(language_code)
                     except (NotTranslatable, TranslationLanguageNotAvailable):
                         continue
-                        
+
         raise NoTranscriptFound(self.video_id, language_codes, self._transcript_data)
 
-    def find_generated_transcript(self, language_codes: List[str]) -> FetchedTranscript:
+    def find_transcript(self, language_codes: list[str], transcript_type: str | None = None) -> FetchedTranscript:
         """
-        Find an automatically generated transcript.
-        
+        Find transcript by language codes.
+
         Args:
             language_codes: List of language codes in order of preference
-            
-        Returns:
-            FetchedTranscript object for auto-generated transcript
-            
-        Raises:
-            NoTranscriptFound: If no auto-generated transcript is found
-        """
-        for language_code in language_codes:
-            if language_code in self._generated_transcripts:
-                return self._generated_transcripts[language_code]
-                
-        # Try to find a translatable auto-generated transcript
-        for language_code in language_codes:
-            for transcript in self._generated_transcripts.values():
-                if transcript.is_translatable:
-                    try:
-                        return transcript.translate(language_code)
-                    except (NotTranslatable, TranslationLanguageNotAvailable):
-                        continue
-                        
-        raise NoTranscriptFound(self.video_id, language_codes, self._transcript_data)
+            transcript_type: None (any), 'generated', or 'manual'
 
-    def find_manually_created_transcript(self, language_codes: List[str]) -> FetchedTranscript:
-        """
-        Find a manually created transcript.
-        
-        Args:
-            language_codes: List of language codes in order of preference
-            
         Returns:
-            FetchedTranscript object for manually created transcript
-            
-        Raises:
-            NoTranscriptFound: If no manually created transcript is found
-        """
-        for language_code in language_codes:
-            if language_code in self._manually_created_transcripts:
-                return self._manually_created_transcripts[language_code]
-                
-        # Try to find a translatable manually created transcript
-        for language_code in language_codes:
-            for transcript in self._manually_created_transcripts.values():
-                if transcript.is_translatable:
-                    try:
-                        return transcript.translate(language_code)
-                    except (NotTranslatable, TranslationLanguageNotAvailable):
-                        continue
-                        
-        raise NoTranscriptFound(self.video_id, language_codes, self._transcript_data)
+            FetchedTranscript object
 
-    def get_languages(self) -> List[str]:
+        Raises:
+            NoTranscriptFound: If no transcript is found for any of the languages
+        """
+        if transcript_type == 'generated':
+            return self._find_transcript_in(language_codes, self._generated_transcripts)
+        elif transcript_type == 'manual':
+            return self._find_transcript_in(language_codes, self._manually_created_transcripts)
+        return self._find_transcript_in(language_codes, self._transcripts)
+
+    def find_generated_transcript(self, language_codes: list[str]) -> FetchedTranscript:
+        """Find an automatically generated transcript."""
+        return self.find_transcript(language_codes, transcript_type='generated')
+
+    def find_manually_created_transcript(self, language_codes: list[str]) -> FetchedTranscript:
+        """Find a manually created transcript."""
+        return self.find_transcript(language_codes, transcript_type='manual')
+
+    def get_languages(self) -> list[str]:
         """
         Get list of all available language codes.
         
@@ -159,7 +133,7 @@ class TranscriptList:
         """
         return list(self._transcripts.keys())
 
-    def get_generated_languages(self) -> List[str]:
+    def get_generated_languages(self) -> list[str]:
         """
         Get list of language codes for auto-generated transcripts.
         
@@ -168,7 +142,7 @@ class TranscriptList:
         """
         return list(self._generated_transcripts.keys())
 
-    def get_manually_created_languages(self) -> List[str]:
+    def get_manually_created_languages(self) -> list[str]:
         """
         Get list of language codes for manually created transcripts.
         
@@ -191,7 +165,7 @@ class TranscriptList:
             return self._transcripts[language_code].is_translatable
         return False
 
-    def get_translation_languages(self, language_code: str) -> List[Dict[str, str]]:
+    def get_translation_languages(self, language_code: str) -> list[dict[str, str]]:
         """
         Get available translation languages for a transcript.
         

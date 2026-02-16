@@ -1,11 +1,11 @@
+from __future__ import annotations
+
 import re
 import html
 import json
 import requests
-import time
 import urllib.parse
-from typing import List, Dict, Optional
-from xml.etree import ElementTree
+from xml.etree.ElementTree import XMLParser
 
 from exceptions import (
     TranscriptRetrievalError,
@@ -13,13 +13,17 @@ from exceptions import (
     TranslationLanguageNotAvailable,
     TooManyRequests
 )
+from utils.retry import retry
+
+# Pre-compiled pattern for HTML tag removal
+_PATTERN_HTML_TAGS = re.compile(r'<[^>]+>')
 
 
 class FetchedTranscript:
     """
     Represents a single transcript that can be fetched and formatted.
     """
-    
+
     def __init__(
         self,
         video_id: str,
@@ -28,13 +32,13 @@ class FetchedTranscript:
         url: str,
         is_generated: bool,
         is_translatable: bool,
-        translation_languages: List[Dict[str, str]],
-        proxies: Dict = None,
-        cookies: str = None
+        translation_languages: list[dict[str, str]],
+        proxies: dict | None = None,
+        cookies: str | None = None
     ):
         """
         Initialize FetchedTranscript.
-        
+
         Args:
             video_id: YouTube video ID
             language_code: Language code (e.g., 'en', 'es')
@@ -57,7 +61,28 @@ class FetchedTranscript:
         self._cookies = cookies
         self._fetched_data = None
 
-    def fetch(self, preserve_formatting: bool = False, max_retries: int = 3, retry_delay: float = 1.0) -> List[Dict]:
+    @retry(
+        max_attempts=3,
+        backoff_factor=1.5,
+        jitter=True,
+        exceptions=(requests.exceptions.Timeout, requests.exceptions.ConnectionError),
+    )
+    def _fetch_raw(self):
+        """Fetch raw transcript data from URL with retry for transient errors."""
+        from youtube_transcript import YouTubeTranscriptApi
+        session = YouTubeTranscriptApi.get_session()
+
+        headers = {}
+        if self._cookies:
+            headers['Cookie'] = self._cookies
+
+        kwargs = {'headers': headers, 'timeout': 30}
+        if self._proxies:
+            kwargs['proxies'] = self._proxies
+
+        return session.get(self.url, **kwargs)
+
+    def fetch(self, preserve_formatting: bool = False, max_retries: int = 3, retry_delay: float = 1.0) -> list[dict]:
         """
         Fetch the transcript data.
 
@@ -76,26 +101,17 @@ class FetchedTranscript:
 
         for attempt in range(max_retries + 1):
             try:
-                session = requests.Session()
-                if self._proxies:
-                    session.proxies.update(self._proxies)
-
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-
-                if self._cookies:
-                    headers['Cookie'] = self._cookies
-
-                response = session.get(self.url, headers=headers, timeout=30)
+                response = self._fetch_raw()
 
                 if response.status_code == 429:
                     if attempt < max_retries:
-                        time.sleep(retry_delay * (2 ** attempt))  # Exponential backoff
+                        import time
+                        time.sleep(retry_delay * (2 ** attempt))
                         continue
                     raise TooManyRequests(self.video_id)
                 elif response.status_code != 200:
                     if attempt < max_retries:
+                        import time
                         time.sleep(retry_delay)
                         continue
                     raise TranscriptRetrievalError(
@@ -108,20 +124,13 @@ class FetchedTranscript:
 
             except TooManyRequests:
                 raise
-            except requests.exceptions.Timeout as e:
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
                 last_exception = TranscriptRetrievalError(
                     self.video_id,
-                    f"Request timeout for language {self.language_code}: {str(e)}"
+                    f"Network error for language {self.language_code}: {str(e)}"
                 )
                 if attempt < max_retries:
-                    time.sleep(retry_delay)
-                    continue
-            except requests.exceptions.ConnectionError as e:
-                last_exception = TranscriptRetrievalError(
-                    self.video_id,
-                    f"Connection error for language {self.language_code}: {str(e)}"
-                )
-                if attempt < max_retries:
+                    import time
                     time.sleep(retry_delay)
                     continue
             except Exception as e:
@@ -130,135 +139,153 @@ class FetchedTranscript:
                     f"Failed to fetch transcript for language {self.language_code}: {str(e)}"
                 )
                 if attempt < max_retries:
+                    import time
                     time.sleep(retry_delay)
                     continue
 
-        # If all retries failed, raise the last exception
         raise last_exception or TranscriptRetrievalError(
             self.video_id,
             f"Failed to fetch transcript for language {self.language_code} after all retries"
         )
 
-    def _process_transcript_data(self, xml_data: str, preserve_formatting: bool = False) -> List[Dict]:
+    def _process_transcript_data(self, xml_data: str, preserve_formatting: bool = False) -> list[dict]:
         """
         Process XML transcript data into structured format.
-        
+
         Args:
             xml_data: Raw XML transcript data
             preserve_formatting: Whether to preserve HTML formatting
-            
+
         Returns:
             List of transcript entries
         """
         if not xml_data or not xml_data.strip():
-            # Gelen veri boşsa, boş liste döndür veya uygun bir hata fırlat.
-            # Bu durumda, genellikle bu video için bir transkript olmadığı anlamına gelir.
-            # Loglama eklenebilir: print(f"Warning: Empty transcript data received for video {self.video_id}, lang {self.language_code}")
-            return [] # Boş transkript olarak kabul et
+            return []
 
         try:
-            # Parse XML data
-            root = ElementTree.fromstring(xml_data)
+            # XXE-safe XML parsing
+            parser = XMLParser()
+            parser.feed(xml_data)
+            root = parser.close()
+
             transcript_entries = []
-            
+
+            # Try srv3 format first: <p t="ms" d="ms">text</p>
+            p_elements = root.findall('.//p')
+            if p_elements:
+                for p_element in p_elements:
+                    t_attr = p_element.get('t')
+                    d_attr = p_element.get('d')
+                    if t_attr is None:
+                        continue
+
+                    # srv3 format uses milliseconds
+                    start = float(t_attr) / 1000.0
+                    duration = float(d_attr) / 1000.0 if d_attr else 0.0
+
+                    # Text content: direct text + nested <s> segments
+                    text_content = p_element.text or ''
+                    for child in p_element:
+                        if child.text:
+                            text_content += child.text
+                        if child.tail:
+                            text_content += child.tail
+
+                    if not preserve_formatting:
+                        text_content = _PATTERN_HTML_TAGS.sub('', text_content)
+                        text_content = html.unescape(text_content)
+
+                    text_content = text_content.strip()
+
+                    if text_content:
+                        transcript_entries.append({
+                            'text': text_content,
+                            'start': start,
+                            'duration': duration
+                        })
+
+                return transcript_entries
+
+            # Fallback: legacy format <text start="s" dur="s">text</text>
             for text_element in root.findall('.//text'):
-                # Extract timing information
                 start = float(text_element.get('start', 0))
                 duration = float(text_element.get('dur', 0))
-                
-                # Extract text content
+
                 text_content = text_element.text or ''
-                
-                # Process text formatting
+
                 if not preserve_formatting:
-                    # Remove HTML tags and decode HTML entities
-                    text_content = re.sub(r'<[^>]+>', '', text_content)
+                    text_content = _PATTERN_HTML_TAGS.sub('', text_content)
                     text_content = html.unescape(text_content)
-                
-                # Clean up whitespace
+
                 text_content = text_content.strip()
-                
-                if text_content:  # Only include non-empty entries
+
+                if text_content:
                     transcript_entries.append({
                         'text': text_content,
                         'start': start,
                         'duration': duration
                     })
-                    
+
             return transcript_entries
-            
-        except ElementTree.ParseError as e_xml:
-            # If XML parsing fails, try to handle as JSON (some formats)
+
+        except Exception:
+            # If XML parsing fails, try to handle as JSON
             try:
                 data = json.loads(xml_data)
                 return self._process_json_transcript_data(data, preserve_formatting)
-            except json.JSONDecodeError as e_json:
-                # Hem XML hem de JSON parse edilemezse, bu durumu logla ve boş liste döndür
-                # veya daha spesifik bir hata fırlat.
-                # print(f"Warning: Could not parse transcript data as XML or JSON for video {self.video_id}, lang {self.language_code}. XML Error: {e_xml}, JSON Error: {e_json}. Data: {xml_data[:200]}...")
-                # Hata fırlatmak yerine boş liste döndürmek, AI çevirmeninin boş metinle başa çıkmasını sağlar.
-                # raise TranscriptRetrievalError(
-                #     self.video_id,
-                #     f"Failed to parse transcript data as XML or JSON. XML: {e_xml}, JSON: {e_json}"
-                # )
-                return [] # Parse edilemeyen veriyi boş transkript olarak kabul et
-            except Exception as e_general_json: # json.loads bilinmeyen bir hata verirse
-                # print(f"Warning: General error parsing transcript data as JSON for video {self.video_id}, lang {self.language_code}. Error: {e_general_json}. Data: {xml_data[:200]}...")
+            except (json.JSONDecodeError, Exception):
                 return []
-        except Exception as e_general_xml: # ElementTree.fromstring bilinmeyen bir hata verirse
-            # print(f"Warning: General error parsing transcript data as XML for video {self.video_id}, lang {self.language_code}. Error: {e_general_xml}. Data: {xml_data[:200]}...")
-            return []
 
-    def _process_json_transcript_data(self, json_data: Dict, preserve_formatting: bool = False) -> List[Dict]:
+    def _process_json_transcript_data(self, json_data: dict, preserve_formatting: bool = False) -> list[dict]:
         """
         Process JSON transcript data (alternative format).
         """
         transcript_entries = []
-        
-        # Handle different JSON structures that YouTube might use
+
         events = json_data.get('events', [])
-        
+
         for event in events:
             if 'segs' in event:
                 start_time = event.get('tStartMs', 0) / 1000.0
                 text_segments = event['segs']
-                
-                combined_text = ''
+
+                # Use list append + join instead of string concatenation
+                parts = []
                 for segment in text_segments:
                     if 'utf8' in segment:
-                        combined_text += segment['utf8']
-                
+                        parts.append(segment['utf8'])
+                combined_text = ''.join(parts)
+
                 if combined_text.strip():
                     if not preserve_formatting:
-                        combined_text = re.sub(r'<[^>]+>', '', combined_text)
+                        combined_text = _PATTERN_HTML_TAGS.sub('', combined_text)
                         combined_text = html.unescape(combined_text)
-                    
+
                     transcript_entries.append({
                         'text': combined_text.strip(),
                         'start': start_time,
                         'duration': event.get('dDurationMs', 0) / 1000.0
                     })
-                    
+
         return transcript_entries
 
-    def translate(self, target_language_code: str) -> 'FetchedTranscript':
+    def translate(self, target_language_code: str) -> FetchedTranscript:
         """
         Create a translated version of this transcript.
-        
+
         Args:
             target_language_code: Target language code for translation
-            
+
         Returns:
             New FetchedTranscript object for the translated version
-            
+
         Raises:
             NotTranslatable: If this transcript cannot be translated
             TranslationLanguageNotAvailable: If target language is not available
         """
         if not self.is_translatable:
             raise NotTranslatable(self.video_id, self.language_code)
-            
-        # Check if target language is available
+
         available_languages = [lang['language_code'] for lang in self.translation_languages]
         if target_language_code not in available_languages:
             raise TranslationLanguageNotAvailable(
@@ -266,31 +293,29 @@ class FetchedTranscript:
                 target_language_code,
                 available_languages
             )
-            
-        # Find target language info
+
         target_language_info = None
         for lang in self.translation_languages:
             if lang['language_code'] == target_language_code:
                 target_language_info = lang
                 break
-                
+
         if not target_language_info:
             raise TranslationLanguageNotAvailable(
                 self.video_id,
                 target_language_code,
                 available_languages
             )
-            
-        # Create translated URL
+
         translated_url = self._create_translated_url(target_language_code)
-        
+
         return FetchedTranscript(
             video_id=self.video_id,
             language_code=target_language_code,
             language=target_language_info['language'],
             url=translated_url,
-            is_generated=True,  # Translations are always generated
-            is_translatable=False,  # Translations cannot be further translated
+            is_generated=True,
+            is_translatable=False,
             translation_languages=[],
             proxies=self._proxies,
             cookies=self._cookies
@@ -299,21 +324,18 @@ class FetchedTranscript:
     def _create_translated_url(self, target_language_code: str) -> str:
         """
         Create URL for translated transcript.
-        
+
         Args:
             target_language_code: Target language code
-            
+
         Returns:
             URL for fetching translated transcript
         """
-        # Parse the current URL and add translation parameters
         parsed_url = urllib.parse.urlparse(self.url)
         query_params = urllib.parse.parse_qs(parsed_url.query)
-        
-        # Add translation language parameter
+
         query_params['tlang'] = [target_language_code]
-        
-        # Rebuild URL
+
         new_query = urllib.parse.urlencode(query_params, doseq=True)
         translated_url = urllib.parse.urlunparse((
             parsed_url.scheme,
@@ -323,7 +345,7 @@ class FetchedTranscript:
             new_query,
             parsed_url.fragment
         ))
-        
+
         return translated_url
 
     def __repr__(self):
@@ -335,7 +357,7 @@ class FetchedTranscript:
             status_flags.append("GENERATED")
         if self.is_translatable:
             status_flags.append("TRANSLATABLE")
-            
+
         status_str = f" [{', '.join(status_flags)}]" if status_flags else ""
-        
+
         return f"FetchedTranscript(video_id='{self.video_id}', language_code='{self.language_code}', language='{self.language}'{status_str})"

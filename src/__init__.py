@@ -25,10 +25,10 @@ from formatters import (
     VTTFormatter
 )
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "U-Transkript Team"
 __email__ = "contact@u-transkript.com"
-__description__ = "YouTube videolarını otomatik olarak çıkarıp AI ile çeviren güçlü Python kütüphanesi"
+__description__ = "Extract YouTube transcripts and translate them with AI — standalone alternative to youtube-transcript-api"
 __url__ = "https://github.com/U-C4N/u-transkript"
 
 # Ana sınıf ve fonksiyonları dışa aktar
@@ -73,7 +73,7 @@ __package_info__ = {
     "email": __email__,
     "url": __url__,
     "license": "MIT",
-    "python_requires": ">=3.7",
+    "python_requires": ">=3.10",
     "keywords": [
         "youtube", "transcript", "translation", "ai", "gemini",
         "subtitle", "video", "nlp", "machine-learning", "automation"

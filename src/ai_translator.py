@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 import json
 import requests
-from typing import List, Dict, Optional, Union
 from youtube_transcript import YouTubeTranscriptApi
 from formatters import get_formatter, JSONFormatter, TextFormatter
+from utils.retry import retry
+from utils.security import validate_url
 
 
 class AITranscriptTranslator:
@@ -22,7 +25,7 @@ class AITranscriptTranslator:
         self.model = model
         self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
         
-    def set_model(self, model_name: str) -> 'AITranscriptTranslator':
+    def set_model(self, model_name: str) -> AITranscriptTranslator:
         """
         Set the Gemini model to use.
         
@@ -35,7 +38,7 @@ class AITranscriptTranslator:
         self.model = model_name
         return self
         
-    def set_api(self, api_key: str) -> 'AITranscriptTranslator':
+    def set_api(self, api_key: str) -> AITranscriptTranslator:
         """
         Set the API key.
         
@@ -48,7 +51,7 @@ class AITranscriptTranslator:
         self.api_key = api_key
         return self
         
-    def set_lang(self, target_language: str) -> 'AITranscriptTranslator':
+    def set_lang(self, target_language: str) -> AITranscriptTranslator:
         """
         Set the target language for translation.
         
@@ -61,7 +64,7 @@ class AITranscriptTranslator:
         self.target_language = target_language
         return self
         
-    def set_type(self, output_type: str) -> 'AITranscriptTranslator':
+    def set_type(self, output_type: str) -> AITranscriptTranslator:
         """
         Set the output format type.
         
@@ -77,9 +80,9 @@ class AITranscriptTranslator:
     def translate_transcript(
         self, 
         video_id: str, 
-        target_language: Optional[str] = None,
-        output_type: Optional[str] = None,
-        custom_prompt: Optional[str] = None
+        target_language: str | None = None,
+        output_type: str | None = None,
+        custom_prompt: str | None = None
     ) -> str:
         """
         Extract and translate YouTube transcript using AI.
@@ -126,20 +129,33 @@ class AITranscriptTranslator:
         # Format output
         return self._format_output(translated_text, transcript, output_fmt)
         
+    @retry(
+        max_attempts=3,
+        backoff_factor=1.5,
+        jitter=True,
+        exceptions=(requests.exceptions.RequestException,),
+    )
+    def _call_gemini_api(self, url: str, headers: dict, data: dict):
+        """Make a request to the Gemini API with retry for transient errors."""
+        validate_url(url)
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        return response
+
     def _translate_with_gemini(
-        self, 
-        text: str, 
+        self,
+        text: str,
         target_language: str,
-        custom_prompt: Optional[str] = None
+        custom_prompt: str | None = None
     ) -> str:
         """
         Translate text using Google Gemini API.
-        
+
         Args:
             text: Text to translate
             target_language: Target language
             custom_prompt: Custom prompt for translation
-            
+
         Returns:
             Translated text
         """
@@ -147,20 +163,21 @@ class AITranscriptTranslator:
             prompt = custom_prompt.format(text=text, language=target_language)
         else:
             prompt = f"""
-            Please translate the following text to {target_language}. 
+            Please translate the following text to {target_language}.
             Maintain the natural flow and context of the content.
             Only return the translated text without any additional comments or explanations.
-            
+
             Text to translate:
             {text}
             """
-        
+
         url = f"{self.base_url}/{self.model}:generateContent"
-        
+
         headers = {
             'Content-Type': 'application/json',
+            'x-goog-api-key': self.api_key,
         }
-        
+
         data = {
             "contents": [{
                 "parts": [{
@@ -168,24 +185,18 @@ class AITranscriptTranslator:
                 }]
             }]
         }
-        
-        params = {
-            'key': self.api_key
-        }
-        
+
         try:
-            response = requests.post(url, headers=headers, json=data, params=params)
-            response.raise_for_status()
-            
+            response = self._call_gemini_api(url, headers, data)
             result = response.json()
-            
+
             if 'candidates' in result and len(result['candidates']) > 0:
                 if 'content' in result['candidates'][0]:
                     if 'parts' in result['candidates'][0]['content']:
                         return result['candidates'][0]['content']['parts'][0]['text'].strip()
-            
+
             raise Exception("Invalid response format from Gemini API")
-            
+
         except requests.exceptions.RequestException as e:
             raise Exception(f"API request failed: {str(e)}")
         except Exception as e:
@@ -194,7 +205,7 @@ class AITranscriptTranslator:
     def _format_output(
         self, 
         translated_text: str, 
-        original_transcript: List[Dict],
+        original_transcript: list[dict],
         output_type: str
     ) -> str:
         """
@@ -226,29 +237,28 @@ class AITranscriptTranslator:
             return json.dumps(result, indent=2, ensure_ascii=False)
             
         elif output_type == 'xml':
-            # Create XML format
-            xml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<transcript>
-    <metadata>
-        <video_id>{getattr(self, '_current_video_id', 'unknown')}</video_id>
-        <target_language>{getattr(self, 'target_language', 'unknown')}</target_language>
-        <model>{self.model}</model>
-        <timestamp>{self._get_current_timestamp()}</timestamp>
-    </metadata>
-    <original_transcript>
-"""
+            # Use list append + join instead of string concatenation
+            parts = [
+                '<?xml version="1.0" encoding="UTF-8"?>',
+                '<transcript>',
+                '    <metadata>',
+                f'        <video_id>{getattr(self, "_current_video_id", "unknown")}</video_id>',
+                f'        <target_language>{getattr(self, "target_language", "unknown")}</target_language>',
+                f'        <model>{self.model}</model>',
+                f'        <timestamp>{self._get_current_timestamp()}</timestamp>',
+                '    </metadata>',
+                '    <original_transcript>',
+            ]
             for entry in original_transcript:
-                xml_content += f"""        <entry start="{entry['start']}" duration="{entry['duration']}">
-            <text>{self._escape_xml(entry['text'])}</text>
-        </entry>
-"""
-            xml_content += """    </original_transcript>
-    <translated_text>
-        <![CDATA[{translated_text}]]>
-    </translated_text>
-</transcript>""".format(translated_text=translated_text)
-            
-            return xml_content
+                parts.append(f'        <entry start="{entry["start"]}" duration="{entry["duration"]}">')
+                parts.append(f'            <text>{self._escape_xml(entry["text"])}</text>')
+                parts.append('        </entry>')
+            parts.append('    </original_transcript>')
+            parts.append('    <translated_text>')
+            parts.append(f'        <![CDATA[{translated_text}]]>')
+            parts.append('    </translated_text>')
+            parts.append('</transcript>')
+            return '\n'.join(parts)
             
         else:
             raise ValueError(f"Unsupported output type: {output_type}")
@@ -265,16 +275,4 @@ class AITranscriptTranslator:
                    .replace('>', '&gt;')
                    .replace('"', '&quot;')
                    .replace("'", '&#39;'))
-
-    def örnek_fonksiyon(self, video_id: str) -> str:
-        """
-        Örnek fonksiyon - video ID ile otomatik çeviri yapar.
-        
-        Args:
-            video_id: YouTube video ID
-            
-        Returns:
-            Çevrilmiş transcript
-        """
-        self._current_video_id = video_id
-        return self.translate_transcript(video_id) 
+ 

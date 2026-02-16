@@ -1,243 +1,295 @@
-# 🎬 U-Transkript
+<p align="center">
+  <h1 align="center">U-Transkript</h1>
+  <p align="center">
+    <strong>Extract YouTube transcripts and translate them with AI — no dependencies on youtube-transcript-api.</strong>
+  </p>
+  <p align="center">
+    <a href="https://pypi.org/project/u-transkript/"><img src="https://img.shields.io/pypi/v/u-transkript?color=blue&label=PyPI" alt="PyPI"></a>
+    <a href="https://pypi.org/project/u-transkript/"><img src="https://img.shields.io/pypi/pyversions/u-transkript" alt="Python"></a>
+    <a href="https://github.com/U-C4N/u-transkript/actions"><img src="https://img.shields.io/github/actions/workflow/status/U-C4N/u-transkript/ci.yml?branch=main&label=CI" alt="CI"></a>
+    <a href="https://codecov.io/gh/U-C4N/u-transkript"><img src="https://img.shields.io/codecov/c/github/U-C4N/u-transkript" alt="Coverage"></a>
+    <a href="../LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"></a>
+  </p>
+</p>
 
-[![Python](https://img.shields.io/badge/Python-3.7+-blue.svg)](https://python.org)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![PyPI](https://img.shields.io/badge/PyPI-u--transkript-orange.svg)](https://pypi.org/project/u-transkript/)
-[![AI Powered](https://img.shields.io/badge/AI-Gemini%20Powered-purple.svg)](https://ai.google.dev/)
+---
 
-**Powerful Python library to automatically extract and translate YouTube videos with AI**
+U-Transkript is a **standalone** Python library that extracts transcripts (subtitles) from any YouTube video and translates them into 50+ languages using Google Gemini AI. It is a fully independent alternative to `youtube-transcript-api` with its own YouTube integration, fluent API, and built-in CLI.
 
-U-Transkript is a modern and user-friendly Python package that extracts transcripts (subtitles) from YouTube videos and translates them into your desired language using Google Gemini AI. It offers an excellent solution for education, research, content creation, and much more.
+## What's New in v2.0.0
 
-## ✨ Features
+| Feature | Description |
+|---------|-------------|
+| **ANDROID Client** | Bypasses YouTube's PoToken requirement for reliable transcript fetching |
+| **srv3 Format Support** | Handles YouTube's new `<p t="ms">` XML format alongside legacy `<text>` |
+| **Security Hardening** | Shell injection fix, API key moved to headers, XXE/SSRF protection |
+| **Session Pooling** | Singleton HTTP session with connection reuse — 3-5x faster batch ops |
+| **Test Suite** | 1,400+ lines of tests, GitHub Actions CI/CD, pre-commit hooks |
+| **CLI Upgrades** | `--version`, `--verbose`, `--quiet`, colored output, progress bars |
+| **Utils Package** | Retry with backoff, disk cache, URL validation, config files |
 
-🤖 **AI-Powered Translation** - High-quality translations with Google Gemini AI
-🌍 **Multi-Language Support** - Ability to translate into 50+ languages
-📊 **Flexible Output Formats** - Get results in TXT, JSON, XML formats
-🔗 **Method Chaining** - Easy to use with chained function calls
-📁 **Bulk Download** - Download all videos from a user/channel at once
-⚡ **Fast and Efficient** - Optimized performance
-🛡️ **Secure** - Error handling and secure API calls
-📝 **Detailed Documentation** - Comprehensive user guide
-
-## 🚀 Quick Start
-
-### Installation
+## Installation
 
 ```bash
 pip install u-transkript
 ```
 
-### Basic Usage
+> **Requires** Python 3.10+ and `requests >= 2.32.5`
+
+<details>
+<summary><strong>Development setup</strong></summary>
+
+```bash
+git clone https://github.com/U-C4N/u-transkript.git
+cd u-transkript
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -e ".[dev]"
+```
+</details>
+
+## Quick Start
+
+### Translate a transcript with Gemini AI
 
 ```python
 from u_transkript import AITranscriptTranslator
 
-# Create Translator
 translator = AITranscriptTranslator("YOUR_GEMINI_API_KEY")
-
-# Translate Video
 result = translator.set_lang("English").translate_transcript("dQw4w9WgXcQ")
 print(result)
 ```
 
-### Advanced Usage with Method Chaining
+### Method chaining
 
 ```python
-# Set all settings at once
-result = (translator
-    .set_model("gemini-2.5-flash")
-    .set_lang("English") 
+result = (AITranscriptTranslator("YOUR_API_KEY")
+    .set_model("gemini-3-flash-preview")
+    .set_lang("Spanish")
     .set_type("json")
-    .translate_transcript("VIDEO_ID"))
+    .translate_transcript("dQw4w9WgXcQ"))
 ```
 
-## 📖 Detailed Documentation
+### One-liner
 
-### Main Functions
-
-| Function | Description | Example |
-|-----------|----------|-------|
-| `set_model(model)` | Set the Gemini model | `translator.set_model("gemini-2.5-flash")` |
-| `set_api(api_key)` | Set the API key | `translator.set_api("YOUR_API_KEY")` |
-| `set_lang(language)` | Set the target language | `translator.set_lang("English")` |
-| `set_type(format)` | Set the output format | `translator.set_type("json")` |
-| `bulk_download_user(username, target_lang)` | Download all videos from a user/channel | `translator.bulk_download_user("username", "English")` |
-
-### Supported Output Formats
-
-#### 📄 TXT Format
 ```python
-translator.set_type("txt")
-# Output: "Hello, this is an example translation..."
+from u_transkript import quick_translate
+
+print(quick_translate("dQw4w9WgXcQ", "YOUR_API_KEY", "French"))
 ```
 
-#### 📋 JSON Format
+### Extract transcripts (no AI)
+
 ```python
-translator.set_type("json")
-# Output: Structured JSON data (with metadata)
+from u_transkript import YouTubeTranscriptApi
+
+# Fetch transcript
+transcript = YouTubeTranscriptApi.get_transcript("dQw4w9WgXcQ")
+for entry in transcript:
+    print(f"[{entry['start']:.1f}s] {entry['text']}")
+
+# Specify language preference
+transcript = YouTubeTranscriptApi.get_transcript("dQw4w9WgXcQ", languages=["es", "en"])
+
+# List all available transcripts
+for t in YouTubeTranscriptApi.list_transcripts("dQw4w9WgXcQ"):
+    print(f"{t.language_code}: {t.language} (generated={t.is_generated})")
 ```
 
-#### 🏷️ XML Format
+### Format output
+
 ```python
-translator.set_type("xml")
-# Output: Full data structure in XML format
+from u_transkript import YouTubeTranscriptApi, SRTFormatter, VTTFormatter, JSONFormatter
+
+transcript = YouTubeTranscriptApi.get_transcript("dQw4w9WgXcQ")
+
+srt = SRTFormatter().format_transcript(transcript)           # SubRip (.srt)
+vtt = VTTFormatter().format_transcript(transcript)           # WebVTT (.vtt)
+js  = JSONFormatter().format_transcript(transcript, indent=2) # JSON (.json)
 ```
 
-### Supported Languages
+### Session management (performance)
 
-🇹🇷 Turkish • 🇺🇸 English • 🇪🇸 Spanish • 🇫🇷 French • 🇩🇪 German • 🇮🇹 Italian • 🇵🇹 Portuguese • 🇷🇺 Russian • 🇯🇵 Japanese • 🇰🇷 Korean • 🇨🇳 Chinese • 🇸🇦 Arabic
-
-## 💡 Use Cases
-
-### 📰 News Content
 ```python
-# Translating news videos
-result = translator.set_lang("English").translate_transcript("NEWS_VIDEO_ID")
+# Context manager — auto-cleanup
+with YouTubeTranscriptApi() as api:
+    t1 = api.get_transcript("VIDEO_1")
+    t2 = api.get_transcript("VIDEO_2")  # reuses the same TCP connection
+
+# Manual
+YouTubeTranscriptApi.get_transcript("VIDEO_ID")
+YouTubeTranscriptApi.close_session()
 ```
 
-### 💼 Business Presentations
-```python
-# Translating technical presentations
-result = translator.set_type("json").translate_transcript("PRESENTATION_ID")
+## CLI
+
+```bash
+# Basic usage
+u-transkript dQw4w9WgXcQ
+u-transkript "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Language preference
+u-transkript dQw4w9WgXcQ --languages en es fr
+
+# Output formats
+u-transkript dQw4w9WgXcQ --format json
+u-transkript dQw4w9WgXcQ --format srt --output subtitles.srt
+
+# List available transcripts
+u-transkript dQw4w9WgXcQ --list-transcripts
+
+# Bulk download from a channel
+u-transkript --username @MrBeast --count 50
+u-transkript --username pewdiepie -n 20 --format json
+
+# Filters
+u-transkript dQw4w9WgXcQ --generated-only
+u-transkript dQw4w9WgXcQ --manual-only
+
+# Proxy & auth
+u-transkript dQw4w9WgXcQ --proxy http://proxy:8080
+u-transkript dQw4w9WgXcQ --cookies "SESSION=abc123"
+
+# Verbosity
+u-transkript dQw4w9WgXcQ --verbose
+u-transkript dQw4w9WgXcQ --quiet
+
+# Version
+u-transkript --version
 ```
 
-### 🎬 Content Creation
-```python
-# Translating YouTube content into different languages
-video_ids = ["VIDEO1", "VIDEO2", "VIDEO3"]
-for video_id in video_ids:
-    result = translator.set_lang("English").translate_transcript(video_id)
-    with open(f"{video_id}_en.txt", "w") as f:
-        f.write(result)
+<details>
+<summary><strong>All CLI flags</strong></summary>
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--version` | | Show version and exit |
+| `--languages` | `-l` | Language codes in order of preference |
+| `--format` | `-f` | Output format: `pretty` `json` `text` `srt` `vtt` |
+| `--output` | `-o` | Write output to file |
+| `--list-transcripts` | | List available transcripts for the video |
+| `--username` | `-u` | YouTube channel username for bulk download |
+| `--count` | `-n` | Number of videos to download (default: 10, max: 100) |
+| `--generated-only` | | Only auto-generated transcripts |
+| `--manual-only` | | Only manually created transcripts |
+| `--exclude-generated` | | Exclude auto-generated transcripts |
+| `--exclude-manual` | | Exclude manually created transcripts |
+| `--preserve-formatting` | | Keep HTML formatting in transcript text |
+| `--proxy` | | HTTP/HTTPS proxy URL |
+| `--cookies` | | Cookie string for authenticated requests |
+| `--verbose` | `-v` | Detailed progress output |
+| `--quiet` | `-q` | Suppress all non-essential output |
+
+</details>
+
+## API Reference
+
+### AITranscriptTranslator
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `__init__(api_key, model="gemini-2.5-flash")` | Create a translator instance | — |
+| `set_model(name)` | Set the Gemini model | `self` |
+| `set_api(key)` | Set the API key | `self` |
+| `set_lang(language)` | Set target language (e.g. `"English"`) | `self` |
+| `set_type(fmt)` | Set output format: `"txt"` `"json"` `"xml"` | `self` |
+| `translate_transcript(video_id, ...)` | Extract, translate, and format | `str` |
+
+### YouTubeTranscriptApi
+
+| Method | Description | Returns |
+|--------|-------------|---------|
+| `get_transcript(video_id, ...)` | Fetch transcript for a single video | `list[dict]` |
+| `get_transcripts(video_ids, ...)` | Fetch transcripts for multiple videos | `list[dict]` |
+| `list_transcripts(video_id, ...)` | List all available transcripts | `TranscriptList` |
+| `get_session()` | Get the singleton HTTP session | `Session` |
+| `close_session()` | Close and reset the HTTP session | `None` |
+
+### Output Formats
+
+| Format | Description | Extension |
+|--------|-------------|-----------|
+| **Pretty** | Human-readable with timestamps (CLI default) | `.txt` |
+| **Text** | Plain concatenated text | `.txt` |
+| **JSON** | Structured data with metadata | `.json` |
+| **SRT** | SubRip subtitle format | `.srt` |
+| **VTT** | WebVTT subtitle format | `.vtt` |
+| **XML** | Full XML with original + translation (AI output) | `.xml` |
+
+## How It Compares
+
+U-Transkript is a **standalone alternative** to `youtube-transcript-api`:
+
+| | u-transkript | youtube-transcript-api |
+|---|:---:|:---:|
+| AI Translation (Gemini) | ✅ | — |
+| Method Chaining API | ✅ | — |
+| Bulk Channel Download | ✅ | — |
+| Colored CLI Output | ✅ | — |
+| Progress Bars | ✅ | — |
+| Disk-based Cache | ✅ | — |
+| Config File Support | ✅ | — |
+| SSRF Protection | ✅ | — |
+| SRT / VTT / JSON Export | ✅ | ✅ |
+| Transcript Extraction | ✅ | ✅ |
+
+## Project Structure
+
+```
+u-transkript/
+├── cli.py                     # CLI entry point
+├── build.py                   # Package build script
+├── setup.py                   # Package configuration
+├── src/
+│   ├── __init__.py            # Package init (v2.0.0)
+│   ├── youtube_transcript.py  # YouTube API integration
+│   ├── ai_translator.py       # Gemini AI translation engine
+│   ├── fetched_transcript.py  # Transcript data processing
+│   ├── transcript_list.py     # Transcript list management
+│   ├── formatters.py          # Output formatters (SRT, VTT, JSON, ...)
+│   ├── exceptions.py          # Custom exception classes
+│   └── utils/
+│       ├── retry.py           # Exponential backoff with jitter
+│       ├── security.py        # SSRF / URL validation
+│       ├── cache.py           # Disk-based transcript cache
+│       ├── console.py         # Colored terminal output
+│       └── config.py          # Config file loader
+├── tests/
+│   ├── conftest.py            # Shared test fixtures
+│   └── unit/                  # 6 unit test modules
+├── .github/workflows/
+│   ├── ci.yml                 # Test + lint pipeline
+│   └── release.yml            # Tag-based PyPI publishing
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+└── docs/
+    ├── README.md              # This file
+    └── example.md
 ```
 
-## 🔧 Advanced Features
+## Supported Languages
 
-### Custom Prompt Usage
-```python
-custom_prompt = """
-Please translate this text into {language}:
-- Preserve technical terms
-- Use natural language
-- Maintain context
+English, Turkish, Spanish, French, German, Italian, Portuguese, Russian, Japanese, Korean, Chinese, Arabic, Hindi, and **50+ more** via Google Gemini AI.
 
-Text: {text}
-"""
+## Troubleshooting
 
-result = translator.translate_transcript(
-    "VIDEO_ID",
-    custom_prompt=custom_prompt
-)
-```
+| Problem | Solution |
+|---------|----------|
+| **Video not found** | Make sure the video ID is exactly 11 characters. Use the full URL if unsure. |
+| **No transcript available** | Not every video has subtitles. Run `--list-transcripts` to check. |
+| **Rate limited (429)** | YouTube temporarily blocked your IP. Wait a few minutes or use `--proxy`. |
+| **API key error** | Verify your Gemini key is valid. Get one at [Google AI Studio](https://ai.google.dev/). |
+| **Language not found** | Use `--list-transcripts` to see what's available, then pass `--languages`. |
+| **Empty transcript** | YouTube's API may have changed. Update with `pip install -U u-transkript`. |
 
-### Bulk User Download (NEW v1.1.0)
-```python
-# Download all videos from a specific user/channel
-username = "username"  # YouTube channel username
-translator.bulk_download_user(username, target_lang="English")
+## Links
 
-# This will create a folder with the username and download all video transcripts
-# Example output structure:
-# username/
-#   ├── video1_transcript.txt
-#   ├── video2_transcript.txt
-#   └── video3_transcript.txt
-```
+- [Changelog](../CHANGELOG.md)
+- [Contributing](../CONTRIBUTING.md)
+- [Examples](example.md)
+- [PyPI](https://pypi.org/project/u-transkript/)
+- [GitHub](https://github.com/U-C4N/u-transkript)
 
-### Batch Processing
-```python
-videos = ["VIDEO1", "VIDEO2", "VIDEO3"]
-results = []
+## License
 
-for video in videos:
-    try:
-        result = translator.set_lang("English").translate_transcript(video)
-        results.append({"video": video, "translation": result})
-    except Exception as e:
-        results.append({"video": video, "error": str(e)})
-```
-
-### Saving to File
-```python
-# Saving in JSON format
-result = translator.set_type("json").translate_transcript("VIDEO_ID")
-with open("translation.json", "w", encoding="utf-8") as f:
-    f.write(result)
-```
-
-
-## 📊 Performance
-
-| Model | Speed | Quality | Usage |
-|-------|-----|--------|----------|
-| `gemini-2.5-flash` | ⚡⚡ | ⭐⭐⭐⭐ | Fast, balanced (recommended) |
-| `gemini-2.5-pro` | ⚡ | ⭐⭐⭐⭐⭐ | Highest quality |
-
-## 🔍 Troubleshooting
-
-### Common Errors
-
-**API Key Error**
-```python
-# ❌ Incorrect
-translator = AITranscriptTranslator("")
-
-# ✅ Correct  
-translator = AITranscriptTranslator("VALID_API_KEY")
-```
-
-**Video Not Found**
-```python
-# Ensure the Video ID is correct
-video_id = "dQw4w9WgXcQ"  # 11 characters
-```
-
-**Language Error**
-```python
-# ❌ Incorrect
-translator.set_lang("en")
-
-# ✅ Correct
-translator.set_lang("English")
-```
-
-### Debug Mode
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-try:
-    result = translator.translate_transcript("VIDEO_ID")
-except Exception as e:
-    print(f"Error: {e}")
-```
-
-## 📈 Roadmap
-
-- [x] **v1.1.0** - ✅ Bulk user download support
-- [ ] **v1.2.0** - Caching system
-- [ ] **v1.3.0** - CLI interface
-- [ ] **v1.4.0** - Web interface
-- [ ] **v1.5.0** - Support for more AI models
-
-## 🤝 Contributing
-
-We welcome your contributions! 
-
-1. Fork it
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-
-## 📞 Contact
-
-- **GitHub**: [u-transkript](https://github.com/U-C4N/u-transkript)
-- **PyPI**: [u-transkript](https://pypi.org/project/u-transkript/)
-- **Documentation**: [example.md](example.md)
+[MIT](../LICENSE)
