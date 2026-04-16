@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-04-17
+
+### Breaking Changes
+- `cli.py` has been split into a `cli` package under `src/cli/`. Internal symbols previously importable from the top-level `cli` module now live in focused submodules:
+  - `extract_video_id`, `build_youtube_channel_url` → `cli.url_parser`
+  - `get_channel_video_ids` → `cli.channel_scraper`
+  - `download_channel_transcripts` → `cli.channel_downloader`
+  - `process_single_video` → `cli.single_video`
+  - `create_argument_parser`, `validate_args` → `cli.parser`
+  - `format_and_output` → `cli.output`
+  - `main` → `cli.main` (also re-exported as `cli.main` attribute for the `u-transkript` entry point)
+- Users patching `cli.YouTubeTranscriptApi` or `cli.get_formatter` in tests must now target `cli.single_video.YouTubeTranscriptApi` / `cli.single_video.get_formatter` (or `cli.channel_downloader.*` for bulk mode).
+
+### Changed
+- Removed duplicated formatter-kwargs construction (was repeated in single-video and channel-download paths); now centralized in `cli.helpers.build_formatter_kwargs`.
+- Removed duplicated proxy-dict construction; now centralized in `cli.helpers.build_proxies`.
+- File-extension mapping for bulk downloads is now `cli.output.file_extension_for` instead of an inline `if/elif` chain.
+- Channel-scraping URL variants and video-ID regex patterns are now module-level constants (pre-compiled regexes) in `cli.channel_scraper`.
+- `get_channel_video_ids` and `download_channel_transcripts` split from ~90 and ~125-line god-functions into small orchestrators plus focused helpers (`_fetch_html`, `_extract_ids_from_html`, `_dedup_preserving_order`, `_download_one`, `_print_summary`, `_ensure_output_dir`).
+- No user-facing CLI flags changed; all 16 existing flags behave identically.
+
+### Added
+- `python -m cli` entry point via `src/cli/__main__.py`.
+- **HTTP API** (`api.py` at repo root) — optional Flask-based wrapper that exposes transcript extraction as `GET /api?url=<youtube_url>`. Supports `json`/`srt`/`vtt`/`text`/`pretty` formats, CORS-enabled, respects `$PORT` for Replit/Render/Railway deployments. Install with `pip install u-transkript[api]`.
+
 ## [2.0.0] - 2026-02-17
 
 ### Breaking Changes

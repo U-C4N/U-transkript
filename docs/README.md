@@ -16,7 +16,21 @@
 
 U-Transkript is a **standalone** Python library that extracts transcripts (subtitles) from any YouTube video and translates them into 50+ languages using Google Gemini AI. It is a fully independent alternative to `youtube-transcript-api` with its own YouTube integration, fluent API, and built-in CLI.
 
-## What's New in v2.0.0
+## What's New in v3.0.0
+
+| Feature | Description |
+|---------|-------------|
+| **Modular CLI** | Monolithic 532-line `cli.py` split into a focused `src/cli/` package (9 modules) |
+| **Zero Duplication** | `build_formatter_kwargs` and `build_proxies` helpers centralized in `cli.helpers` |
+| **Split God-Functions** | `get_channel_video_ids` and `download_channel_transcripts` broken into small, testable helpers |
+| **Dev Launcher** | Root `cli.py` removed to avoid package-name collision; use `python run.py` in dev |
+| **Type-Hinted Args** | `argparse.Namespace` annotations added across CLI internals |
+| **+25 Unit Tests** | New `tests/unit/test_cli_helpers.py` covers helpers, output, and scraper pure functions |
+
+> **Breaking (internal API only)** — User-facing CLI flags and the `u_transkript` package API are unchanged. Only direct imports from `cli` module paths moved; see [CHANGELOG](../CHANGELOG.md) for the mapping.
+
+<details>
+<summary><strong>v2.0.0 highlights</strong></summary>
 
 | Feature | Description |
 |---------|-------------|
@@ -27,6 +41,8 @@ U-Transkript is a **standalone** Python library that extracts transcripts (subti
 | **Test Suite** | 1,400+ lines of tests, GitHub Actions CI/CD, pre-commit hooks |
 | **CLI Upgrades** | `--version`, `--verbose`, `--quiet`, colored output, progress bars |
 | **Utils Package** | Retry with backoff, disk cache, URL validation, config files |
+
+</details>
 
 ## Installation
 
@@ -45,6 +61,12 @@ cd u-transkript
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -e ".[dev]"
+
+# Run the CLI from the source tree (no install needed)
+python run.py dQw4w9WgXcQ --format json
+
+# Run the test suite
+pytest tests/ --cov=src
 ```
 </details>
 
@@ -182,6 +204,79 @@ u-transkript --version
 
 </details>
 
+## HTTP API (deploy on Replit / Render / Railway)
+
+`api.py` at the repo root is a tiny Flask wrapper that exposes the transcript
+extractor as a URL-friendly HTTP endpoint. Perfect for hitting from `curl`,
+webhooks, or no-code tools.
+
+```bash
+# Install Flask alongside the package
+pip install u-transkript[api]
+
+# Or, from a clone
+pip install flask
+python api.py            # binds 0.0.0.0:$PORT (default 8080)
+```
+
+### Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Usage JSON (service name, version, examples) |
+| `GET /health` | `{"status": "ok", "version": "..."}` |
+| `GET /api?url=<youtube_url>` | Fetch transcript — see query params below |
+
+### Query params for `/api`
+
+| Param | Default | Description |
+|-------|---------|-------------|
+| `url` *(required)* | — | YouTube video URL or 11-char video ID |
+| `format` | `json` | `json` `pretty` `text` `srt` `vtt` |
+| `languages` | — | Comma-separated language preference (e.g. `en,es`) |
+| `proxy` | — | HTTP/HTTPS proxy URL |
+| `preserve_formatting` | `0` | `1` to keep HTML formatting |
+
+### Examples
+
+```bash
+# JSON (default): structured response with metadata
+curl "https://your-app.example/api?url=dQw4w9WgXcQ"
+# → {"video_id":"dQw4w9WgXcQ","entry_count":52,"transcript":[...]}
+
+# SRT subtitle file, directly pipeable
+curl "https://your-app.example/api?url=dQw4w9WgXcQ&format=srt" -o out.srt
+
+# WebVTT with language preference
+curl "https://your-app.example/api?url=https://youtu.be/dQw4w9WgXcQ&languages=en,es&format=vtt"
+```
+
+### Deploying on Replit
+
+1. Import this repo into a Replit workspace.
+2. In the Replit shell: `pip install flask`.
+3. Set the run command to `python api.py` (in `.replit` or the UI).
+4. Replit injects `$PORT`; the service binds to `0.0.0.0:$PORT` automatically.
+5. Hit `https://<your-repl>.repl.co/api?url=<video_id>`.
+
+Other platforms (Render / Railway / Fly / Heroku) work the same way — they set
+`$PORT` and run `python api.py`.
+
+### Error responses
+
+Errors return JSON with an appropriate HTTP status code:
+
+| Status | `type` | When |
+|--------|--------|------|
+| 400 | `MissingParameter` / `InvalidUrl` / `InvalidFormat` | Bad request input |
+| 404 | `VideoUnavailable` / `TranscriptNotFound` / `TranscriptDisabled` | Video or transcript missing |
+| 429 | `TooManyRequests` | YouTube rate-limited the server |
+| 502 | `TranscriptRetrievalError` | Upstream YouTube fetch failure |
+| 500 | `ServerError` | Unexpected error |
+
+CORS is enabled (`Access-Control-Allow-Origin: *`) so browsers can call it
+directly.
+
 ## API Reference
 
 ### AITranscriptTranslator
@@ -237,35 +332,59 @@ U-Transkript is a **standalone alternative** to `youtube-transcript-api`:
 
 ```
 u-transkript/
-├── cli.py                     # CLI entry point
-├── build.py                   # Package build script
-├── setup.py                   # Package configuration
+├── run.py                        # Dev CLI launcher (python run.py ...)
+├── build.py                      # Package build script
+├── setup.py                      # Package configuration
 ├── src/
-│   ├── __init__.py            # Package init (v2.0.0)
-│   ├── youtube_transcript.py  # YouTube API integration
-│   ├── ai_translator.py       # Gemini AI translation engine
-│   ├── fetched_transcript.py  # Transcript data processing
-│   ├── transcript_list.py     # Transcript list management
-│   ├── formatters.py          # Output formatters (SRT, VTT, JSON, ...)
-│   ├── exceptions.py          # Custom exception classes
+│   ├── __init__.py               # Package init (v3.0.0)
+│   ├── youtube_transcript.py     # YouTube API integration
+│   ├── ai_translator.py          # Gemini AI translation engine
+│   ├── fetched_transcript.py     # Transcript data processing
+│   ├── transcript_list.py        # Transcript list management
+│   ├── formatters.py             # Output formatters (SRT, VTT, JSON, ...)
+│   ├── exceptions.py             # Custom exception classes
+│   ├── cli/                      # CLI package (new in v3.0.0)
+│   │   ├── __init__.py           # Package init, sys.path setup
+│   │   ├── __main__.py           # Enables `python -m cli`
+│   │   ├── main.py               # main() orchestrator + exit-code mapping
+│   │   ├── parser.py             # argparse setup + arg validation
+│   │   ├── url_parser.py         # Video-ID / channel-URL parsing
+│   │   ├── channel_scraper.py    # Channel video-ID extraction
+│   │   ├── channel_downloader.py # Bulk download orchestrator
+│   │   ├── single_video.py       # Single-video processing
+│   │   ├── output.py             # File/stdout writing + extension mapping
+│   │   └── helpers.py            # Shared helpers (formatter kwargs, proxies, exit codes)
 │   └── utils/
-│       ├── retry.py           # Exponential backoff with jitter
-│       ├── security.py        # SSRF / URL validation
-│       ├── cache.py           # Disk-based transcript cache
-│       ├── console.py         # Colored terminal output
-│       └── config.py          # Config file loader
+│       ├── retry.py              # Exponential backoff with jitter
+│       ├── security.py           # SSRF / URL validation
+│       ├── cache.py              # Disk-based transcript cache
+│       ├── console.py            # Colored terminal output
+│       └── config.py             # Config file loader
 ├── tests/
-│   ├── conftest.py            # Shared test fixtures
-│   └── unit/                  # 6 unit test modules
+│   ├── conftest.py               # Shared test fixtures
+│   └── unit/                     # 7 unit test modules (200+ tests)
 ├── .github/workflows/
-│   ├── ci.yml                 # Test + lint pipeline
-│   └── release.yml            # Tag-based PyPI publishing
+│   ├── ci.yml                    # Test + lint pipeline
+│   └── release.yml               # Tag-based PyPI publishing
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── docs/
-    ├── README.md              # This file
+    ├── README.md                 # This file
     └── example.md
 ```
+
+### CLI module map
+
+| Concern | Module |
+|---------|--------|
+| `argparse` setup, `--help`, flag validation | `cli.parser` |
+| YouTube video ID / channel URL regex | `cli.url_parser` |
+| HTML scraping for channel video IDs | `cli.channel_scraper` |
+| Single-video fetch + filter + format | `cli.single_video` |
+| Bulk channel download + progress + file I/O | `cli.channel_downloader` |
+| File vs stdout output, extension mapping | `cli.output` |
+| Shared helpers (formatter kwargs, proxies, progress bar, exit codes) | `cli.helpers` |
+| Top-level orchestrator + exception → exit code | `cli.main` |
 
 ## Supported Languages
 

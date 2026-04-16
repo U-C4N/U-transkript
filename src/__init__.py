@@ -25,7 +25,7 @@ from formatters import (
     VTTFormatter
 )
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 __author__ = "U-Transkript Team"
 __email__ = "contact@u-transkript.com"
 __description__ = "Extract YouTube transcripts and translate them with AI — standalone alternative to youtube-transcript-api"

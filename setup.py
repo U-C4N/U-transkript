@@ -69,6 +69,9 @@ setup(
             "sphinx>=4.0",
             "sphinx-rtd-theme>=1.0",
         ],
+        "api": [
+            "flask>=3.0",
+        ],
     },
     keywords=[
         "youtube",

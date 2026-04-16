@@ -1,12 +1,9 @@
 import pytest
-import sys
 import os
 from unittest.mock import patch, MagicMock
 
-# cli.py is at the project root, add it to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
-from cli import extract_video_id, build_youtube_channel_url, main
+from cli.url_parser import extract_video_id, build_youtube_channel_url
+from cli.main import main
 
 
 class TestExtractVideoId:
@@ -47,7 +44,6 @@ class TestExtractVideoId:
             extract_video_id("")
 
     def test_id_with_hyphens_underscores(self):
-        # YouTube video IDs are exactly 11 characters
         assert extract_video_id("a_b-c_d-e_f") == "a_b-c_d-e_f"
 
 
@@ -73,8 +69,8 @@ class TestBuildYoutubeChannelUrl:
 
 
 class TestMainArgumentParsing:
-    @patch("cli.YouTubeTranscriptApi")
-    @patch("cli.get_formatter")
+    @patch("cli.single_video.YouTubeTranscriptApi")
+    @patch("cli.single_video.get_formatter")
     def test_basic_video_arg(self, mock_formatter, mock_api):
         mock_api.get_transcript.return_value = [
             {"text": "Hello", "start": 0.0, "duration": 1.0}
@@ -93,8 +89,8 @@ class TestMainArgumentParsing:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("cli.YouTubeTranscriptApi")
-    @patch("cli.get_formatter")
+    @patch("cli.single_video.YouTubeTranscriptApi")
+    @patch("cli.single_video.get_formatter")
     def test_format_json(self, mock_formatter, mock_api):
         mock_api.get_transcript.return_value = [
             {"text": "Hello", "start": 0.0, "duration": 1.0}
@@ -108,8 +104,8 @@ class TestMainArgumentParsing:
 
         mock_formatter.assert_called_with("json")
 
-    @patch("cli.YouTubeTranscriptApi")
-    @patch("cli.get_formatter")
+    @patch("cli.single_video.YouTubeTranscriptApi")
+    @patch("cli.single_video.get_formatter")
     def test_output_to_file(self, mock_formatter, mock_api, tmp_path):
         mock_api.get_transcript.return_value = [
             {"text": "Hello", "start": 0.0, "duration": 1.0}
@@ -135,7 +131,7 @@ class TestMainArgumentParsing:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("cli.YouTubeTranscriptApi")
+    @patch("cli.single_video.YouTubeTranscriptApi")
     def test_list_transcripts_flag(self, mock_api):
         mock_tl = MagicMock()
         mock_transcript = MagicMock()
@@ -159,8 +155,8 @@ class TestMainArgumentParsing:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("cli.YouTubeTranscriptApi")
-    @patch("cli.get_formatter")
+    @patch("cli.single_video.YouTubeTranscriptApi")
+    @patch("cli.single_video.get_formatter")
     def test_languages_flag(self, mock_formatter, mock_api):
         mock_api.get_transcript.return_value = [
             {"text": "Hola", "start": 0.0, "duration": 1.0}
