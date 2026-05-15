@@ -5,37 +5,24 @@ import sys
 import requests
 
 from exceptions import TranscriptRetrievalError
-from utils.console import error, info, warning
 from utils.config import apply_config_defaults, load_config
+from utils.console import error
 
 from .channel_downloader import download_channel_transcripts
-from .helpers import (
-    EXIT_API_ERROR,
-    EXIT_NETWORK_ERROR,
-    EXIT_USER_ERROR,
-)
+from .helpers import EXIT_API_ERROR, EXIT_NETWORK_ERROR, EXIT_USER_ERROR
 from .output import format_and_output
-from .parser import create_argument_parser, validate_args
+from .parser import create_argument_parser
 from .single_video import process_single_video
+from .url_parser import is_channel_target
 
 
 def main() -> None:
-    parser = create_argument_parser()
-    args = parser.parse_args()
-
-    config = load_config()
-    apply_config_defaults(args, config)
+    args = create_argument_parser().parse_args()
+    apply_config_defaults(args, load_config())
 
     try:
-        validate_args(args)
-
-        if args.username:
-            if not args.quiet:
-                info(
-                    f"Bulk downloading transcripts for {args.username} "
-                    f"(latest {args.count} videos)"
-                )
-            download_channel_transcripts(args.username, args.count, args)
+        if is_channel_target(args.target):
+            download_channel_transcripts(args.target, args)
             return
 
         result = process_single_video(args)
@@ -46,8 +33,6 @@ def main() -> None:
         sys.exit(EXIT_USER_ERROR)
     except TranscriptRetrievalError as e:
         error(str(e))
-        if hasattr(e, "suggestion") and getattr(args, "verbose", False):
-            warning(f"Suggestion: {e.suggestion}")
         sys.exit(EXIT_API_ERROR)
     except requests.exceptions.RequestException as e:
         error(f"Network error: {e}")

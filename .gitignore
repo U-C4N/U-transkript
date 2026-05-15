@@ -7,6 +7,14 @@ build/
 dist/
 *.egg-info/
 
+# Coverage / test artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+.cache/
+
 # Others
 *.pyo
 *.pyd
@@ -47,4 +55,3 @@ ENV/
 # Claude Code local settings
 .claude/settings.local.json
 AGENTS.md
-.claude/settings.local.json

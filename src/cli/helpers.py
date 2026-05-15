@@ -25,13 +25,8 @@ def build_proxies(proxy_url: str | None) -> dict[str, str] | None:
 
 
 def get_progress_bar(
-    iterable: Iterable,
-    total: int | None = None,
-    desc: str = "",
-    disable: bool = False,
+    iterable: Iterable, total: int | None = None, desc: str = ""
 ) -> Iterable:
-    if disable:
-        return iterable
     try:
         from tqdm import tqdm
 

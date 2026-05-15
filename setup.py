@@ -1,24 +1,25 @@
-from setuptools import setup, find_packages
 import os
 import re
 
-# README dosyasını oku
+from setuptools import find_packages, setup
+
+
 def read_readme():
     with open("README.md", "r", encoding="utf-8") as fh:
         return fh.read()
 
-# Requirements dosyasını oku
+
 def read_requirements():
     with open("requirements.txt", "r", encoding="utf-8") as fh:
         return [line.strip() for line in fh if line.strip() and not line.startswith("#")]
 
-# Version'u src/__init__.py'den oku
+
 def read_version():
     with open(os.path.join("src", "__init__.py"), "r", encoding="utf-8") as fh:
         match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', fh.read(), re.MULTILINE)
-        if match:
-            return match.group(1)
-        raise RuntimeError("Unable to find version string in src/__init__.py")
+        if not match:
+            raise RuntimeError("Unable to find version string in src/__init__.py")
+        return match.group(1)
 
 setup(
     name="u-transkript",
@@ -59,15 +60,7 @@ setup(
         "dev": [
             "pytest>=6.0",
             "pytest-cov>=2.0",
-            "responses>=0.20.0",
-            "freezegun>=1.2.0",
-            "black>=21.0",
-            "flake8>=3.8",
-            "mypy>=0.800",
-        ],
-        "docs": [
-            "sphinx>=4.0",
-            "sphinx-rtd-theme>=1.0",
+            "ruff>=0.8.0",
         ],
         "api": [
             "flask>=3.0",

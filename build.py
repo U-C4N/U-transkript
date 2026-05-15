@@ -1,155 +1,117 @@
+"""Build and (optionally) publish u-transkript distributions.
+
+Usage:
+    python build.py              # clean, build sdist+wheel, run twine check
+    python build.py --test       # build + upload to TestPyPI
+    python build.py --upload     # build + upload to PyPI
+"""
+
+from __future__ import annotations
+
+import argparse
 import glob
-import os
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
+from pathlib import Path
 
-def run_command(command, description):
-    """Komut çalıştır ve sonucu göster."""
-    print(f"🔄 {description}...")
+REQUIRED_TOOLS = ("build", "twine")
+BUILD_ARTIFACTS = ("build", "dist", "u_transkript.egg-info")
+
+
+def _run(command: list[str], description: str) -> bool:
+    print(f">> {description}")
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"!! {description} failed")
+        if result.stderr:
+            print(result.stderr.strip())
+        return False
+    print(f"   {description} OK")
+    return True
+
+
+def check_requirements() -> bool:
+    missing = [tool for tool in REQUIRED_TOOLS if not _module_available(tool)]
+    if missing:
+        print("Missing build dependencies: " + ", ".join(missing))
+        print("Install with: pip install " + " ".join(missing))
+        return False
+    return True
+
+
+def _module_available(module_name: str) -> bool:
     try:
-        result = subprocess.run(command, shell=False, check=True, capture_output=True, text=True)
-        print(f"✅ {description} başarılı!")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"❌ {description} başarısız!")
-        print(f"Hata: {e.stderr}")
+        __import__(module_name)
+    except ImportError:
         return False
-
-def clean_build():
-    """Önceki build dosyalarını temizle."""
-    print("🧹 Önceki build dosyaları temizleniyor...")
-    
-    dirs_to_remove = ['build', 'dist', 'u_transkript.egg-info']
-    for dir_name in dirs_to_remove:
-        if os.path.exists(dir_name):
-            shutil.rmtree(dir_name)
-            print(f"   Silindi: {dir_name}")
-    
-    print("✅ Temizlik tamamlandı!")
-
-def check_requirements():
-    """Gerekli paketlerin yüklü olup olmadığını kontrol et."""
-    print("📋 Gereksinimler kontrol ediliyor...")
-    
-    required_packages = ['setuptools', 'wheel', 'twine']
-    missing_packages = []
-    
-    for package in required_packages:
-        try:
-            __import__(package)
-            print(f"   ✅ {package}")
-        except ImportError:
-            missing_packages.append(package)
-            print(f"   ❌ {package}")
-    
-    if missing_packages:
-        print(f"\n⚠️  Eksik paketler: {', '.join(missing_packages)}")
-        print("Yüklemek için: pip install " + " ".join(missing_packages))
-        return False
-    
-    print("✅ Tüm gereksinimler mevcut!")
     return True
 
-def build_package():
-    """Paketi oluştur."""
-    print("📦 Paket oluşturuluyor...")
-    
-    # Source distribution oluştur
-    if not run_command([sys.executable, "setup.py", "sdist"], "Source distribution oluşturma"):
-        return False
 
-    # Wheel distribution oluştur
-    if not run_command([sys.executable, "setup.py", "bdist_wheel"], "Wheel distribution oluşturma"):
-        return False
-    
-    print("✅ Paket başarıyla oluşturuldu!")
-    return True
+def clean_build() -> None:
+    for path in BUILD_ARTIFACTS:
+        target = Path(path)
+        if target.exists():
+            shutil.rmtree(target)
+            print(f"   removed {target}")
 
-def check_package():
-    """Oluşturulan paketi kontrol et."""
-    print("🔍 Paket kontrol ediliyor...")
 
-    dist_files = glob.glob("dist/*")
+def build_package() -> bool:
+    return _run([sys.executable, "-m", "build"], "Building sdist + wheel")
+
+
+def check_package() -> bool:
+    dist_files = sorted(glob.glob("dist/*"))
     if not dist_files:
-        print("❌ dist/ dizininde dosya bulunamadı!")
+        print("!! no files found in dist/")
         return False
+    return _run([sys.executable, "-m", "twine", "check", *dist_files], "Validating dist/")
 
-    if not run_command(["twine", "check"] + dist_files, "Paket doğrulama"):
-        return False
 
-    print("✅ Paket doğrulaması başarılı!")
-    return True
-
-def upload_to_test_pypi():
-    """Test PyPI'ye yükle."""
-    print("🧪 Test PyPI'ye yükleniyor...")
-
-    dist_files = glob.glob("dist/*")
+def _upload(repository: str | None) -> bool:
+    dist_files = sorted(glob.glob("dist/*"))
     if not dist_files:
-        print("❌ dist/ dizininde dosya bulunamadı!")
+        print("!! no files found in dist/")
         return False
+    command = [sys.executable, "-m", "twine", "upload"]
+    if repository:
+        command += ["--repository", repository]
+    command += dist_files
+    return _run(command, f"Uploading to {repository or 'PyPI'}")
 
-    command = ["twine", "upload", "--repository", "testpypi"] + dist_files
-    print(f"Komut: twine upload --repository testpypi dist/*")
-    print("⚠️  Test PyPI kullanıcı adı ve şifrenizi girmeniz gerekecek.")
 
-    return run_command(command, "Test PyPI yükleme")
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument(
+        "--test", action="store_true", help="Publish to TestPyPI after building."
+    )
+    target.add_argument(
+        "--upload", action="store_true", help="Publish to PyPI after building."
+    )
+    args = parser.parse_args(argv)
 
-def upload_to_pypi():
-    """PyPI'ye yükle."""
-    print("🚀 PyPI'ye yükleniyor...")
-
-    dist_files = glob.glob("dist/*")
-    if not dist_files:
-        print("❌ dist/ dizininde dosya bulunamadı!")
-        return False
-
-    command = ["twine", "upload"] + dist_files
-    print(f"Komut: twine upload dist/*")
-    print("⚠️  PyPI kullanıcı adı ve şifrenizi girmeniz gerekecek.")
-
-    return run_command(command, "PyPI yükleme")
-
-def main():
-    """Ana fonksiyon."""
-    print("🎬 U-Transkript Paket Oluşturucu")
-    print("=" * 40)
-    
-    # Gereksinimler kontrolü
     if not check_requirements():
-        sys.exit(1)
-    
-    # Önceki build'leri temizle
+        return 1
+
     clean_build()
-    
-    # Paketi oluştur
+
     if not build_package():
-        sys.exit(1)
-    
-    # Paketi kontrol et
+        return 1
+
     if not check_package():
-        sys.exit(1)
-    
-    print("\n🎉 Paket başarıyla oluşturuldu!")
-    print("\n📁 Oluşturulan dosyalar:")
-    
-    if os.path.exists("dist"):
-        for file in os.listdir("dist"):
-            print(f"   📦 dist/{file}")
-    
-    print("\n🚀 Yükleme seçenekleri:")
-    print("1. Test PyPI'ye yükle: python build.py --test")
-    print("2. PyPI'ye yükle: python build.py --upload")
-    print("3. Lokal test: pip install dist/u-transkript-1.0.0.tar.gz")
+        return 1
+
+    if args.test:
+        return 0 if _upload("testpypi") else 1
+    if args.upload:
+        return 0 if _upload(None) else 1
+
+    print("\nBuild complete. Files:")
+    for artifact in sorted(Path("dist").iterdir()):
+        print(f"  - {artifact}")
+    return 0
+
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "--test":
-            upload_to_test_pypi()
-        elif sys.argv[1] == "--upload":
-            upload_to_pypi()
-        else:
-            print("Kullanım: python build.py [--test|--upload]")
-    else:
-        main() 
+    sys.exit(main())

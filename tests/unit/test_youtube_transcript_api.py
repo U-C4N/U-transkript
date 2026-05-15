@@ -1,12 +1,10 @@
 import pytest
 from unittest.mock import patch, MagicMock
-import json
 
 from youtube_transcript import YouTubeTranscriptApi
 from transcript_list import TranscriptList
 from exceptions import (
     VideoUnavailable,
-    TranscriptNotFound,
     TooManyRequests,
     TranscriptRetrievalError,
     NoTranscriptFound,

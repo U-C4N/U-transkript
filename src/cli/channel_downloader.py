@@ -3,127 +3,80 @@ from __future__ import annotations
 import argparse
 import os
 
-from youtube_transcript import YouTubeTranscriptApi
-from formatters import get_formatter
 from exceptions import TranscriptRetrievalError
+from formatters import get_formatter
 from utils.console import error, info, success, warning
+from youtube_transcript import YouTubeTranscriptApi
 
 from .channel_scraper import get_channel_video_ids
-from .helpers import build_formatter_kwargs, build_proxies, get_progress_bar
+from .helpers import build_formatter_kwargs, get_progress_bar
 from .output import file_extension_for
 
+_DEFAULT_VIDEO_COUNT = 10
 
-def _ensure_output_dir(username: str, verbose: bool) -> str:
-    clean_username = (
-        username.replace("@", "").replace("/", "_").replace("\\", "_")
-    )
-    output_dir = clean_username
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        if verbose:
-            info(f"Created directory: {output_dir}")
-    return output_dir
+
+def _ensure_output_dir(target: str, output: str | None) -> str:
+    if output:
+        os.makedirs(output, exist_ok=True)
+        return output
+
+    clean = target.replace("@", "").replace("/", "_").replace("\\", "_").strip()
+    if not clean:
+        clean = "channel"
+    os.makedirs(clean, exist_ok=True)
+    return clean
 
 
 def _download_one(
-    video_id: str,
-    index: int,
-    args: argparse.Namespace,
-    output_dir: str,
-    proxies: dict[str, str] | None,
+    video_id: str, index: int, args: argparse.Namespace, output_dir: str
 ) -> tuple[bool, str | None]:
-    verbose = getattr(args, "verbose", False)
-    quiet = getattr(args, "quiet", False)
-
     try:
         transcript = YouTubeTranscriptApi.get_transcript(
-            video_id,
-            languages=args.languages,
-            proxies=proxies,
-            cookies=args.cookies,
-            preserve_formatting=args.preserve_formatting,
+            video_id, languages=args.languages
         )
-
         formatter = get_formatter(args.format)
-        kwargs = build_formatter_kwargs(args.format)
-        formatted = formatter.format_transcript(transcript, **kwargs)
+        body = formatter.format_transcript(transcript, **build_formatter_kwargs(args.format))
 
-        filename = f"{index}.{file_extension_for(args.format)}"
-        filepath = os.path.join(output_dir, filename)
+        filepath = os.path.join(
+            output_dir, f"{index}.{file_extension_for(args.format)}"
+        )
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write(formatted)
-
-        if verbose:
-            success(f"  Saved {filepath}")
+            f.write(body)
         return True, None
-
     except TranscriptRetrievalError as e:
-        if not quiet:
-            warning(f"  No transcript for {video_id}: {e}")
-            if hasattr(e, "suggestion"):
-                warning(f"  Suggestion: {e.suggestion}")
+        warning(f"  No transcript for {video_id}: {e}")
         return False, str(e)
     except Exception as e:
-        if not quiet:
-            error(f"  Unexpected error for {video_id}: {e}")
+        error(f"  Unexpected error for {video_id}: {e}")
         return False, str(e)
 
 
-def _print_summary(
-    successful: int,
-    failed: list[tuple[str, str]],
-    output_dir: str,
-    args: argparse.Namespace,
-) -> None:
-    if getattr(args, "quiet", False):
-        return
-    print()
-    success(f"Download completed! {successful} succeeded.")
-    if failed:
-        warning(f"{len(failed)} failed.")
-        if getattr(args, "verbose", False):
-            for video_id, err in failed:
-                warning(f"  {video_id}: {err}")
-    info(f"Transcripts saved in directory: {output_dir}")
-
-
-def download_channel_transcripts(
-    username: str, max_count: int, args: argparse.Namespace
-) -> None:
-    quiet = getattr(args, "quiet", False)
-    verbose = getattr(args, "verbose", False)
-
-    if not quiet:
-        info(f"Getting video list for {username}...")
+def download_channel_transcripts(target: str, args: argparse.Namespace) -> None:
+    info(f"Getting video list for {target}...")
 
     try:
-        video_ids = get_channel_video_ids(username, max_count)
+        video_ids = get_channel_video_ids(target, _DEFAULT_VIDEO_COUNT)
     except Exception as e:
         raise RuntimeError(f"Failed to get video list: {e}")
 
-    if not quiet:
-        info(f"Found {len(video_ids)} videos")
+    info(f"Found {len(video_ids)} videos")
 
-    output_dir = _ensure_output_dir(username, verbose)
-    proxies = build_proxies(args.proxy)
-
+    output_dir = _ensure_output_dir(target, args.output)
     successful = 0
     failed: list[tuple[str, str]] = []
 
-    video_iter = get_progress_bar(
-        enumerate(video_ids, 1),
-        total=len(video_ids),
-        desc="Downloading",
-        disable=quiet,
+    iterator = get_progress_bar(
+        enumerate(video_ids, 1), total=len(video_ids), desc="Downloading"
     )
-
-    for index, video_id in video_iter:
-        if verbose:
-            info(f"Processing video {index}/{len(video_ids)}: {video_id}")
-        ok, err = _download_one(video_id, index, args, output_dir, proxies)
+    for index, video_id in iterator:
+        ok, err = _download_one(video_id, index, args, output_dir)
         if ok:
             successful += 1
         else:
             failed.append((video_id, err or ""))
 
-    _print_summary(successful, failed, output_dir, args)
+    print()
+    success(f"Download completed! {successful} succeeded.")
+    if failed:
+        warning(f"{len(failed)} failed.")
+    info(f"Transcripts saved in directory: {output_dir}")

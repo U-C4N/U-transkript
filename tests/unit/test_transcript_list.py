@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import MagicMock, patch
 
 from transcript_list import TranscriptList
 from fetched_transcript import FetchedTranscript

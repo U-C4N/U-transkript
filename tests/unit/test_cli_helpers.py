@@ -2,6 +2,11 @@ import argparse
 
 import pytest
 
+from cli.channel_scraper import (
+    _channel_url_variants,
+    _dedup_preserving_order,
+    _extract_ids_from_html,
+)
 from cli.helpers import (
     EXIT_API_ERROR,
     EXIT_NETWORK_ERROR,
@@ -12,11 +17,6 @@ from cli.helpers import (
     get_progress_bar,
 )
 from cli.output import file_extension_for, format_and_output
-from cli.channel_scraper import (
-    _channel_url_variants,
-    _dedup_preserving_order,
-    _extract_ids_from_html,
-)
 
 
 class TestExitCodes:
@@ -60,14 +60,9 @@ class TestBuildProxies:
 
 
 class TestProgressBar:
-    def test_disable_returns_iterable_verbatim(self):
+    def test_returns_iterable(self):
         items = [1, 2, 3]
-        assert list(get_progress_bar(items, total=3, disable=True)) == items
-
-    def test_enabled_returns_wrapped_iterable(self):
-        items = [1, 2]
-        result = list(get_progress_bar(items, total=2, disable=False))
-        assert result == items
+        assert list(get_progress_bar(items, total=3)) == items
 
 
 class TestFileExtensionFor:
@@ -88,21 +83,15 @@ class TestFileExtensionFor:
 
 class TestFormatAndOutput:
     def test_writes_to_file(self, tmp_path):
-        args = argparse.Namespace(output=str(tmp_path / "out.txt"), quiet=True)
+        args = argparse.Namespace(output=str(tmp_path / "out.txt"))
         format_and_output("hello", args)
         assert (tmp_path / "out.txt").read_text(encoding="utf-8") == "hello"
 
     def test_prints_to_stdout(self, capsys):
-        args = argparse.Namespace(output=None, quiet=False)
+        args = argparse.Namespace(output=None)
         format_and_output("hi", args)
         captured = capsys.readouterr()
         assert "hi" in captured.out
-
-    def test_writes_to_file_not_quiet(self, tmp_path, capsys):
-        args = argparse.Namespace(output=str(tmp_path / "out.txt"), quiet=False)
-        format_and_output("hello", args)
-        captured = capsys.readouterr()
-        assert "saved" in captured.out.lower() or "hello" not in captured.out
 
 
 class TestChannelUrlVariants:

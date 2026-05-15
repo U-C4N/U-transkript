@@ -2,7 +2,6 @@ import json
 import pytest
 
 from formatters import (
-    Formatter,
     JSONFormatter,
     TextFormatter,
     SRTFormatter,

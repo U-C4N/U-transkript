@@ -1,9 +1,14 @@
-import pytest
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from cli.url_parser import extract_video_id, build_youtube_channel_url
+import pytest
+
 from cli.main import main
+from cli.url_parser import (
+    build_youtube_channel_url,
+    extract_video_id,
+    is_channel_target,
+)
 
 
 class TestExtractVideoId:
@@ -17,9 +22,7 @@ class TestExtractVideoId:
         )
 
     def test_short_url(self):
-        assert (
-            extract_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
-        )
+        assert extract_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
 
     def test_embed_url(self):
         assert (
@@ -29,9 +32,7 @@ class TestExtractVideoId:
 
     def test_url_with_extra_params(self):
         assert (
-            extract_video_id(
-                "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120"
-            )
+            extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=120")
             == "dQw4w9WgXcQ"
         )
 
@@ -51,7 +52,6 @@ class TestBuildYoutubeChannelUrl:
     def test_with_at_sign(self):
         url = build_youtube_channel_url("@MrBeast")
         assert "MrBeast" in url
-        assert "@" in url or "MrBeast" in url
 
     def test_without_at_sign(self):
         url = build_youtube_channel_url("MrBeast")
@@ -66,6 +66,34 @@ class TestBuildYoutubeChannelUrl:
         url = build_youtube_channel_url(channel_id)
         assert channel_id in url
         assert "channel" in url
+
+
+class TestIsChannelTarget:
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "@MrBeast",
+            "UCX6OQ3DkcsbYNE6H8uQQuVA",
+            "https://www.youtube.com/@MrBeast",
+            "https://www.youtube.com/c/MrBeast",
+            "https://www.youtube.com/channel/UCX6OQ3DkcsbYNE6H8uQQuVA",
+            "https://www.youtube.com/user/PewDiePie",
+        ],
+    )
+    def test_channel_targets(self, target):
+        assert is_channel_target(target)
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtu.be/dQw4w9WgXcQ",
+            "",
+        ],
+    )
+    def test_non_channel_targets(self, target):
+        assert not is_channel_target(target)
 
 
 class TestMainArgumentParsing:
@@ -99,7 +127,7 @@ class TestMainArgumentParsing:
         mock_fmt.format_transcript.return_value = '{"text": "Hello"}'
         mock_formatter.return_value = mock_fmt
 
-        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "--format", "json"]):
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "-f", "json"]):
             main()
 
         mock_formatter.assert_called_with("json")
@@ -115,40 +143,12 @@ class TestMainArgumentParsing:
         mock_formatter.return_value = mock_fmt
 
         output_file = str(tmp_path / "output.txt")
-        with patch(
-            "sys.argv", ["cli.py", "dQw4w9WgXcQ", "--output", output_file]
-        ):
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "-o", output_file]):
             main()
 
         assert os.path.exists(output_file)
         with open(output_file, "r") as f:
             assert f.read() == "Hello"
-
-    def test_both_video_and_username_exits(self):
-        with patch(
-            "sys.argv", ["cli.py", "dQw4w9WgXcQ", "--username", "@MrBeast"]
-        ):
-            with pytest.raises(SystemExit):
-                main()
-
-    @patch("cli.single_video.YouTubeTranscriptApi")
-    def test_list_transcripts_flag(self, mock_api):
-        mock_tl = MagicMock()
-        mock_transcript = MagicMock()
-        mock_transcript.language_code = "en"
-        mock_transcript.language = "English"
-        mock_transcript.is_generated = True
-        mock_transcript.is_translatable = True
-        mock_transcript.translation_languages = []
-        mock_tl.__iter__ = MagicMock(return_value=iter([mock_transcript]))
-        mock_api.list_transcripts.return_value = mock_tl
-
-        with patch(
-            "sys.argv", ["cli.py", "dQw4w9WgXcQ", "--list-transcripts"]
-        ):
-            main()
-
-        mock_api.list_transcripts.assert_called_once()
 
     def test_invalid_video_id_exits(self):
         with patch("sys.argv", ["cli.py", "not_valid!!!"]):
@@ -165,11 +165,29 @@ class TestMainArgumentParsing:
         mock_fmt.format_transcript.return_value = "Hola"
         mock_formatter.return_value = mock_fmt
 
-        with patch(
-            "sys.argv",
-            ["cli.py", "dQw4w9WgXcQ", "--languages", "es", "en"],
-        ):
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "-l", "es", "en"]):
             main()
 
-        call_kwargs = mock_api.get_transcript.call_args
-        assert call_kwargs[1]["languages"] == ["es", "en"] or call_kwargs.kwargs.get("languages") == ["es", "en"]
+        kwargs = mock_api.get_transcript.call_args.kwargs
+        assert kwargs["languages"] == ["es", "en"]
+
+    @patch("cli.channel_downloader.get_channel_video_ids")
+    @patch("cli.channel_downloader.YouTubeTranscriptApi")
+    @patch("cli.channel_downloader.get_formatter")
+    def test_channel_target_routes_to_bulk(
+        self, mock_formatter, mock_api, mock_get_ids, tmp_path
+    ):
+        mock_get_ids.return_value = ["vid1", "vid2"]
+        mock_api.get_transcript.return_value = [
+            {"text": "Hi", "start": 0.0, "duration": 1.0}
+        ]
+        mock_fmt = MagicMock()
+        mock_fmt.format_transcript.return_value = "Hi"
+        mock_formatter.return_value = mock_fmt
+
+        out_dir = str(tmp_path / "channel-out")
+        with patch("sys.argv", ["cli.py", "@MrBeast", "-o", out_dir]):
+            main()
+
+        mock_get_ids.assert_called_once()
+        assert os.path.isdir(out_dir)
