@@ -1,9 +1,13 @@
 """Build and (optionally) publish u-transkript distributions.
 
+This script must NOT be named build.py: a root build.py shadows the PyPA
+`build` package for `python -m build` (and `import build`) run from the
+repo root, making the subprocess below recurse into this script forever.
+
 Usage:
-    python build.py              # clean, build sdist+wheel, run twine check
-    python build.py --test       # build + upload to TestPyPI
-    python build.py --upload     # build + upload to PyPI
+    python release.py              # clean, build sdist+wheel, run twine check
+    python release.py --test       # build + upload to TestPyPI
+    python release.py --upload     # build + upload to PyPI
 """
 
 from __future__ import annotations

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 
 from exceptions import TranscriptRetrievalError
 from formatters import get_formatter
@@ -14,13 +15,15 @@ from .output import file_extension_for
 
 _DEFAULT_VIDEO_COUNT = 10
 
+_INVALID_DIR_CHARS = re.compile(r'[<>:"/\\|?*]')
+
 
 def _ensure_output_dir(target: str, output: str | None) -> str:
     if output:
         os.makedirs(output, exist_ok=True)
         return output
 
-    clean = target.replace("@", "").replace("/", "_").replace("\\", "_").strip()
+    clean = _INVALID_DIR_CHARS.sub("_", target.replace("@", "")).strip(" .")
     if not clean:
         clean = "channel"
     os.makedirs(clean, exist_ok=True)
@@ -76,7 +79,11 @@ def download_channel_transcripts(target: str, args: argparse.Namespace) -> None:
             failed.append((video_id, err or ""))
 
     print()
-    success(f"Download completed! {successful} succeeded.")
     if failed:
         warning(f"{len(failed)} failed.")
+    if failed and successful == 0:
+        raise TranscriptRetrievalError(
+            None, f"All {len(failed)} transcript downloads failed for {target}"
+        )
+    success(f"Download completed! {successful} succeeded.")
     info(f"Transcripts saved in directory: {output_dir}")

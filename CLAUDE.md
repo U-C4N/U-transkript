@@ -2,42 +2,51 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+U-Transkript (PyPI: `u-transkript`, version 3.2.1 in `src/__init__.py`) is a Python 3.10+ library + CLI that extracts YouTube transcripts and optionally translates them with Google Gemini. Sole runtime dependency: `requests`. The README is the root `README.md` (also the PyPI long_description).
+
 ## Common commands
 
 ```bash
-# Install for development (Python 3.10+)
-pip install -e ".[dev]"          # adds pytest, pytest-cov, responses, freezegun, black, flake8, mypy
-pip install -e ".[api]"          # adds flask (for api.py)
-pre-commit install               # hooks: ruff, ruff-format, trailing-whitespace, yaml/large-file checks
+pip install -e ".[dev]"        # dev extras are exactly: pytest, pytest-cov, ruff
+pip install -e ".[api]"        # adds flask>=3.0 (for api.py)
+pre-commit install             # hooks: ruff --fix, ruff-format, trailing-whitespace,
+                               #        end-of-file-fixer, check-yaml, check-added-large-files
 
 # Run the CLI from the source tree (no install needed)
 python run.py dQw4w9WgXcQ --format json
-python -m cli dQw4w9WgXcQ        # equivalent — uses src/cli/__main__.py
+# NOTE: `python -m cli` only works with cwd=src/ or PYTHONPATH=src — from the repo
+# root it fails with "No module named cli". Prefer run.py.
 
-# Run the HTTP API wrapper
-python api.py                    # binds 0.0.0.0:$PORT (default 8080)
+# HTTP API wrapper (Flask)
+python api.py                  # env vars: PORT (default 8080), HOST (0.0.0.0), DEBUG
 
-# Tests
-pytest                           # all
-pytest --cov=src --cov-report=term-missing
-pytest --cov=src --cov-fail-under=70    # what CI enforces
-pytest tests/unit/test_formatters.py    # single file
-pytest -k "test_json"                   # by pattern
+# Tests — there is NO pytest/coverage/ruff config file anywhere (pyproject.toml is
+# build-system only; there is no setup.cfg); everything runs on defaults.
+pytest
+pytest tests/unit/test_formatters.py     # single file
+pytest -k "test_json"                    # by pattern
+pytest --cov=src --cov-report=term-missing   # coverage is manual; no enforced floor
 
-# Lint / format (ruff is the source of truth — flake8/black/mypy are listed in extras but pre-commit only runs ruff)
-ruff check .
+# Lint / format — ruff is the only lint/format tool in this repo
+ruff check src/ tests/
 ruff check --fix src/ tests/
 ruff format src/ tests/
 
-# Build distributions (sdist + wheel via setup.py, then twine check)
-python build.py
-python build.py --test           # upload to TestPyPI
-python build.py --upload         # upload to PyPI
+# Build distributions (PEP 517 `python -m build` + `twine check`)
+python release.py
+python release.py --test       # upload to TestPyPI
+python release.py --upload     # upload to PyPI
+# (named release.py, NOT build.py — a root build.py shadows the PyPA `build`
+#  package and makes `python -m build` recurse into itself)
 ```
+
+**Packaging gotcha:** any new top-level module under `src/` must be added to `py_modules` in `setup.py` — `find_packages(where="src")` only discovers the `cli` and `utils` packages, so wheels silently omit unlisted top-level modules.
+
+There are no GitHub Actions workflows in the working tree. Nothing enforces lint or coverage except pre-commit hooks; CONTRIBUTING.md's "90%+ coverage" is aspirational.
 
 ## Import layout — critical to understand before editing
 
-`setup.py` declares `package_dir={"": "src"}` and `packages=find_packages(where="src")`. This means modules under `src/` are imported by their **top-level** name, *not* as `src.<module>`:
+`setup.py` declares `package_dir={"": "src"}`, so modules under `src/` are imported by their **top-level** name, never as `src.<module>`:
 
 ```python
 from youtube_transcript import YouTubeTranscriptApi   # src/youtube_transcript.py
@@ -45,80 +54,87 @@ from cli.main import main                              # src/cli/main.py
 from utils.retry import retry                          # src/utils/retry.py
 ```
 
-For this to work when running from a checkout (without installing), three entry points each prepend `src/` to `sys.path` before any imports:
+For this to work from a checkout, `run.py`, `api.py`, and `tests/conftest.py` each do `sys.path.insert(0, <src>)` before any project import (`src/cli/__init__.py` appends instead). If you add a new entry-point script, replicate that pattern. **Do not** rewrite imports as `from src.foo import ...` — the installed package has no `src` prefix. A repo-wide grep for `from src.` should always return zero hits.
 
-- `run.py` (dev CLI launcher)
-- `api.py` (Flask wrapper)
-- `src/cli/__init__.py` (so `python -m cli` works)
-- `tests/conftest.py` (so pytest can import flat module names)
+The console-scripts entry point is `u-transkript=cli:main` (`src/cli/__init__.py` re-exports `main`). There is intentionally **no top-level `cli.py`** — v3.0.0 removed it because it collided with the `src/cli/` package.
 
-**Do not** rewrite these imports as `from src.foo import ...` — that breaks the installed package, which has no `src` prefix. If you add a new entry-point script, replicate the `sys.path.insert(0, _SRC_DIR)` pattern.
-
-The console-scripts entry point in `setup.py` is `u-transkript=cli:main`, which resolves to `src/cli/__init__.py`'s re-exported `main`.
-
-There is intentionally **no top-level `cli.py`** at the repo root — v3.0.0 removed it because it collided with the `src/cli/` package name during dev runs.
+Packaging: the six top-level modules ship via `py_modules` in `setup.py` alongside the `cli` and `utils` packages. `src/__init__.py` is a **dev-checkout-only aggregator** — it is not shipped in wheels (a top-level `__init__` module can't be), which is why `cli/parser.py` resolves `__version__` with a try/except falling back to `importlib.metadata.version("u-transkript")`.
 
 ## CLI architecture (src/cli/)
 
-The CLI was split out of a 532-line monolith in v3.0.0. The orchestration flow is:
-
 ```
-main.py            (entry point; exception → exit-code mapping)
-  ├─ parser.py            argparse setup + validate_args
-  ├─ helpers.py           shared: build_formatter_kwargs, build_proxies,
-  │                       get_progress_bar (optional tqdm), EXIT_* codes
-  ├─ url_parser.py        extract_video_id, build_youtube_channel_url
-  ├─ single_video.py      single-video path (calls YouTubeTranscriptApi + filters)
-  ├─ channel_scraper.py   HTML scraping for channel video IDs (multiple URL variants + regexes)
-  ├─ channel_downloader.py bulk download orchestrator (uses scraper + downloader helpers)
-  └─ output.py            format_and_output, file_extension_for
+main.py             entry point; loads config defaults, routes single-video vs channel,
+                    maps exceptions to exit codes
+  ├─ parser.py             create_argument_parser() — args: target, -l/--languages,
+  │                        -f/--format {pretty,json,text,srt,vtt}, -o/--output, --version
+  ├─ helpers.py            EXIT_* codes, build_formatter_kwargs, build_proxies,
+  │                        get_progress_bar (optional tqdm)
+  ├─ url_parser.py         extract_video_id, is_channel_target, build_youtube_channel_url
+  ├─ single_video.py       single-video path
+  ├─ channel_scraper.py    HTML scraping for channel video IDs (URL variants + regexes)
+  ├─ channel_downloader.py bulk download (default/hard cap 10 videos; no CLI flag for count)
+  └─ output.py             format_and_output, file_extension_for
 ```
 
-Exit codes are `EXIT_SUCCESS=0`, `EXIT_USER_ERROR=1`, `EXIT_NETWORK_ERROR=2`, `EXIT_API_ERROR=3` (defined in `cli/helpers.py`). `main.py` maps exception classes to these codes — keep that mapping authoritative.
+Channel mode raises `TranscriptRetrievalError` (exit 3) when every download fails; partial failures still exit 0 with a warning.
 
-When monkey-patching in tests, target the **submodule** that uses the symbol (e.g. `cli.single_video.YouTubeTranscriptApi`), not `cli.YouTubeTranscriptApi` — the latter no longer exists.
+Exit codes (`cli/helpers.py`): `EXIT_SUCCESS=0`, `EXIT_USER_ERROR=1`, `EXIT_NETWORK_ERROR=2`, `EXIT_API_ERROR=3`. `main.py` maps `TranscriptRetrievalError→3`, `requests.RequestException→2`, `ValueError`/`KeyboardInterrupt`/other→1. Keep that mapping authoritative.
 
-## YouTube transcript fetching — two non-obvious requirements
+`build_proxies` lives in `cli/helpers.py` but is consumed only by `api.py` — the CLI has no `--proxy` flag. The CLI does **not** print exception `.suggestion`s; only the HTTP API surfaces them.
 
-`src/youtube_transcript.py` carries two YouTube quirks that **must** be preserved when editing:
+## YouTube transcript fetching — non-obvious requirements
 
-1. **ANDROID InnerTube client, not WEB.** `_fetch_innertube_data` posts `clientName: "ANDROID", clientVersion: "20.10.38"`. The WEB client requires a PoToken and returns transcript URLs with `&exp=xpe` that resolve to empty content. Do not switch back to WEB.
-2. **srv3 XML format.** YouTube switched from `<text start="s" dur="s">` to `<p t="ms" d="ms">`. The fetcher in `fetched_transcript.py` handles both — keep both branches.
+`src/youtube_transcript.py` carries YouTube quirks that **must** be preserved:
 
-Extraction has a two-tier fallback inside `YouTubeTranscriptApi._extract_transcript_data`: try the InnerTube API first, then fall back to scraping `ytInitialPlayerResponse` from the watch page with pre-compiled regex patterns (`_CAPTION_PATTERNS`). All regex patterns are module-level constants — keep new patterns there too.
+1. **ANDROID InnerTube client, not WEB.** `_fetch_innertube_data` posts `clientName: "ANDROID", clientVersion: "20.10.38"`. The WEB client requires a PoToken and returns transcript URLs that resolve to empty content. Do not switch back to WEB.
+2. **Three transcript wire formats.** `fetched_transcript.py` parses srv3 XML (`<p t="ms" d="ms">`, preferred), legacy XML (`<text start="s" dur="s">`), and json3 (`events/segs`) as a fallback when XML parsing fails. Keep all branches.
+3. **Three-tier extraction fallback** in `_extract_transcript_data`: InnerTube API → `_CAPTION_PATTERNS` regex scrape of `ytInitialPlayerResponse` from the watch page → `_extract_alternative_transcript_data` (bare timedtext URL, fabricates a single English entry). All regex patterns are pre-compiled module-level constants — put new patterns there too.
 
-`YouTubeTranscriptApi._session` is a **class-level singleton** (`requests.Session` with `HTTPAdapter(pool_connections=10)`). Use `get_session()` / `close_session()` or the context manager (`with YouTubeTranscriptApi() as api:`). Don't create per-request sessions — batch ops rely on connection reuse.
+`YouTubeTranscriptApi._session` is a **class-level singleton** (`requests.Session`, `HTTPAdapter(pool_connections=10, pool_maxsize=10)`, urllib3 retries explicitly disabled). Use `get_session()`/`close_session()` or the context manager. Don't create per-request sessions — batch ops rely on connection reuse.
+
+`fetched_transcript.py` imports `YouTubeTranscriptApi` lazily inside `_fetch_raw` to avoid a circular import — don't hoist it.
+
+## Network resilience — three retry layers, on purpose
+
+- `@retry` from `utils.retry` (exponential backoff + jitter), on three sites: `_fetch_video_page` (Timeout/ConnectionError only), `FetchedTranscript._fetch_raw` (Timeout/ConnectionError only), and `AITranscriptTranslator._call_gemini_api` (RequestException).
+- Manual 429-aware loops with `retry_delay * 2**attempt` backoff exist in **both** `list_transcripts` and `FetchedTranscript.fetch` — separate from `@retry` because they honor HTTP-status-based backoff.
+- Adapter-level retries are disabled (`URLLibRetry(total=0)`) so all retry behavior is application-level. Don't add ad-hoc retry loops elsewhere.
+
+## AI translator (src/ai_translator.py) — library-only, with sharp edges
+
+Neither the CLI nor `api.py` uses `AITranscriptTranslator`; the only convenience wrapper is `quick_translate()`, defined in `ai_translator.py` and re-exported from `src/__init__.py` (it defaults to Turkish, while the class defaults to English). Facts to keep in mind when editing:
+
+- Calls the Gemini REST API directly (`POST {base}/{model}:generateContent`, default model `gemini-2.5-flash`), key in the `x-goog-api-key` header — **never in the URL**. `validate_url` runs before every call.
+- **No chunking**: the whole transcript is joined into one string and sent in a single request. Long videos can silently truncate at the output-token limit.
+- All five outbound HTTP calls pass `timeout=30` (watch page, transcript fetch, InnerTube POST, channel-page scrape, Gemini POST) — keep it that way for new calls.
+- Response parsing assumes exactly `candidates[0].content.parts[0].text`; safety blocks / MAX_TOKENS surface as a generic `Exception` — this module raises plain `Exception`, not the project exception hierarchy.
+- Output types `txt`/`json`/`xml` are hand-rolled (`_render_json`/`_render_xml`); `formatters.py` is **not** used for translations.
+- `custom_prompt` goes through `.format()` — literal `{`/`}` must be doubled.
 
 ## Security: SSRF whitelist
 
-All outbound URLs that aren't hard-coded to youtube.com go through `utils.security.validate_url`. The whitelist (`ALLOWED_HOSTS`) currently contains YouTube domains plus `generativelanguage.googleapis.com`. Any new outbound destination (e.g. an alternate translation provider, a new YouTube subdomain) must be added there or `validate_url` will raise `ValueError`. The Gemini API key is sent via the `x-goog-api-key` header — never put it in the URL.
+`utils.security.validate_url` enforces `ALLOWED_HOSTS` (YouTube domains + `generativelanguage.googleapis.com`) and rejects private/loopback IPs — but it is only invoked on the Gemini path; YouTube fetches use hard-coded `youtube.com` URL templates. Any new outbound destination must be added to `ALLOWED_HOSTS` or `validate_url` raises `ValueError`.
 
-## Network resilience
+## Configuration (src/utils/config.py)
 
-The `@retry` decorator from `utils.retry` is the **only** retry implementation — it does exponential backoff with optional jitter. Don't reintroduce ad-hoc retry loops. Currently applied to `YouTubeTranscriptApi._fetch_video_page` and `AITranscriptTranslator._call_gemini_api` for transient `requests.exceptions.Timeout`/`ConnectionError`/`RequestException`.
+Lookup: `~/.u-transkriptrc` (key=value), else `~/.config/u-transkript/config.toml` (flattened one level). **First existing file wins entirely — no merge.** Only two keys are implemented: `language` and `format`. `apply_config_defaults` fills args still at their argparse default — caveat: an explicit `--format pretty` is indistinguishable from the default and can be overridden by config.
 
-`YouTubeTranscriptApi.list_transcripts` has its own 429-aware retry loop (separate from `@retry`) because it needs to honor HTTP-status-based backoff, not just exception-based.
+`utils/cache.py` (`TranscriptCache`, disk JSON cache, 24h TTL) is exported from `utils/__init__.py` but currently has **no call sites** — wire it up or ignore it, but don't assume caching is active.
 
-## Configuration
+## Test conventions (tests/)
 
-Config files are looked up in this order (first hit wins):
-1. `~/.u-transkriptrc` — simple `key=value` lines, `#` comments
-2. `~/.config/u-transkript/config.toml` — TOML; flattened one level (e.g. `[defaults]` keys become top-level)
+- `tests/conftest.py` provides `sample_transcript`, `sample_transcript_long`, `mock_youtube_html`, `mock_transcript_xml`, `mock_gemini_response`. `tests/integration/` is empty.
+- Mocking is `unittest.mock` only (no `responses` library). Patch where the name is **used**, not defined: `cli.single_video.YouTubeTranscriptApi`, `cli.channel_downloader.get_formatter`, `ai_translator.requests.post` — `cli.YouTubeTranscriptApi` does not exist.
+- To exercise the HTML-scrape fallback, patch `_extract_innertube_api_key` to return `None`.
+- Tests calling `list_transcripts` must pass `max_retries=0, retry_delay=0` or they sleep through real backoff.
+- Style: plain-assert pytest grouped in `Test<Subject>` classes, `@pytest.mark.parametrize`, no custom markers.
 
-Supported keys: `language`, `format`, `model`, `api_key`, `proxy`, `cache_ttl`. `apply_config_defaults` only fills args that are still at their argparse default — CLI flags always win.
+## Versioning and public API
 
-## Version is single-sourced
+`__version__` is single-sourced in `src/__init__.py` (setup.py reads it via regex) — bump only there. `__all__` in `src/__init__.py` is the public surface: the two API classes, `TranscriptList`/`FetchedTranscript`, the full exception hierarchy, all formatters including the `Formatter` base class, and `quick_translate`. Changing it is a breaking change. `formatters.get_formatter(name)` is the non-exported registry `api.py` and the CLI use.
 
-`__version__` lives in `src/__init__.py`. `setup.py` reads it via regex. Bump only there; don't duplicate.
+All transcript errors inherit `TranscriptRetrievalError` and carry a `.suggestion` property with actionable advice — preserve it on new exception classes (the HTTP API returns it in error JSON).
 
-## CI
+## Docs
 
-`.github/workflows/ci.yml` runs on Python 3.10, 3.11, 3.12, 3.13 (Ubuntu). It runs `ruff check .` then `pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing`, then re-runs pytest with `--cov-fail-under=70`. Keep coverage at or above 70%.
-
-## Public API surface (src/__init__.py)
-
-`__all__` exports: `AITranscriptTranslator`, `YouTubeTranscriptApi`, `TranscriptList`, `FetchedTranscript`, the full exception hierarchy, all formatters (`PrettyPrintFormatter`, `JSONFormatter`, `TextFormatter`, `SRTFormatter`, `VTTFormatter`), and a `quick_translate(video_id, api_key, target_language, output_type)` convenience function. These are the only symbols downstream users should import from `u_transkript`; changing them is a breaking change.
-
-## Exception hierarchy
-
-All transcript errors inherit from `TranscriptRetrievalError` and carry a `.suggestion` property with actionable user advice. CLI and HTTP API both surface `.suggestion` when verbose / in error responses — preserve this when adding new exception classes.
+`CHANGELOG.md`, `CONTRIBUTING.md`, and the root `README.md` were brought in line with the code in v3.2.1 (the old `docs/` directory was removed; the license file is `LICENSE`). Keep them in sync — in particular, the README documents the CLI's exact 5-flag surface and the flat import layout; update it when either changes.

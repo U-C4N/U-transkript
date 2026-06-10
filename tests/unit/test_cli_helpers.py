@@ -1,11 +1,15 @@
 import argparse
+import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from cli.channel_downloader import _ensure_output_dir
 from cli.channel_scraper import (
     _channel_url_variants,
     _dedup_preserving_order,
     _extract_ids_from_html,
+    _fetch_html,
 )
 from cli.helpers import (
     EXIT_API_ERROR,
@@ -120,3 +124,32 @@ class TestExtractIdsFromHtml:
 
     def test_no_matches(self):
         assert _extract_ids_from_html("no ids here") == []
+
+
+class TestFetchHtml:
+    def test_uses_timeout(self):
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.text = "<html></html>"
+        with patch(
+            "cli.channel_scraper.requests.get", return_value=mock_response
+        ) as mock_get:
+            assert _fetch_html("https://www.youtube.com/@x/videos") == "<html></html>"
+        assert mock_get.call_args.kwargs["timeout"] == 30
+
+
+class TestEnsureOutputDir:
+    def test_url_target_sanitized_for_windows(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = _ensure_output_dir("https://www.youtube.com/@SomeChannel", None)
+        assert not any(c in result for c in '<>:"/\\|?*')
+        assert os.path.isdir(result)
+
+    def test_explicit_output_used_verbatim(self, tmp_path):
+        out = str(tmp_path / "outdir")
+        assert _ensure_output_dir("@x", out) == out
+        assert os.path.isdir(out)
+
+    def test_bare_at_falls_back_to_channel(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        assert _ensure_output_dir("@", None) == "channel"

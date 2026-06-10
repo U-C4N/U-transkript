@@ -56,7 +56,7 @@ pytest tests/unit/test_formatters.py
 pytest -k "test_json"
 ```
 
-We target 90%+ code coverage. Please include tests for any new functionality.
+Please include tests for any new functionality.
 
 ## Code Style
 
@@ -82,12 +82,11 @@ Key conventions:
 
 ## Pre-commit Hooks
 
-Pre-commit hooks run automatically on `git commit`. They check:
+Pre-commit hooks run automatically on `git commit`. They are:
 
-- Code formatting (ruff)
-- Linting (ruff)
-- Type checking (mypy)
-- Test execution (pytest)
+- `ruff` (linting, with `--fix`)
+- `ruff-format` (formatting)
+- `trailing-whitespace`, `end-of-file-fixer`, `check-yaml`, `check-added-large-files`
 
 If a hook fails, fix the issue and re-stage your changes before committing again.
 
@@ -135,7 +134,7 @@ Then open a PR on GitHub against the `main` branch.
 - Keep PRs focused on a single change or feature
 - Write a clear title and description explaining what and why
 - Reference any related issues (e.g., "Fixes #42")
-- Ensure all CI checks pass before requesting review
+- Run `pytest` and `ruff check src/ tests/` locally before requesting review
 - Respond to review feedback promptly
 
 ## Reporting Issues
@@ -160,27 +159,37 @@ For feature requests, describe:
 ```
 u-transkript/
   src/
-    __init__.py          # Package metadata and exports
+    __init__.py          # Package metadata and exports (dev checkouts)
     youtube_transcript.py # Core YouTube API integration
-    ai_translator.py     # Gemini AI translation
+    ai_translator.py     # Gemini AI translation + quick_translate
     transcript_list.py   # Transcript listing and selection
     fetched_transcript.py # Transcript fetching and parsing
     formatters.py        # Output formatters (SRT, VTT, JSON, etc.)
     exceptions.py        # Custom exception hierarchy
+    cli/
+      main.py            # CLI entry point and exit-code mapping
+      parser.py          # Argument parser
+      helpers.py         # Exit codes, formatter kwargs, proxies
+      url_parser.py      # Video-ID and channel-URL parsing
+      single_video.py    # Single-video path
+      channel_scraper.py # Channel video-ID scraping
+      channel_downloader.py # Bulk channel download
+      output.py          # Output writing and file extensions
     utils/
       __init__.py        # Utils exports
       retry.py           # Retry decorator with backoff
       security.py        # URL validation and SSRF protection
       cache.py           # Disk-based transcript caching
       console.py         # Colored terminal output
-  cli.py                 # Command-line interface
+      config.py          # Config-file defaults
+  run.py                 # Run the CLI from a checkout
+  api.py                 # Optional Flask HTTP API
   tests/
     unit/                # Unit tests
-    integration/         # Integration tests
+    integration/         # Integration tests (empty scaffolding)
     conftest.py          # Shared test fixtures
-  docs/
-    README.md            # User documentation
-    example.md           # Usage examples
+  README.md              # User documentation
+  LICENSE                # MIT license
 ```
 
 ## License

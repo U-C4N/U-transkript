@@ -164,9 +164,12 @@ class TestTranslateWithGemini:
         mock_response.json.return_value = mock_gemini_response
         mock_response.raise_for_status = MagicMock()
 
-        with patch("ai_translator.requests.post", return_value=mock_response):
+        with patch(
+            "ai_translator.requests.post", return_value=mock_response
+        ) as mock_post:
             result = translator._translate_with_gemini("Hello world", "Turkish")
             assert "Merhaba" in result
+            assert mock_post.call_args.kwargs["timeout"] == 30
 
     def test_api_error_raises(self):
         translator = AITranscriptTranslator("test-api-key")

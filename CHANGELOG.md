@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] - 2026-06-10
+
+### Fixed
+- **Critical: installed packages were broken** — wheels omitted every top-level module
+  (`youtube_transcript`, `fetched_transcript`, `transcript_list`, `formatters`,
+  `exceptions`, `ai_translator`) because `setup.py` declared no `py_modules`; the
+  `u-transkript` console script crashed with `ModuleNotFoundError`. All six modules now ship.
+- Building distributions was broken twice over: `setup.py` reads a root `README.md`
+  that did not exist (`FileNotFoundError`), and the root `build.py` shadowed the PyPA
+  `build` package so its `python -m build` subprocess recursed into the script itself.
+  The README now lives at the repository root and the script is renamed `release.py`.
+- `u-transkript --version` works in installed environments: `cli.parser` falls back to
+  `importlib.metadata.version("u-transkript")` when the dev-checkout `src/__init__.py`
+  is not importable.
+- Channel mode produced invalid directory names on Windows when given a channel URL
+  without `-o` (e.g. `:` was not stripped); names are now sanitized.
+- Channel mode exited 0 even when every download failed; it now raises
+  `TranscriptRetrievalError` (exit code 3).
+- Added `timeout=30` to the three outbound HTTP calls that lacked one: the InnerTube
+  POST, the channel-page GET, and the Gemini POST.
+
+### Changed
+- `quick_translate()` now lives in `ai_translator.py` (re-exported from
+  `src/__init__.py` for dev checkouts) so it is importable from installed wheels.
+- License file renamed `MIT` → `LICENSE` so setuptools bundles it in distributions.
+- Removed no-op `setup.cfg`; replaced outdated `docs/README.md` / `docs/example.md`
+  with a new root `README.md`; removed GitHub Actions workflows (no CI).
+
+## [3.2.0] - 2026-05-15
+
+_Retroactive entry. The version went straight from 3.0.0 to 3.2.0; no 3.1.0 was ever released._
+
+### Changed
+- CLI simplified to a single positional `target` plus `-l/--languages`, `-f/--format`,
+  `-o/--output`, `--version`; the previous 16-flag interface was removed.
+- `AITranscriptTranslator` refactored: standardized prompt, retry/error handling,
+  hand-rolled JSON/XML renderers with XML escaping.
+- `build.py` reworked into an argparse-driven build tool (`--test` / `--upload`).
+- Public exports reorganized in `src/__init__.py`; added `quick_translate()`.
+- Added CLAUDE.md contributor guidance.
+
 ## [3.0.0] - 2026-04-17
 
 ### Breaking Changes

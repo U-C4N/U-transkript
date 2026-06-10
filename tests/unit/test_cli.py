@@ -9,6 +9,7 @@ from cli.url_parser import (
     extract_video_id,
     is_channel_target,
 )
+from exceptions import TranscriptRetrievalError
 
 
 class TestExtractVideoId:
@@ -191,3 +192,16 @@ class TestMainArgumentParsing:
 
         mock_get_ids.assert_called_once()
         assert os.path.isdir(out_dir)
+
+    @patch("cli.channel_downloader.get_channel_video_ids")
+    @patch("cli.channel_downloader.YouTubeTranscriptApi")
+    def test_channel_all_failed_exits_api_error(self, mock_api, mock_get_ids, tmp_path):
+        mock_get_ids.return_value = ["vid1", "vid2"]
+        mock_api.get_transcript.side_effect = TranscriptRetrievalError("vid1", "boom")
+
+        out_dir = str(tmp_path / "channel-out")
+        with patch("sys.argv", ["cli.py", "@MrBeast", "-o", out_dir]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 3

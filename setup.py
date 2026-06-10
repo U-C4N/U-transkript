@@ -38,6 +38,14 @@ setup(
     license="MIT",
     package_dir={"": "src"},
     packages=find_packages(where="src"),
+    py_modules=[
+        "ai_translator",
+        "exceptions",
+        "fetched_transcript",
+        "formatters",
+        "transcript_list",
+        "youtube_transcript",
+    ],
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Developers",

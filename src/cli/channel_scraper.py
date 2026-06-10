@@ -50,7 +50,7 @@ def _dedup_preserving_order(ids: list[str]) -> list[str]:
 
 def _fetch_html(url: str) -> str | None:
     try:
-        response = requests.get(url, headers={"User-Agent": _USER_AGENT})
+        response = requests.get(url, headers={"User-Agent": _USER_AGENT}, timeout=30)
         response.raise_for_status()
         return response.text
     except Exception:

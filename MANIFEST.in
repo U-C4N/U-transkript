@@ -1,7 +1,6 @@
-include docs/README.md
-include MIT
+include README.md
+include LICENSE
 include requirements.txt
-include docs/example.md
 
 include src/*.py
 

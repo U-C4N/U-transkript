@@ -371,7 +371,10 @@ class YouTubeTranscriptApi:
         }
         try:
             response = cls.get_session().post(
-                url, headers={"Content-Type": "application/json"}, json=payload
+                url,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=30,
             )
             if response.status_code == 200:
                 return response.json()

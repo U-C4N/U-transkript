@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import argparse
 
-from __init__ import __version__
+try:
+    from __init__ import __version__  # dev checkout: src/ is on sys.path
+except ImportError:  # installed wheel: src/__init__.py is not shipped
+    from importlib.metadata import version as _dist_version
+
+    __version__ = _dist_version("u-transkript")
 
 
 def create_argument_parser() -> argparse.ArgumentParser:

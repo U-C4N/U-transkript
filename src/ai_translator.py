@@ -85,7 +85,7 @@ class AITranscriptTranslator:
     )
     def _call_gemini_api(self, url: str, headers: dict, data: dict):
         validate_url(url)
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, headers=headers, json=data, timeout=30)
         response.raise_for_status()
         return response
 
@@ -176,3 +176,17 @@ class AITranscriptTranslator:
             .replace('"', "&quot;")
             .replace("'", "&#39;")
         )
+
+
+def quick_translate(
+    video_id: str,
+    api_key: str,
+    target_language: str = "Turkish",
+    output_type: str = "txt",
+) -> str:
+    translator = AITranscriptTranslator(api_key)
+    return (
+        translator.set_lang(target_language)
+        .set_type(output_type)
+        .translate_transcript(video_id)
+    )

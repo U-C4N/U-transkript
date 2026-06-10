@@ -1,4 +1,4 @@
-from ai_translator import AITranscriptTranslator
+from ai_translator import AITranscriptTranslator, quick_translate
 from exceptions import (
     CookiePathInvalid,
     CookiesInvalid,
@@ -25,7 +25,7 @@ from formatters import (
 from transcript_list import TranscriptList
 from youtube_transcript import YouTubeTranscriptApi
 
-__version__ = "3.2.0"
+__version__ = "3.2.1"
 __author__ = "U-C4N"
 __email__ = "noreply@deuz.ai"
 __url__ = "https://github.com/U-C4N/u-transkript"
@@ -55,17 +55,3 @@ __all__ = [
     "VTTFormatter",
     "quick_translate",
 ]
-
-
-def quick_translate(
-    video_id: str,
-    api_key: str,
-    target_language: str = "Turkish",
-    output_type: str = "txt",
-) -> str:
-    translator = AITranscriptTranslator(api_key)
-    return (
-        translator.set_lang(target_language)
-        .set_type(output_type)
-        .translate_transcript(video_id)
-    )
