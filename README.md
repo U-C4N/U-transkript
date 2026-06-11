@@ -4,7 +4,8 @@
 
 <p align="center">
   <a href="https://pypi.org/project/u-transkript/"><img src="https://img.shields.io/pypi/v/u-transkript?color=blue&label=PyPI" alt="PyPI"></a>
-  <a href="https://pypi.org/project/u-transkript/"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python"></a>
+  <a href="https://pypi.org/project/u-transkript/"><img src="https://img.shields.io/pypi/pyversions/u-transkript" alt="Python"></a>
+  <a href="https://pypi.org/project/u-transkript/"><img src="https://img.shields.io/pypi/dm/u-transkript" alt="Downloads"></a>
   <a href="https://github.com/U-C4N/u-transkript/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
 </p>
 
@@ -17,6 +18,8 @@ U-Transkript is a standalone alternative to `youtube-transcript-api` with built-
 - **CLI** with single-video and bulk channel mode, plus an optional Flask HTTP API
 - **Transparent disk cache** (24h) on the CLI's fetch paths — repeated fetches of the same video are instant
 - **Python 3.10+**, a single runtime dependency (`requests`), resilient retries with backoff
+
+> **New in 3.3.0** — AI translation from the CLI (`--translate`), 24h transcript cache, `--list-transcripts`, channel video count (`-n`), chunked translation for long videos. See the [changelog](https://github.com/U-C4N/u-transkript/blob/main/CHANGELOG.md).
 
 ## Installation
 
@@ -62,6 +65,10 @@ u-transkript dQw4w9WgXcQ -f srt -o subtitles.srt
 
 # See which transcript languages a video offers
 u-transkript dQw4w9WgXcQ --list-transcripts
+#   Available transcripts for dQw4w9WgXcQ:
+#     en       English (manual, translatable)
+#     de-DE    German (Germany) (manual, translatable)
+#     en       English (auto-generated) (auto, translatable)
 
 # Translate with Gemini AI (reads GEMINI_API_KEY from the environment)
 u-transkript dQw4w9WgXcQ --translate Turkish -o ceviri.txt
