@@ -181,7 +181,7 @@ class FailedToCreateConsentCookie(TranscriptRetrievalError):
     def suggestion(self) -> str:
         return (
             "This usually happens with EU consent requirements. "
-            "Try providing your own cookies with the --cookies flag."
+            "Try providing your own cookies via the `cookies` parameter."
         )
 
 
@@ -217,5 +217,5 @@ class TooManyRequests(TranscriptRetrievalError):
     def suggestion(self) -> str:
         return (
             "YouTube rate limit reached. Wait a few minutes and try again, "
-            "or use --proxy to route through a different IP."
+            "or route requests through a proxy."
         )

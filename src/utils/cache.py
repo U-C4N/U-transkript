@@ -29,8 +29,12 @@ class TranscriptCache:
                 cache_file.unlink()
                 return None
             return data["transcript"]
-        except (json.JSONDecodeError, KeyError):
-            cache_file.unlink(missing_ok=True)
+        except (OSError, TypeError, ValueError, KeyError):
+            # Corrupt or unreadable entry: drop it so it cannot poison later runs.
+            try:
+                cache_file.unlink(missing_ok=True)
+            except OSError:
+                pass
             return None
 
     def set(self, video_id: str, transcript: list, language: str = "default") -> None:

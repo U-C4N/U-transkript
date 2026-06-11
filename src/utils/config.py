@@ -71,7 +71,13 @@ def apply_config_defaults(args: object, config: dict[str, str]) -> None:
     if getattr(args, "languages", None) is None and "language" in config:
         args.languages = [config["language"]]  # type: ignore[attr-defined]
 
-    if getattr(args, "format", "pretty") == "pretty" and "format" in config:
+    # Skip the format default for --translate: a config `format=srt` would make
+    # translation unusable with a misleading error (srt/vtt have no translated timing).
+    if (
+        getattr(args, "translate", None) is None
+        and getattr(args, "format", "pretty") == "pretty"
+        and "format" in config
+    ):
         fmt = config["format"]
         if fmt in _SUPPORTED_FORMATS:
             args.format = fmt  # type: ignore[attr-defined]

@@ -25,7 +25,7 @@ from formatters import (
 from transcript_list import TranscriptList
 from youtube_transcript import YouTubeTranscriptApi
 
-__version__ = "3.2.1"
+__version__ = "3.3.0"
 __author__ = "U-C4N"
 __email__ = "noreply@deuz.ai"
 __url__ = "https://github.com/U-C4N/u-transkript"

@@ -123,6 +123,16 @@ class TranscriptList:
         """Find a manually created transcript."""
         return self.find_transcript(language_codes, transcript_type='manual')
 
+    def all_transcripts(self) -> list[FetchedTranscript]:
+        """Every track, including languages that have both a manual and a generated version.
+
+        `__iter__` collapses to one track per language code (the last one parsed);
+        use this when both variants matter, e.g. for --list-transcripts.
+        """
+        return list(self._manually_created_transcripts.values()) + list(
+            self._generated_transcripts.values()
+        )
+
     def get_languages(self) -> list[str]:
         """
         Get list of all available language codes.

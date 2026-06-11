@@ -18,6 +18,7 @@ from cli.helpers import (
     EXIT_USER_ERROR,
     build_formatter_kwargs,
     build_proxies,
+    fetch_transcript_cached,
     get_progress_bar,
 )
 from cli.output import file_extension_for, format_and_output
@@ -136,6 +137,72 @@ class TestFetchHtml:
         ) as mock_get:
             assert _fetch_html("https://www.youtube.com/@x/videos") == "<html></html>"
         assert mock_get.call_args.kwargs["timeout"] == 30
+
+
+class _FakeCache:
+    store: dict = {}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def get(self, video_id, language="default"):
+        return self.store.get((video_id, language))
+
+    def set(self, video_id, transcript, language="default"):
+        self.store[(video_id, language)] = transcript
+
+
+class TestFetchTranscriptCached:
+    def _api(self, transcript):
+        api = MagicMock()
+        api.get_transcript.return_value = transcript
+        return api
+
+    def test_cache_miss_fetches_and_stores(self, monkeypatch):
+        monkeypatch.setattr("cli.helpers.TranscriptCache", _FakeCache)
+        _FakeCache.store = {}
+        api = self._api([{"text": "Hi", "start": 0.0, "duration": 1.0}])
+
+        result = fetch_transcript_cached(api, "vid1", languages=["en"])
+
+        api.get_transcript.assert_called_once_with("vid1", languages=["en"])
+        assert result == [{"text": "Hi", "start": 0.0, "duration": 1.0}]
+        assert _FakeCache.store[("vid1", "en")] == result
+
+    def test_cache_hit_skips_api(self, monkeypatch):
+        monkeypatch.setattr("cli.helpers.TranscriptCache", _FakeCache)
+        _FakeCache.store = {("vid1", "default"): [{"text": "cached"}]}
+        api = self._api(None)
+
+        result = fetch_transcript_cached(api, "vid1")
+
+        api.get_transcript.assert_not_called()
+        assert result == [{"text": "cached"}]
+
+    def test_no_cache_bypasses_everything(self, monkeypatch):
+        monkeypatch.setattr("cli.helpers.TranscriptCache", _FakeCache)
+        _FakeCache.store = {("vid1", "default"): [{"text": "cached"}]}
+        api = self._api([{"text": "fresh"}])
+
+        result = fetch_transcript_cached(api, "vid1", use_cache=False)
+
+        api.get_transcript.assert_called_once()
+        assert result == [{"text": "fresh"}]
+        # the bypass must not write either
+        assert _FakeCache.store == {("vid1", "default"): [{"text": "cached"}]}
+
+    def test_cache_errors_fall_back_to_fetch(self, monkeypatch):
+        class _BrokenCache:
+            def __init__(self, *args, **kwargs):
+                raise OSError("cache dir is a file")
+
+        monkeypatch.setattr("cli.helpers.TranscriptCache", _BrokenCache)
+        api = self._api([{"text": "fresh"}])
+
+        result = fetch_transcript_cached(api, "vid1")
+
+        api.get_transcript.assert_called_once()
+        assert result == [{"text": "fresh"}]
 
 
 class TestEnsureOutputDir:

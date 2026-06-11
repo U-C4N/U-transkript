@@ -3,7 +3,61 @@ import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 
-from ai_translator import AITranscriptTranslator
+from ai_translator import AITranscriptTranslator, _chunk_texts
+
+
+class TestChunkTexts:
+    def test_short_input_single_chunk(self):
+        assert _chunk_texts(["Hello", "world"]) == ["Hello world"]
+
+    def test_splits_at_entry_boundaries(self):
+        chunks = _chunk_texts(["aaaa", "bbbb", "cccc"], max_chars=9)
+        assert chunks == ["aaaa bbbb", "cccc"]
+
+    def test_no_text_lost(self):
+        texts = [f"segment {i}" for i in range(50)]
+        chunks = _chunk_texts(texts, max_chars=40)
+        assert all(len(c) <= 40 for c in chunks)
+        assert " ".join(chunks) == " ".join(texts)
+
+    def test_empty_input(self):
+        assert _chunk_texts([]) == []
+
+    def test_oversized_single_entry_kept_whole(self):
+        chunks = _chunk_texts(["x" * 100], max_chars=10)
+        assert chunks == ["x" * 100]
+
+
+class TestChunkedTranslation:
+    @patch.object(AITranscriptTranslator, "_translate_with_gemini")
+    @patch("ai_translator.YouTubeTranscriptApi.get_transcript")
+    def test_long_transcript_translated_in_chunks(
+        self, mock_get, mock_translate, monkeypatch
+    ):
+        monkeypatch.setattr("ai_translator._MAX_CHUNK_CHARS", 25)
+        mock_get.return_value = [
+            {"text": "aaaaaaaaaa", "start": 0.0, "duration": 1.0},
+            {"text": "bbbbbbbbbb", "start": 1.0, "duration": 1.0},
+            {"text": "cccccccccc", "start": 2.0, "duration": 1.0},
+        ]
+        mock_translate.side_effect = ["A", "B"]
+
+        translator = AITranscriptTranslator("test-api-key")
+        result = translator.translate_transcript("vid", target_language="Turkish")
+
+        assert mock_translate.call_count == 2
+        assert result == "A B"
+
+    @patch.object(AITranscriptTranslator, "_translate_with_gemini")
+    @patch("ai_translator.YouTubeTranscriptApi.get_transcript")
+    def test_languages_forwarded_to_extraction(self, mock_get, mock_translate):
+        mock_get.return_value = [{"text": "Hi", "start": 0.0, "duration": 1.0}]
+        mock_translate.return_value = "Merhaba"
+
+        translator = AITranscriptTranslator("test-api-key")
+        translator.translate_transcript("vid", languages=["de", "en"])
+
+        mock_get.assert_called_once_with("vid", languages=["de", "en"])
 
 
 class TestAITranslatorInit:
@@ -182,7 +236,8 @@ class TestTranslateWithGemini:
         )
 
         with patch("ai_translator.requests.post", return_value=mock_response):
-            with pytest.raises(Exception, match="API request failed"):
+            # RequestException propagates unwrapped so the CLI maps it to exit 2
+            with pytest.raises(requests.exceptions.HTTPError, match="403 Forbidden"):
                 translator._translate_with_gemini("Hello", "Turkish")
 
     def test_invalid_response_format(self):
@@ -236,4 +291,14 @@ class TestTranslateTranscript:
 
         translator = AITranscriptTranslator("test-api-key")
         with pytest.raises(Exception, match="Failed to extract"):
+            translator.translate_transcript("bad_vid")
+
+    @patch("ai_translator.YouTubeTranscriptApi.get_transcript")
+    def test_transcript_errors_propagate_typed(self, mock_get):
+        from exceptions import TranscriptNotFound
+
+        mock_get.side_effect = TranscriptNotFound("bad_vid")
+
+        translator = AITranscriptTranslator("test-api-key")
+        with pytest.raises(TranscriptNotFound):
             translator.translate_transcript("bad_vid")

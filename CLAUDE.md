@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-U-Transkript (PyPI: `u-transkript`, version 3.2.1 in `src/__init__.py`) is a Python 3.10+ library + CLI that extracts YouTube transcripts and optionally translates them with Google Gemini. Sole runtime dependency: `requests`. The README is the root `README.md` (also the PyPI long_description).
+U-Transkript (PyPI: `u-transkript`, version 3.3.0 in `src/__init__.py`) is a Python 3.10+ library + CLI that extracts YouTube transcripts and optionally translates them with Google Gemini. Sole runtime dependency: `requests`. The README is the root `README.md` (also the PyPI long_description).
 
 ## Common commands
 
@@ -66,13 +66,18 @@ Packaging: the six top-level modules ship via `py_modules` in `setup.py` alongsi
 main.py             entry point; loads config defaults, routes single-video vs channel,
                     maps exceptions to exit codes
   ├─ parser.py             create_argument_parser() — args: target, -l/--languages,
-  │                        -f/--format {pretty,json,text,srt,vtt}, -o/--output, --version
+  │                        -f/--format {pretty,json,text,srt,vtt}, -o/--output,
+  │                        -n/--count, --list-transcripts, --translate, --no-cache, --version
   ├─ helpers.py            EXIT_* codes, build_formatter_kwargs, build_proxies,
+  │                        fetch_transcript_cached (24h disk cache + --no-cache opt-out),
   │                        get_progress_bar (optional tqdm)
   ├─ url_parser.py         extract_video_id, is_channel_target, build_youtube_channel_url
-  ├─ single_video.py       single-video path
+  ├─ single_video.py       single-video path (via fetch_transcript_cached)
+  ├─ listing.py            --list-transcripts path (text or -f json output)
+  ├─ translate.py          --translate path (AITranscriptTranslator, GEMINI_API_KEY env;
+  │                        rejects srt/vtt formats and channel targets)
   ├─ channel_scraper.py    HTML scraping for channel video IDs (URL variants + regexes)
-  ├─ channel_downloader.py bulk download (default/hard cap 10 videos; no CLI flag for count)
+  ├─ channel_downloader.py bulk download (-n/--count, default 10; files {index}_{videoId}.{ext})
   └─ output.py             format_and_output, file_extension_for
 ```
 
@@ -100,14 +105,14 @@ Exit codes (`cli/helpers.py`): `EXIT_SUCCESS=0`, `EXIT_USER_ERROR=1`, `EXIT_NETW
 - Manual 429-aware loops with `retry_delay * 2**attempt` backoff exist in **both** `list_transcripts` and `FetchedTranscript.fetch` — separate from `@retry` because they honor HTTP-status-based backoff.
 - Adapter-level retries are disabled (`URLLibRetry(total=0)`) so all retry behavior is application-level. Don't add ad-hoc retry loops elsewhere.
 
-## AI translator (src/ai_translator.py) — library-only, with sharp edges
+## AI translator (src/ai_translator.py) — Gemini-backed, with sharp edges
 
-Neither the CLI nor `api.py` uses `AITranscriptTranslator`; the only convenience wrapper is `quick_translate()`, defined in `ai_translator.py` and re-exported from `src/__init__.py` (it defaults to Turkish, while the class defaults to English). Facts to keep in mind when editing:
+Consumers: the CLI's `--translate` flag (`cli/translate.py`, key from the `GEMINI_API_KEY` env var) and the `quick_translate()` wrapper, defined in `ai_translator.py` and re-exported from `src/__init__.py` (it defaults to Turkish, while the class defaults to English). `api.py` does not translate. Facts to keep in mind when editing:
 
 - Calls the Gemini REST API directly (`POST {base}/{model}:generateContent`, default model `gemini-2.5-flash`), key in the `x-goog-api-key` header — **never in the URL**. `validate_url` runs before every call.
-- **No chunking**: the whole transcript is joined into one string and sent in a single request. Long videos can silently truncate at the output-token limit.
+- **Chunked translation**: `_chunk_texts` packs entry texts into ≤12k-char chunks at entry boundaries (`_MAX_CHUNK_CHARS`; a single oversized entry is kept whole, never split mid-entry); each chunk is one Gemini request and the results are joined with a space. A `custom_prompt` is applied to every chunk independently — summarize-style prompts produce one output per chunk.
 - All five outbound HTTP calls pass `timeout=30` (watch page, transcript fetch, InnerTube POST, channel-page scrape, Gemini POST) — keep it that way for new calls.
-- Response parsing assumes exactly `candidates[0].content.parts[0].text`; safety blocks / MAX_TOKENS surface as a generic `Exception` — this module raises plain `Exception`, not the project exception hierarchy.
+- Response parsing assumes exactly `candidates[0].content.parts[0].text`; safety blocks / MAX_TOKENS surface as a generic `Exception`. `TranscriptRetrievalError` and `requests.RequestException` propagate **unwrapped** (so the CLI's exit-code mapping holds on `--translate`); everything else is wrapped in plain `Exception`.
 - Output types `txt`/`json`/`xml` are hand-rolled (`_render_json`/`_render_xml`); `formatters.py` is **not** used for translations.
 - `custom_prompt` goes through `.format()` — literal `{`/`}` must be doubled.
 
@@ -119,7 +124,7 @@ Neither the CLI nor `api.py` uses `AITranscriptTranslator`; the only convenience
 
 Lookup: `~/.u-transkriptrc` (key=value), else `~/.config/u-transkript/config.toml` (flattened one level). **First existing file wins entirely — no merge.** Only two keys are implemented: `language` and `format`. `apply_config_defaults` fills args still at their argparse default — caveat: an explicit `--format pretty` is indistinguishable from the default and can be overridden by config.
 
-`utils/cache.py` (`TranscriptCache`, disk JSON cache, 24h TTL) is exported from `utils/__init__.py` but currently has **no call sites** — wire it up or ignore it, but don't assume caching is active.
+`utils/cache.py` (`TranscriptCache`, disk JSON cache in `~/.cache/u-transkript`, 24h TTL) is wired into the **CLI fetch paths only**, via `cli/helpers.py:fetch_transcript_cached` (used by `single_video.py` and `channel_downloader.py`, `--no-cache` opts out; `--translate` always fetches fresh). The cache **fails open**: any cache I/O error falls back to a direct fetch — keep it that way. The library API and `api.py` never cache. Tests that drive `cli.main` must neutralize the cache (patch `cli.helpers.TranscriptCache`) or they leak state between runs.
 
 ## Test conventions (tests/)
 
@@ -137,4 +142,4 @@ All transcript errors inherit `TranscriptRetrievalError` and carry a `.suggestio
 
 ## Docs
 
-`CHANGELOG.md`, `CONTRIBUTING.md`, and the root `README.md` were brought in line with the code in v3.2.1 (the old `docs/` directory was removed; the license file is `LICENSE`). Keep them in sync — in particular, the README documents the CLI's exact 5-flag surface and the flat import layout; update it when either changes.
+`CHANGELOG.md`, `CONTRIBUTING.md`, and the root `README.md` were brought in line with the code in v3.2.1 (the old `docs/` directory was removed; the license file is `LICENSE`). Keep them in sync — in particular, the README documents the CLI's exact flag surface and the flat import layout; update it when either changes.

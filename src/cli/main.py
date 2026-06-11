@@ -10,9 +10,11 @@ from utils.console import error
 
 from .channel_downloader import download_channel_transcripts
 from .helpers import EXIT_API_ERROR, EXIT_NETWORK_ERROR, EXIT_USER_ERROR
+from .listing import list_available_transcripts
 from .output import format_and_output
 from .parser import create_argument_parser
 from .single_video import process_single_video
+from .translate import process_translation
 from .url_parser import is_channel_target
 
 
@@ -21,11 +23,20 @@ def main() -> None:
     apply_config_defaults(args, load_config())
 
     try:
+        if args.list_transcripts:
+            format_and_output(list_available_transcripts(args), args)
+            return
+
         if is_channel_target(args.target):
+            if args.translate:
+                raise ValueError("--translate is not supported in channel mode")
             download_channel_transcripts(args.target, args)
             return
 
-        result = process_single_video(args)
+        if args.translate:
+            result = process_translation(args)
+        else:
+            result = process_single_video(args)
         format_and_output(result, args)
 
     except KeyboardInterrupt:

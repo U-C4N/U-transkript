@@ -15,6 +15,7 @@ U-Transkript is a standalone alternative to `youtube-transcript-api` with built-
 - **YouTube server-side translation** (`transcript.translate("es")`) — free, no AI key needed
 - **Output formats**: pretty text, plain text, JSON, SRT, WebVTT
 - **CLI** with single-video and bulk channel mode, plus an optional Flask HTTP API
+- **Transparent disk cache** (24h) on the CLI's fetch paths — repeated fetches of the same video are instant
 - **Python 3.10+**, a single runtime dependency (`requests`), resilient retries with backoff
 
 ## Installation
@@ -59,8 +60,14 @@ u-transkript dQw4w9WgXcQ -l de en
 # Output formats: pretty (default), json, text, srt, vtt
 u-transkript dQw4w9WgXcQ -f srt -o subtitles.srt
 
-# Channel mode — downloads the 10 most recent videos as 1.srt, 2.srt, ...
-u-transkript @MrBeast -f srt -o transcripts/
+# See which transcript languages a video offers
+u-transkript dQw4w9WgXcQ --list-transcripts
+
+# Translate with Gemini AI (reads GEMINI_API_KEY from the environment)
+u-transkript dQw4w9WgXcQ --translate Turkish -o ceviri.txt
+
+# Channel mode — downloads recent videos as 1_<videoId>.srt, 2_<videoId>.srt, ...
+u-transkript @MrBeast -f srt -o transcripts/ -n 25
 
 # From a source checkout (no install needed)
 python run.py dQw4w9WgXcQ -f json
@@ -72,9 +79,13 @@ python run.py dQw4w9WgXcQ -f json
 | `-l, --languages` | Language codes in order of preference (e.g. `en es fr`) |
 | `-f, --format` | `pretty` (default), `json`, `text`, `srt`, `vtt` |
 | `-o, --output` | Output file (single video) or directory (channel mode) |
+| `-n, --count` | How many recent videos to download in channel mode (default: 10) |
+| `--list-transcripts` | List available transcript languages and exit |
+| `--translate LANGUAGE` | Translate with Gemini AI (needs `GEMINI_API_KEY`; not for `srt`/`vtt`) |
+| `--no-cache` | Bypass the 24-hour transcript disk cache (cache applies to fetching, not `--translate`) |
 | `--version` | Print version and exit |
 
-Channel mode is capped at the 10 most recent videos. Exit codes: `0` success, `1` user error, `2` network error, `3` transcript/API error.
+Fetched transcripts are cached for 24 hours in `~/.cache/u-transkript` (single-video and channel modes; `--translate` always fetches fresh). Exit codes: `0` success, `1` user error, `2` network error, `3` transcript/API error.
 
 <details>
 <summary><strong>Config file</strong></summary>
@@ -207,7 +218,7 @@ from ai_translator import quick_translate
 text = quick_translate("dQw4w9WgXcQ", "GEMINI_API_KEY", target_language="French")
 ```
 
-Note: the whole transcript is sent in a single request, so very long videos may hit model output limits.
+Long transcripts are automatically split into chunks (at entry boundaries) and translated chunk by chunk, so long videos don't silently truncate at the model output limit.
 
 ## HTTP API
 
@@ -246,6 +257,7 @@ Errors come back as JSON with a `type` and an actionable `suggestion`; CORS is e
 | HTTP API wrapper included | ✓ | — |
 | ANDROID InnerTube client (no PoToken) | ✓ | — |
 | Retry with exponential backoff built in | ✓ | — |
+| 24h transcript disk cache (CLI) | ✓ | — |
 | Single runtime dependency | ✓ | — |
 
 ## How it works
@@ -260,7 +272,7 @@ Errors come back as JSON with a `type` and an actionable `suggestion`; CORS is e
 - Relies on undocumented YouTube endpoints that can change without notice.
 - Respect YouTube's Terms of Service and the rights of content owners.
 - Heavy use can get your IP rate-limited (HTTP 429).
-- Channel mode fetches at most the 10 most recent videos.
+- Channel mode scrapes the channel page HTML, so it can only see the videos that page exposes (roughly the most recent ones); `-n` is capped by what the page yields.
 
 <details>
 <summary><strong>Development</strong></summary>

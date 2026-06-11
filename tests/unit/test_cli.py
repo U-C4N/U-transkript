@@ -12,6 +12,24 @@ from cli.url_parser import (
 from exceptions import TranscriptRetrievalError
 
 
+class _DummyCache:
+    """In-memory stand-in for TranscriptCache so tests never touch the real disk cache."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def get(self, video_id, language="default"):
+        return None
+
+    def set(self, video_id, transcript, language="default"):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _no_disk_cache(monkeypatch):
+    monkeypatch.setattr("cli.helpers.TranscriptCache", _DummyCache)
+
+
 class TestExtractVideoId:
     def test_plain_video_id(self):
         assert extract_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
@@ -190,7 +208,7 @@ class TestMainArgumentParsing:
         with patch("sys.argv", ["cli.py", "@MrBeast", "-o", out_dir]):
             main()
 
-        mock_get_ids.assert_called_once()
+        mock_get_ids.assert_called_once_with("@MrBeast", 10)
         assert os.path.isdir(out_dir)
 
     @patch("cli.channel_downloader.get_channel_video_ids")
@@ -205,3 +223,237 @@ class TestMainArgumentParsing:
                 main()
 
         assert exc_info.value.code == 3
+
+    @patch("cli.channel_downloader.get_channel_video_ids")
+    @patch("cli.channel_downloader.YouTubeTranscriptApi")
+    @patch("cli.channel_downloader.get_formatter")
+    def test_channel_count_flag_and_id_filenames(
+        self, mock_formatter, mock_api, mock_get_ids, tmp_path
+    ):
+        mock_get_ids.return_value = ["vid1", "vid2"]
+        mock_api.get_transcript.return_value = [
+            {"text": "Hi", "start": 0.0, "duration": 1.0}
+        ]
+        mock_fmt = MagicMock()
+        mock_fmt.format_transcript.return_value = "Hi"
+        mock_formatter.return_value = mock_fmt
+
+        out_dir = str(tmp_path / "channel-out")
+        with patch("sys.argv", ["cli.py", "@MrBeast", "-o", out_dir, "-n", "25"]):
+            main()
+
+        mock_get_ids.assert_called_once_with("@MrBeast", 25)
+        assert os.path.exists(os.path.join(out_dir, "1_vid1.txt"))
+        assert os.path.exists(os.path.join(out_dir, "2_vid2.txt"))
+
+    def test_count_rejects_non_positive(self):
+        with patch("sys.argv", ["cli.py", "@MrBeast", "-n", "0"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 2  # argparse usage error
+
+
+def _fake_transcript_list(transcripts):
+    transcript_list = MagicMock()
+    transcript_list.all_transcripts.return_value = transcripts
+    return transcript_list
+
+
+class TestListTranscripts:
+    @patch("cli.listing.YouTubeTranscriptApi")
+    def test_lists_languages(self, mock_api, capsys):
+        transcript = MagicMock()
+        transcript.language_code = "en"
+        transcript.language = "English"
+        transcript.is_generated = True
+        transcript.is_translatable = True
+        mock_api.list_transcripts.return_value = _fake_transcript_list([transcript])
+
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "--list-transcripts"]):
+            main()
+
+        out = capsys.readouterr().out
+        assert "Available transcripts for dQw4w9WgXcQ:" in out
+        assert "  en       English (auto, translatable)" in out
+
+    @patch("cli.listing.YouTubeTranscriptApi")
+    def test_json_format(self, mock_api, capsys):
+        transcript = MagicMock()
+        transcript.language_code = "tr"
+        transcript.language = "Turkish"
+        transcript.is_generated = False
+        transcript.is_translatable = False
+        mock_api.list_transcripts.return_value = _fake_transcript_list([transcript])
+
+        with patch(
+            "sys.argv", ["cli.py", "dQw4w9WgXcQ", "--list-transcripts", "-f", "json"]
+        ):
+            main()
+
+        out = capsys.readouterr().out
+        assert '"language_code": "tr"' in out
+        assert '"is_generated": false' in out
+
+    @patch("cli.listing.YouTubeTranscriptApi")
+    def test_retrieval_error_exits_api_error(self, mock_api):
+        mock_api.list_transcripts.side_effect = TranscriptRetrievalError("vid", "boom")
+
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "--list-transcripts"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 3
+
+    def test_channel_target_exits_user_error(self):
+        with patch("sys.argv", ["cli.py", "@MrBeast", "--list-transcripts"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+
+
+class TestCacheWiring:
+    class _SeededCache:
+        store: dict = {}
+        constructions = 0
+
+        def __init__(self, *args, **kwargs):
+            type(self).constructions += 1
+
+        def get(self, video_id, language="default"):
+            return self.store.get((video_id, language))
+
+        def set(self, video_id, transcript, language="default"):
+            self.store[(video_id, language)] = transcript
+
+    @pytest.fixture(autouse=True)
+    def _seeded_cache(self, monkeypatch, _no_disk_cache):
+        # depends on _no_disk_cache so this patch deterministically wins
+        monkeypatch.setattr("cli.helpers.TranscriptCache", self._SeededCache)
+        self._SeededCache.store = {
+            ("dQw4w9WgXcQ", "default"): [
+                {"text": "FromCache", "start": 0.0, "duration": 1.0}
+            ]
+        }
+        self._SeededCache.constructions = 0
+
+    @patch("cli.single_video.YouTubeTranscriptApi")
+    def test_single_video_served_from_cache(self, mock_api, capsys):
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "-f", "text"]):
+            main()
+
+        mock_api.get_transcript.assert_not_called()
+        assert "FromCache" in capsys.readouterr().out
+
+    @patch("cli.single_video.YouTubeTranscriptApi")
+    def test_no_cache_fetches_fresh(self, mock_api, capsys):
+        mock_api.get_transcript.return_value = [
+            {"text": "Fresh", "start": 0.0, "duration": 1.0}
+        ]
+
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "-f", "text", "--no-cache"]):
+            main()
+
+        mock_api.get_transcript.assert_called_once()
+        assert self._SeededCache.constructions == 0
+        assert "Fresh" in capsys.readouterr().out
+
+    @patch("cli.channel_downloader.get_channel_video_ids")
+    @patch("cli.channel_downloader.YouTubeTranscriptApi")
+    def test_channel_mode_served_from_cache(self, mock_api, mock_get_ids, tmp_path):
+        mock_get_ids.return_value = ["dQw4w9WgXcQ"]
+
+        out_dir = str(tmp_path / "channel-out")
+        with patch("sys.argv", ["cli.py", "@MrBeast", "-o", out_dir, "-f", "text"]):
+            main()
+
+        mock_api.get_transcript.assert_not_called()
+        cached_file = os.path.join(out_dir, "1_dQw4w9WgXcQ.txt")
+        with open(cached_file, "r", encoding="utf-8") as f:
+            assert "FromCache" in f.read()
+
+
+class TestTranslateFlag:
+    @staticmethod
+    def _mock_translator(mock_translator_cls, result="Merhaba"):
+        mock_translator = MagicMock()
+        mock_translator.set_lang.return_value = mock_translator
+        mock_translator.set_type.return_value = mock_translator
+        mock_translator.translate_transcript.return_value = result
+        mock_translator_cls.return_value = mock_translator
+        return mock_translator
+
+    @patch("cli.translate.AITranscriptTranslator")
+    def test_translate_happy_path(self, mock_translator_cls, monkeypatch, capsys):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        mock_translator = self._mock_translator(mock_translator_cls)
+
+        with patch(
+            "sys.argv",
+            [
+                "cli.py",
+                "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                "--translate",
+                "Turkish",
+                "-l",
+                "de",
+            ],
+        ):
+            main()
+
+        mock_translator_cls.assert_called_once_with("test-key")
+        mock_translator.set_lang.assert_called_once_with("Turkish")
+        mock_translator.set_type.assert_called_once_with("txt")
+        mock_translator.translate_transcript.assert_called_once_with(
+            "dQw4w9WgXcQ", languages=["de"]
+        )
+        assert "Merhaba" in capsys.readouterr().out
+
+    @patch("cli.translate.AITranscriptTranslator")
+    def test_translate_json_format(self, mock_translator_cls, monkeypatch, capsys):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        mock_translator = self._mock_translator(mock_translator_cls, result="{}")
+
+        with patch(
+            "sys.argv",
+            ["cli.py", "dQw4w9WgXcQ", "--translate", "Turkish", "-f", "json"],
+        ):
+            main()
+
+        mock_translator.set_type.assert_called_once_with("json")
+
+    @patch("cli.translate.AITranscriptTranslator")
+    def test_translate_failure_exits_user_error(self, mock_translator_cls, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        mock_translator = self._mock_translator(mock_translator_cls)
+        mock_translator.translate_transcript.side_effect = Exception("Gemini blew up")
+
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "--translate", "Turkish"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 1
+
+    def test_translate_without_api_key_exits(self, monkeypatch):
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        with patch("sys.argv", ["cli.py", "dQw4w9WgXcQ", "--translate", "Turkish"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 1
+
+    def test_translate_rejects_srt(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        with patch(
+            "sys.argv",
+            ["cli.py", "dQw4w9WgXcQ", "--translate", "Turkish", "-f", "srt"],
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 1
+
+    def test_translate_rejects_channel_mode(self, monkeypatch):
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        with patch("sys.argv", ["cli.py", "@MrBeast", "--translate", "Turkish"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+        assert exc_info.value.code == 1

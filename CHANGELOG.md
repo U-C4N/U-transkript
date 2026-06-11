@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-06-10
+
+### Added
+- `-n/--count` flag: choose how many recent videos channel mode downloads
+  (default 10; previously a hard-coded cap).
+- `--list-transcripts` flag: list available transcript languages for a video
+  (human-readable, or JSON with `-f json`).
+- `--translate LANGUAGE` flag: translate the transcript with Gemini AI from the
+  CLI (reads the API key from the `GEMINI_API_KEY` environment variable;
+  supports `pretty`/`text`/`json` output, not `srt`/`vtt`).
+- Transcript disk cache (24h TTL, `~/.cache/u-transkript`) is now active on the
+  CLI single-video and channel paths; opt out with `--no-cache`. The library
+  API and HTTP API never cache.
+- Long transcripts are now translated in chunks (split at entry boundaries,
+  ~12k chars per request) instead of one giant request that could silently
+  truncate at the model output limit.
+- `AITranscriptTranslator.translate_transcript()` accepts a `languages`
+  preference list, forwarded to transcript extraction.
+
+- `TranscriptList.all_transcripts()`: returns every track, including languages
+  that have both a manual and an auto-generated version (iteration collapses to
+  one per language); used by `--list-transcripts`.
+
+### Changed
+- Channel-mode files now include the video ID in the filename
+  (`1_dQw4w9WgXcQ.srt` instead of `1.srt`).
+- `AITranscriptTranslator` lets `TranscriptRetrievalError` and
+  `requests.RequestException` propagate unwrapped (previously both were wrapped
+  in plain `Exception`), so the CLI's exit codes (3 / 2) hold on `--translate`.
+- The transcript cache fails open: any cache I/O error (unwritable cache dir,
+  corrupt entry, disk full) falls back to a direct fetch instead of aborting.
+- A config-file `format=srt`/`vtt` default is ignored on the `--translate` path,
+  where those formats are invalid.
+- Exception suggestions no longer reference CLI flags that do not exist
+  (`--proxy`, `--cookies`); proxy/cookie support remains available through the
+  library API and the HTTP API's `proxy` query parameter.
+
 ## [3.2.1] - 2026-06-10
 
 ### Fixed

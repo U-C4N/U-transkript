@@ -10,7 +10,7 @@ from utils.console import error, info, success, warning
 from youtube_transcript import YouTubeTranscriptApi
 
 from .channel_scraper import get_channel_video_ids
-from .helpers import build_formatter_kwargs, get_progress_bar
+from .helpers import build_formatter_kwargs, fetch_transcript_cached, get_progress_bar
 from .output import file_extension_for
 
 _DEFAULT_VIDEO_COUNT = 10
@@ -34,14 +34,17 @@ def _download_one(
     video_id: str, index: int, args: argparse.Namespace, output_dir: str
 ) -> tuple[bool, str | None]:
     try:
-        transcript = YouTubeTranscriptApi.get_transcript(
-            video_id, languages=args.languages
+        transcript = fetch_transcript_cached(
+            YouTubeTranscriptApi,
+            video_id,
+            languages=args.languages,
+            use_cache=not getattr(args, "no_cache", False),
         )
         formatter = get_formatter(args.format)
         body = formatter.format_transcript(transcript, **build_formatter_kwargs(args.format))
 
         filepath = os.path.join(
-            output_dir, f"{index}.{file_extension_for(args.format)}"
+            output_dir, f"{index}_{video_id}.{file_extension_for(args.format)}"
         )
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(body)
@@ -57,8 +60,9 @@ def _download_one(
 def download_channel_transcripts(target: str, args: argparse.Namespace) -> None:
     info(f"Getting video list for {target}...")
 
+    count = getattr(args, "count", None) or _DEFAULT_VIDEO_COUNT
     try:
-        video_ids = get_channel_video_ids(target, _DEFAULT_VIDEO_COUNT)
+        video_ids = get_channel_video_ids(target, count)
     except Exception as e:
         raise RuntimeError(f"Failed to get video list: {e}")
 

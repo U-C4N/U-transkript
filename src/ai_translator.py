@@ -5,9 +5,36 @@ from datetime import datetime
 
 import requests
 
+from exceptions import TranscriptRetrievalError
 from utils.retry import retry
 from utils.security import validate_url
 from youtube_transcript import YouTubeTranscriptApi
+
+_MAX_CHUNK_CHARS = 12000
+
+
+def _chunk_texts(texts: list[str], max_chars: int = _MAX_CHUNK_CHARS) -> list[str]:
+    """Pack entry texts into chunks of at most max_chars, split at entry boundaries.
+
+    A single entry longer than max_chars is kept whole (never split mid-entry).
+    """
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for text in texts:
+        extra = len(text) + (1 if current else 0)
+        if current and current_len + extra > max_chars:
+            chunks.append(" ".join(current))
+            current = [text]
+            current_len = len(text)
+        else:
+            current.append(text)
+            current_len += extra
+
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
 
 
 class AITranscriptTranslator:
@@ -52,14 +79,21 @@ class AITranscriptTranslator:
         target_language: str | None = None,
         output_type: str | None = None,
         custom_prompt: str | None = None,
+        languages: list[str] | None = None,
     ) -> str:
-        """Extract a transcript and translate it via Gemini."""
+        """Extract a transcript and translate it via Gemini.
+
+        Long transcripts are split into chunks at entry boundaries and
+        translated chunk by chunk to stay under model output limits.
+        """
         self._current_video_id = video_id
         target_lang = target_language or self.target_language
         output_fmt = (output_type or self.output_type).lower()
 
         try:
-            transcript = YouTubeTranscriptApi.get_transcript(video_id)
+            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+        except TranscriptRetrievalError:
+            raise  # keep the typed error so CLI exit-code mapping holds
         except Exception as e:
             raise Exception(
                 f"Failed to extract or validate transcript for video_id '{video_id}': {e}"
@@ -73,8 +107,13 @@ class AITranscriptTranslator:
                 f"Unexpected transcript data format: {type(transcript)}"
             )
 
-        full_text = " ".join(entry["text"] for entry in transcript)
-        translated_text = self._translate_with_gemini(full_text, target_lang, custom_prompt)
+        chunks = _chunk_texts(
+            [entry["text"] for entry in transcript], max_chars=_MAX_CHUNK_CHARS
+        )
+        translated_text = " ".join(
+            self._translate_with_gemini(chunk, target_lang, custom_prompt)
+            for chunk in chunks
+        )
         return self._format_output(translated_text, transcript, output_fmt)
 
     @retry(
@@ -99,10 +138,8 @@ class AITranscriptTranslator:
         headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
-        try:
-            response = self._call_gemini_api(url, headers, payload)
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"API request failed: {e}")
+        # requests.RequestException propagates unwrapped so the CLI maps it to exit 2.
+        response = self._call_gemini_api(url, headers, payload)
 
         try:
             result = response.json()
