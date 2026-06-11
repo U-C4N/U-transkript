@@ -11,7 +11,7 @@
 U-Transkript is a standalone alternative to `youtube-transcript-api` with built-in AI translation. It talks to YouTube's InnerTube endpoint directly using the ANDROID client, so transcript extraction needs no official API key and no PoToken.
 
 - **Transcript extraction** via YouTube's InnerTube ANDROID client, with watch-page scraping as a fallback
-- **AI translation** to any language via Google Gemini (`gemini-2.5-flash` by default)
+- **AI translation** to any language via Google Gemini (`gemini-3.5-flash` by default)
 - **YouTube server-side translation** (`transcript.translate("es")`) — free, no AI key needed
 - **Output formats**: pretty text, plain text, JSON, SRT, WebVTT
 - **CLI** with single-video and bulk channel mode, plus an optional Flask HTTP API
@@ -185,7 +185,7 @@ Translation requires a Gemini API key from [Google AI Studio](https://aistudio.g
 ```python
 from ai_translator import AITranscriptTranslator
 
-translator = AITranscriptTranslator("GEMINI_API_KEY")  # default model: gemini-2.5-flash
+translator = AITranscriptTranslator("GEMINI_API_KEY")  # default model: gemini-3.5-flash
 text = translator.set_lang("German").translate_transcript("dQw4w9WgXcQ")
 ```
 
@@ -193,7 +193,7 @@ text = translator.set_lang("German").translate_transcript("dQw4w9WgXcQ")
 # Fluent configuration; output types: "txt" (default), "json", "xml"
 result = (
     AITranscriptTranslator("GEMINI_API_KEY")
-    .set_model("gemini-2.5-flash")
+    .set_model("gemini-3.5-flash")
     .set_lang("Spanish")
     .set_type("json")
     .translate_transcript("dQw4w9WgXcQ")

@@ -64,7 +64,7 @@ class TestAITranslatorInit:
     def test_init_with_api_key(self):
         translator = AITranscriptTranslator("test-api-key")
         assert translator.api_key == "test-api-key"
-        assert translator.model == "gemini-2.5-flash"
+        assert translator.model == "gemini-3.5-flash"
 
     def test_init_with_custom_model(self):
         translator = AITranscriptTranslator("test-api-key", model="gemini-pro")
@@ -144,7 +144,7 @@ class TestFormatOutput:
         assert parsed["translated_text"] == "Merhaba dünya"
         assert "original_transcript" in parsed
         assert "translation_metadata" in parsed
-        assert parsed["translation_metadata"]["model"] == "gemini-2.5-flash"
+        assert parsed["translation_metadata"]["model"] == "gemini-3.5-flash"
 
     def test_format_xml(self):
         self.translator.target_language = "Turkish"

@@ -41,7 +41,7 @@ class AITranscriptTranslator:
     """Translate YouTube transcripts using the Google Gemini API."""
 
     _BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-    _DEFAULT_MODEL = "gemini-2.5-flash"
+    _DEFAULT_MODEL = "gemini-3.5-flash"
     _DEFAULT_PROMPT = (
         "Please translate the following text to {language}. "
         "Maintain the natural flow and context of the content. "

@@ -109,7 +109,7 @@ Exit codes (`cli/helpers.py`): `EXIT_SUCCESS=0`, `EXIT_USER_ERROR=1`, `EXIT_NETW
 
 Consumers: the CLI's `--translate` flag (`cli/translate.py`, key from the `GEMINI_API_KEY` env var) and the `quick_translate()` wrapper, defined in `ai_translator.py` and re-exported from `src/__init__.py` (it defaults to Turkish, while the class defaults to English). `api.py` does not translate. Facts to keep in mind when editing:
 
-- Calls the Gemini REST API directly (`POST {base}/{model}:generateContent`, default model `gemini-2.5-flash`), key in the `x-goog-api-key` header — **never in the URL**. `validate_url` runs before every call.
+- Calls the Gemini REST API directly (`POST {base}/{model}:generateContent`, default model `gemini-3.5-flash`), key in the `x-goog-api-key` header — **never in the URL**. `validate_url` runs before every call.
 - **Chunked translation**: `_chunk_texts` packs entry texts into ≤12k-char chunks at entry boundaries (`_MAX_CHUNK_CHARS`; a single oversized entry is kept whole, never split mid-entry); each chunk is one Gemini request and the results are joined with a space. A `custom_prompt` is applied to every chunk independently — summarize-style prompts produce one output per chunk.
 - All five outbound HTTP calls pass `timeout=30` (watch page, transcript fetch, InnerTube POST, channel-page scrape, Gemini POST) — keep it that way for new calls.
 - Response parsing assumes exactly `candidates[0].content.parts[0].text`; safety blocks / MAX_TOKENS surface as a generic `Exception`. `TranscriptRetrievalError` and `requests.RequestException` propagate **unwrapped** (so the CLI's exit-code mapping holds on `--translate`); everything else is wrapped in plain `Exception`.

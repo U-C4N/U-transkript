@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one per language); used by `--list-transcripts`.
 
 ### Changed
+- Default Gemini model bumped from `gemini-2.5-flash` to `gemini-3.5-flash`
+  (the old default has started returning 503s; the new one is verified live).
 - Channel-mode files now include the video ID in the filename
   (`1_dQw4w9WgXcQ.srt` instead of `1.srt`).
 - `AITranscriptTranslator` lets `TranscriptRetrievalError` and
