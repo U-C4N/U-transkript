@@ -29,7 +29,7 @@ Bu belgede kod, tanımlayıcılar ve kullanıcıya görünen İngilizce metinler
   1. Elle yazılmış altyazı varken otomatik olanın gelmesi
   2. Dil sırasında sessizce YouTube çevirisine geçip 429 almak
   3. Windows cp1254 konsolunda çökme
-- AI çevirisi, doğrudan SRT/VTT olarak kaydedilebilen, zamanlaması korunmuş bir `Transcript` üretir.
+- AI çevirisi, zamanlaması korunmuş bir `Transcript` üretir. Bu çeviri, orijinal altyazı gibi kullanıcının seçtiği her formatta kaydedilebilir: TXT, SRT, VTT, JSON.
 - Kalite kapıları yeşildir:
   - ruff
   - mypy `--strict`
@@ -454,6 +454,8 @@ class Transcript: video: VideoInfo; language_code: str; language: str; is_genera
 - `merge_sentences()`: §9.2'deki kurallarla yeni bir `Transcript` döndürür.
 
 ### 8.2 Formatlar (`formats.py`)
+
+- **Her format her transkripte uygulanır.** Orijinal altyazı da AI ile çevrilmiş altyazı da aynı `Transcript` tipindedir. Kullanıcı TXT, SRT, VTT, JSON veya zaman damgalı metin (pretty) arasından istediğini seçer; kütüphanede de CLI'da da hiçbir yol yalnızca SRT ile sınırlı değildir.
 
 - **SRT:** `HH:MM:SS,mmm`. Ardışık satırlar birbirine taşıyorsa bitiş zamanı bir sonrakinin başlangıcına kırpılır (`clamp_overlaps=True` varsayılan). Süresi sıfır kalan satır yazılmaz.
 - **VTT:** `WEBVTT` başlığı, `HH:MM:SS.mmm`. Metindeki `&`, `<`, `>` kaçış karakterine çevrilir; `preserve_formatting` ile gelen `b`/`i`/`u` etiketleri korunur. Taşan satırlar SRT'deki gibi kırpılır.
