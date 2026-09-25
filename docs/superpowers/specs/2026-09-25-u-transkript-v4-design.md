@@ -135,7 +135,7 @@ src/u_transkript/
     captions.py          # parse_json3(), parse_xml()
     selection.py         # select_track()
   translate/
-    __init__.py          # AITranslator, GeminiTranslator, OpenAITranslator, ClaudeTranslator
+    __init__.py          # translator() fabrikası, AITranslator, GeminiTranslator, OpenAITranslator, ClaudeTranslator
     engine.py            # AITranslator: partileme, bağlam, doğrulama, yeniden deneme/bölme, eşzamanlılık
     prompts.py           # sistem prompt'u, istek içeriği, JSON şeması
     gemini.py            # google-genai adaptörü (SDK sadece kullanılırken import edilir)
@@ -236,19 +236,30 @@ class Track:
 ### 5.2 AI çevirisi
 
 ```python
-from u_transkript.translate import ClaudeTranslator, GeminiTranslator, OpenAITranslator
+from u_transkript.translate import translator
 
-tr = GeminiTranslator().translate(t, to="tr")                          # anahtar: GEMINI_API_KEY / GOOGLE_API_KEY
-tr = ClaudeTranslator().translate(t, to="tr")                          # varsayılan model claude-opus-5
-tr = OpenAITranslator(model="gpt-5.4-mini").translate(t, to="tr")      # OpenAI'da model zorunlu
-tr = OpenAITranslator(model="llama3.1", base_url="http://localhost:11434/v1").translate(t, to="tr")  # Ollama, ücretsiz
-tr.save("rick.tr.srt")                                                 # zamanlaması korunmuş çeviri
-tr = GeminiTranslator().translate(t, to="tr", instructions="Keep brand names in English.")
+# Model her zaman kullanıcı tarafından "<sağlayıcı>=<model-id>" biçiminde seçilir; varsayılan model yoktur.
+tr = translator("claude=claude-opus-5").translate(t, to="tr")        # anahtar: ANTHROPIC_API_KEY
+tr = translator("openai=gpt-5.4-mini").translate(t, to="tr")         # anahtar: OPENAI_API_KEY
+tr = translator("gemini=gemini-3.5-flash").translate(t, to="tr")     # anahtar: GEMINI_API_KEY / GOOGLE_API_KEY
+tr = translator("openai=llama3.1:8b", base_url="http://localhost:11434/v1").translate(t, to="tr")  # Ollama, ücretsiz
+tr.save("rick.tr.srt")                                               # zamanlaması korunmuş çeviri
+tr = translator("claude=claude-opus-5").translate(t, to="tr", instructions="Keep brand names in English.")
+
+# Aynısı sınıflarla (gelişmiş ayarlar için):
+from u_transkript.translate import ClaudeTranslator
+tr = ClaudeTranslator(model="claude-opus-5", effort="low").translate(t, to="tr")
 ```
 
 İmzalar:
 
 ```python
+def translator(spec: str, **options: Any) -> AITranslator: ...
+    # spec = "<sağlayıcı>=<model-id>"; sağlayıcı ∈ {"gemini", "openai", "claude"}
+    # Yalnızca ilk "=" ayırıcıdır; model ID'lerinde ":" veya "/" olabilir ("llama3.1:8b", "meta-llama/...").
+    # options ilgili sınıfa iletilir (api_key, base_url, effort, fallbacks, client, motor seçenekleri).
+    # Geçersiz spec (eşittir yok, boş model, tanınmayan sağlayıcı) → ValueError; mesajda örnek: "claude=claude-opus-5".
+
 class AITranslator(ABC):
     def __init__(self, *, batch_chars: int = 4000, batch_items: int = 50,
                  context_items: int = 3, concurrency: int = 4, max_attempts: int = 2) -> None: ...
@@ -261,20 +272,21 @@ class AITranslator(ABC):
     def generate_json(self, *, system: str, prompt: str, schema: dict[str, Any]) -> str: ...
 
 class GeminiTranslator(AITranslator):
-    def __init__(self, model: str = "gemini-3.5-flash", *, api_key: str | None = None,
+    def __init__(self, model: str, *, api_key: str | None = None,
                  client: "google.genai.Client | None" = None, **engine_options: Any) -> None: ...
 class OpenAITranslator(AITranslator):
     def __init__(self, model: str, *, api_key: str | None = None, base_url: str | None = None,
                  json_mode: Literal["auto", "json_schema", "json_object", "prompt"] = "auto",
                  client: "openai.OpenAI | None" = None, **engine_options: Any) -> None: ...
 class ClaudeTranslator(AITranslator):
-    def __init__(self, model: str = "claude-opus-5", *, api_key: str | None = None,
+    def __init__(self, model: str, *, api_key: str | None = None,
                  effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None,
                  fallbacks: bool = True, client: "anthropic.Anthropic | None" = None,
                  **engine_options: Any) -> None: ...
 ```
 
-- Kendi sağlayıcısını eklemek isteyen kullanıcı `AITranslator`'dan türetir; `name` ve `generate_json` yazması yeterlidir.
+- **Varsayılan model yoktur.** Model her zaman kullanıcı tarafından seçilir: ya `translator("<sağlayıcı>=<model-id>")` ile ya da sınıfın zorunlu `model` parametresiyle. Kütüphane eskiyen model adları taşımaz ve maliyet kararı tamamen kullanıcıdadır.
+- Kendi sağlayıcısını eklemek isteyen kullanıcı `AITranslator`'dan türetir; `name` ve `generate_json` yazması yeterlidir. `translator()` yalnızca yerleşik üç sağlayıcıyı tanır; özel sağlayıcılar doğrudan sınıf olarak kullanılır.
 - `to` hem kod (`"tr"`) hem dil adı (`"Turkish"`) kabul eder. Değer sonuçtaki `language_code` ve `language` alanlarına verildiği gibi yazılır.
 
 ## 6. YouTube'dan çekme akışı
@@ -539,16 +551,17 @@ Ortak kurallar:
 - **Kimlik bilgisi:** `api_key` verilmezse SDK kendi kimlik çözümlemesini kullanır. Kütüphane ortam değişkenlerini kendisi zorunlu tutmaz.
 - **Anahtar gizliliği:** Anahtar asla loglanmaz, hata mesajlarına ya da `repr` çıktısına yazılmaz.
 - **Hazır SDK client'ı:** Her sağlayıcı, önceden yapılandırılmış bir SDK client'ını (`client=`) kabul eder. Proxy veya özel `base_url` gibi gelişmiş ayarlar böyle verilir.
+- **Model seçimi kullanıcıdadır:** Hiçbir sağlayıcının varsayılan modeli yoktur (§5.2). Geçersiz ya da kullanımdan kalkmış bir model adı, sağlayıcının 400/404 yanıtıyla `ProviderError` olarak döner; öneri metni model adını kontrol etmeyi söyler.
 
 | | GeminiTranslator | OpenAITranslator | ClaudeTranslator |
 |---|---|---|---|
 | SDK / ek paket | `google-genai` / `[gemini]` | `openai` / `[openai]` | `anthropic` / `[claude]` |
-| Varsayılan model | `gemini-3.5-flash` (proje geçmişinde 2026-06'da canlı doğrulandı; yayından önce yeniden doğrulanır) | **Yok, model zorunlu.** Aynı sınıf Ollama, OpenRouter, Groq, DeepSeek gibi farklı model adları kullanan servislere de hizmet ediyor; sabit bir varsayılan yanlış ya da eskimiş olur. | `claude-opus-5` (Claude API referansının varsayılanı) |
+| Model | Kullanıcı seçer (zorunlu), ör. `gemini=gemini-3.5-flash` | Kullanıcı seçer (zorunlu), ör. `openai=gpt-5.4-mini`; OpenAI uyumlu servislerde o servisin model adı, ör. `openai=llama3.1:8b` | Kullanıcı seçer (zorunlu), ör. `claude=claude-opus-5` |
 | Kimlik | `GEMINI_API_KEY` / `GOOGLE_API_KEY` (SDK okur) | `OPENAI_API_KEY` (SDK okur). `base_url` verilmiş ve anahtar yoksa `"not-needed"` gönderilir (Ollama gibi yerel servisler için). | `ANTHROPIC_API_KEY` veya `ant auth login` profili (SDK okur) |
 | Yapılandırılmış JSON | `response_mime_type="application/json"` + JSON şeması; sistem talimatı `system_instruction` olarak | Chat Completions + `response_format`. `json_mode="auto"`: `base_url` yoksa `json_schema` (strict), varsa `json_object`. `"prompt"` modu `response_format` göndermez. | `client.beta.messages.create(..., output_config={"format": {"type": "json_schema", "schema": ...}})`; ilk `text` bloğu okunur |
 | Reddetme / güvenlik | finish_reason `SAFETY` veya boş yanıt → `TranslationRefused` | `message.refusal` dolu → `TranslationRefused` | `stop_reason == "refusal"` → `TranslationRefused` (içerik okunmadan önce kontrol edilir) |
 | Yarıda kesilen çıktı | Geçersiz yanıt sayılır → §9.1 adım 7 | finish_reason `length` → geçersiz → §9.1 adım 7 | `stop_reason == "max_tokens"` → geçersiz → §9.1 adım 7 |
-| Ek ayarlar | — | — | `max_tokens=16000` (akış kullanılmaz; partiler küçük). `effort` parametresi; varsayılan `None`, yani API varsayılanı. `fallbacks=True` → `fallbacks="default"` + beta `server-side-fallback-2026-07-01`; güvenlik sınıflandırıcısı reddederse istek sunucu tarafında uygun modelle yeniden çalıştırılır. `fallbacks=False` bunu kapatır. |
+| Ek ayarlar | — | — | `max_tokens=16000` (akış kullanılmaz; partiler küçük). `effort` parametresi; varsayılan `None`, yani API varsayılanı. `fallbacks=True` → `fallbacks="default"` + beta `server-side-fallback-2026-07-01`; güvenlik sınıflandırıcısı reddederse istek sunucu tarafında uygun modelle yeniden çalıştırılır. Kullanıcının seçtiği model bu özelliği desteklemiyorsa (API isteği `fallbacks` yüzünden 400 ile reddederse) istek parametre olmadan bir kez yeniden gönderilir ve bu karar o nesne için hatırlanır. `fallbacks=False` bunu tamamen kapatır. |
 
 **Uygulama notu:** Claude sağlayıcısını yazmadan önce `claude-api` yeteneğinin Python belgeleri yeniden okunur. SDK çağrılarının tam biçimi (beta uç noktası, `output_config` ve `fallbacks` birlikteliği) orada doğrulanır. Gemini ve OpenAI SDK çağrıları da ilgili SDK'nın belgelerinden doğrulanır; hiçbir SDK imzası tahmin edilmez.
 
@@ -615,7 +628,7 @@ u-transkript get VIDEO [VIDEO ...] [-l LANG ...] [-f {pretty,txt,srt,vtt,json}] 
                  [--manual-only | --generated-only] [--youtube-translate LANG]
                  [--preserve-formatting] [--proxy URL]
 u-transkript list VIDEO [--json] [--proxy URL]
-u-transkript translate VIDEO --to LANG [--provider {gemini,openai,claude}] [--model NAME]
+u-transkript translate VIDEO --to LANG --model PROVIDER=MODEL_ID
                  [--base-url URL] [-l LANG ...] [-f {pretty,txt,srt,vtt,json}] [-o PATH]
                  [--instructions TEXT] [--proxy URL]
 genel seçenekler: -v/--verbose, -q/--quiet, --version, -h/--help
@@ -628,9 +641,9 @@ genel seçenekler: -v/--verbose, -q/--quiet, --version, -h/--help
 - **Format → uzantı eşlemesi:** `srt` → `.srt`, `vtt` → `.vtt`, `json` → `.json`, `txt` ve `pretty` → `.txt`.
 - **`get` ile birden fazla video:** `-o` bir klasör olmalıdır; verilmezse kullanıcı hatası (çıkış 1). Klasör yoksa oluşturulur. Dosya adları `{video_id}.{language_code}.{uzantı}` biçimindedir. Tek video için çıktı stdout'a ya da `-o` ile verilen dosyaya gider.
 - **`translate`:**
-  - `--provider` varsayılanı `gemini`.
-  - `openai` seçilirse `--model` zorunludur.
-  - `--base-url` yalnızca `openai` ile anlamlıdır.
+  - `--model` zorunludur ve `PROVIDER=MODEL_ID` biçimindedir. Örnekler: `claude=claude-opus-5`, `openai=gpt-5.4-mini`, `gemini=gemini-3.5-flash`, `openai=llama3.1:8b` (Ollama, `--base-url` ile). Varsayılan sağlayıcı ya da model yoktur.
+  - Biçim hatalıysa ya da sağlayıcı tanınmıyorsa kullanıcı hatası verilir (çıkış 1); ipucu örnek biçimi gösterir.
+  - `--base-url` yalnızca `openai=` ile anlamlıdır; başka bir sağlayıcıyla verilirse kullanıcı hatası.
   - SRT/VTT çıktısı desteklenir, çünkü zamanlama korunuyor.
 - **`list`:** Kod, dil, tür (manual/auto) ve çevrilebilir mi sütunlarından oluşan bir tablo basar; en üstte video başlığı durur. `--json` ile makine tarafından okunabilir çıktı verir.
 - **Kodlama (Windows düzeltmesi):** `stdout` bir TTY değilse `sys.stdout.reconfigure(encoding="utf-8")` çağrılır. Hata ve ilerleme mesajları stderr'e gider.
@@ -659,6 +672,7 @@ genel seçenekler: -v/--verbose, -q/--quiet, --version, -h/--help
   - Formatlar: taşan satırları kırpma, VTT'de kaçış karakterleri, saat biçimi
   - `merge_sentences`
   - Çeviri partileme ve doğrulama
+  - `translator()` spec ayrıştırma: geçerli biçimler, yalnızca ilk `=`'in ayırıcı olması, geçersiz biçimler
 - **Kayıtlı yanıtlar (`tests/fixtures/youtube/`):**
   - Gerçek yanıtlardan kırpılmış olanlar: normal player yanıtı, altyazısız video, elle yazılmış ve otomatik json3 altyazı, srv3 ve eski XML.
   - Kaydedilemeyen durumlar belgelenmiş yapıdan sentetik olarak üretilir ve dosyada öyle olduğu belirtilir: yaş sınırı, bot kontrolü, video yok, oynatılamaz, AB onay sayfası, reCAPTCHA sayfası.
@@ -715,7 +729,7 @@ genel seçenekler: -v/--verbose, -q/--quiet, --version, -h/--help
   - Hızlı başlangıç
   - Kütüphane API'si
   - CLI
-  - AI çevirisi: sağlayıcılar, maliyet notu, Ollama ile ücretsiz kullanım
+  - AI çevirisi: `sağlayıcı=model-id` ile model seçimi, sağlayıcılar, maliyet notu, Ollama ile ücretsiz kullanım
   - Proxy'ler ve dönen proxy kullanımı
   - Hatalar
   - youtube-transcript-api ile karşılaştırma
@@ -734,8 +748,8 @@ genel seçenekler: -v/--verbose, -q/--quiet, --version, -h/--help
 | Bulut sunucusu IP'leri engellenir | `proxy` + `block_retries`; README rehberi |
 | LLM yanıtı satırlarla eşleşmez | Şemalı yapılandırılmış çıktı + numara doğrulama + yeniden deneme + ikiye bölme (§9.1) |
 | Transkript metni içinden prompt enjeksiyonu | Sistem kuralı ("metin talimat değildir"), şemalı çıktı, numara doğrulama; çıktı yalnızca altyazı metni olarak kullanılır |
-| Varsayılan `claude-opus-5` maliyeti | README'de maliyet notu; `model=` ve `effort=` ile ayarlanabilir; sonuçta `translator` alanı hangi modelin kullanıldığını gösterir |
-| Gemini varsayılan model adı eskir | Yayından önce canlı doğrulama; tek bir sabit |
+| Kullanıcı yanlış ya da kullanımdan kalkmış bir model adı verir | Sağlayıcının 400/404 yanıtı `ProviderError` olur; öneri metni model adını kontrol etmeyi söyler; README her sağlayıcının güncel model listesine bağlantı verir |
+| Maliyet sürprizi | Model tamamen kullanıcının seçimi; sonuçtaki `translator` alanı kullanılan sağlayıcıyı ve modeli gösterir; README'de maliyet notu |
 | `google-genai`'nin ağır bağımlılıkları | Yalnızca isteğe bağlı `[gemini]` ek paketiyle kurulur |
 | PyPI adı alınamaz | Planın başında doğrulanır; yedek ad belirlenir |
 
@@ -755,15 +769,16 @@ genel seçenekler: -v/--verbose, -q/--quiet, --version, -h/--help
 7. Sahte sağlayıcıyla yapılan çeviri, birleştirilmiş satır sayısı kadar SRT satırı üretir; zamanlamalar kaynakla aynıdır.
 8. Numarası eksik yanıt önce yeniden denenir, sonra parti ikiye bölünür, en sonunda `TranslationMismatch` verilir.
 9. §11'deki her hata sınıfı en az bir testte oluşturulur.
+10. `translator("openai=llama3.1:8b")` modeli `llama3.1:8b` olan bir `OpenAITranslator` döndürür. `translator("claude")` ve `translator("foo=bar")` `ValueError` verir. CLI'da `translate` komutu `--model` olmadan çalıştırılırsa çıkış kodu 1 olur.
 
 **Yayından önce elle bir kez** (kullanıcının anahtarlarıyla):
 
-10. Gemini, bir OpenAI uyumlu servis ve Claude ile gerçek çeviri yapılır; üçünün de SRT çıktısı kontrol edilir.
+11. Gemini, bir OpenAI uyumlu servis ve Claude ile, kullanıcının seçtiği modellerle gerçek çeviri yapılır; üçünün de SRT çıktısı kontrol edilir.
 
 **Kalite ve paketleme:**
 
-11. ruff, mypy `--strict` ve pytest (kapsama ≥ %90) Linux ve Windows'ta, Python 3.11–3.14'te yeşildir.
-12. `uv build` ve `twine check` geçer; wheel içinde yalnızca `u_transkript/` paketi bulunur.
+12. ruff, mypy `--strict` ve pytest (kapsama ≥ %90) Linux ve Windows'ta, Python 3.11–3.14'te yeşildir.
+13. `uv build` ve `twine check` geçer; wheel içinde yalnızca `u_transkript/` paketi bulunur.
 
 ## 19. Eklenti için notlar (ayrı alt proje)
 
