@@ -8,6 +8,7 @@ from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from typing import Any
 
+from utmax.adapters.providers import create_translator
 from utmax.adapters.providers.base import Translator
 from utmax.core.languages import english_name
 from utmax.core.translate.batching import (
@@ -22,12 +23,37 @@ from utmax.core.translate.protocol import response_schema, system_prompt
 from utmax.errors import InvalidOption, TranslationError, TranslationMismatch
 from utmax.models import Language, Segment, Transcript
 
-__all__ = ["translate_transcript"]
+__all__ = ["translate", "translate_transcript"]
 
 log = logging.getLogger("utmax.translate")
 
 _LANGUAGE_TAG = re.compile(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*")
 _EXCERPT_CHARS = 300
+
+
+def translate(
+    transcript: Transcript,
+    to: str,
+    *,
+    model: str | Translator,
+    instructions: str | None = None,
+    resegment: bool | None = None,
+    **options: Any,
+) -> Transcript:
+    """Pick the translator for ``model``, then translate; see :func:`utmax.translate`."""
+    if isinstance(model, Translator):
+        if options:
+            raise InvalidOption(
+                f"Options such as {', '.join(sorted(options))} only apply when model is a "
+                '"provider=model-id" string; set them on the Translator instead.',
+                video_id=transcript.video.video_id,
+            )
+        translator = model
+    else:
+        translator = create_translator(model, **options)
+    return translate_transcript(
+        transcript, to, translator, instructions=instructions, resegment=resegment
+    )
 
 
 def translate_transcript(
