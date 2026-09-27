@@ -54,6 +54,6 @@ def test_retry_after_as_an_http_date() -> None:
     assert parse_retry_after("Sun, 27 Sep 2026 12:00:07 -0000", now=NOW) == 7.0
 
 
-@pytest.mark.parametrize("value", [None, "", "   ", "soon", "-5"])
+@pytest.mark.parametrize("value", [None, "", "   ", "soon", "-5", chr(0xB2)])
 def test_unusable_retry_after_values(value: str | None) -> None:
     assert parse_retry_after(value, now=NOW) is None

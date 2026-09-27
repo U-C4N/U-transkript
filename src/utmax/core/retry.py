@@ -34,7 +34,7 @@ def parse_retry_after(value: str | None, *, now: datetime) -> float | None:
     if value is None or not value.strip():
         return None
     text = value.strip()
-    if text.isdigit():
+    if text.isascii() and text.isdigit():
         return min(float(text), MAX_RETRY_AFTER)
     try:
         when = parsedate_to_datetime(text)
