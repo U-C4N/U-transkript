@@ -19,10 +19,13 @@ FORBIDDEN_IN_CORE = (
     "http.client",
     "http.cookiejar",
     "http.server",
+    "shutil",
     "socket",
     "ssl",
     "subprocess",
+    "tempfile",
     "threading",
+    "time",
     "urllib.error",
     "urllib.request",
     "utmax.adapters",
@@ -55,6 +58,23 @@ def test_core_never_imports_io_modules_or_outer_layers() -> None:
         for path in sorted(CORE.rglob("*.py"))
         for name in sorted(imported_modules(path))
         if is_forbidden(name)
+    ]
+    assert offenders == []
+
+
+LAYER_RULES = {
+    PACKAGE / "adapters": ("utmax.client", "utmax.services"),
+    PACKAGE / "services": ("utmax.client",),
+}
+
+
+def test_outer_layers_only_depend_inward() -> None:
+    offenders = [
+        f"{path.relative_to(PACKAGE).as_posix()}: {name}"
+        for folder, banned in LAYER_RULES.items()
+        for path in sorted(folder.rglob("*.py"))
+        for name in sorted(imported_modules(path))
+        if any(name == b or name.startswith(f"{b}.") for b in banned)
     ]
     assert offenders == []
 

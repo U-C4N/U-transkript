@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -47,3 +48,10 @@ def test_block_retries_reach_innertube() -> None:
     transport.add("POST", "/player", text_response("", status=429), json_response(player_payload()))
     transport.add("GET", "lang=en&fmt=json3", json_response(MANUAL_JSON3))
     assert Client(transport=transport, block_retries=1).fetch(VIDEO_ID).language_code == "en"
+
+
+def test_fetch_and_save_print_nothing(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    transcript = Client(transport=standard_youtube()).fetch(VIDEO_ID)
+    transcript.save(tmp_path / "t.srt")
+    captured = capsys.readouterr()
+    assert (captured.out, captured.err) == ("", "")

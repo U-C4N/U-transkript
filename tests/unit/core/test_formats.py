@@ -19,7 +19,7 @@ from utmax.core.formats import (
     to_vtt,
 )
 from utmax.errors import UnsupportedFormat
-from utmax.models import Segment
+from utmax.models import Segment, Transcript, VideoInfo
 
 SEGMENTS = (
     Segment(1.36, 1.68, "[♪♪♪]"),
@@ -90,6 +90,18 @@ def test_json_has_metadata_and_keeps_non_ascii_literal() -> None:
     assert data["translated_from"] is None
     assert data["translator"] is None
     assert data["segments"] == [{"start": 0.5, "duration": 1.0, "text": "♪ Ğüş 日本語"}]
+
+
+def test_json_keeps_non_ascii_titles_literal() -> None:
+    video = VideoInfo("dQw4w9WgXcQ", "Şarkı ♪ 日本語", "Kanal", "UC123", 1.0, False)
+    transcript = Transcript(
+        video=video,
+        language_code="tr",
+        language="Turkish",
+        is_generated=False,
+        segments=(Segment(0, 1, "a"),),
+    )
+    assert '"title": "Şarkı ♪ 日本語"' in to_json(transcript)
 
 
 def test_text_joins_segments() -> None:

@@ -124,6 +124,14 @@ def fetch(
 
     Manual subtitles win over auto-generated ones, and YouTube's translation is never used
     unless you ask for it.
+
+    Raises:
+        InvalidVideoId: ``video`` holds no video ID (checked before any request).
+        NoTranscriptFound: no track matches ``languages`` or the filters; lists what exists.
+        TranscriptsDisabled: the video has no subtitles.
+        VideoUnavailable, VideoUnplayable, AgeRestricted: YouTube will not serve the video.
+        RequestBlocked, IpBlocked: YouTube is blocking or rate-limiting this IP address.
+        NetworkError: the network failed after retries.
     """
     return _client().fetch(
         video,
