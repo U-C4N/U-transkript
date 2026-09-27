@@ -73,3 +73,78 @@ def json3_payload(*cues: tuple[int, int, str]) -> dict[str, Any]:
             for start, duration, text in cues
         ],
     }
+
+
+DEFAULT_TRACKS: tuple[tuple[str, str, bool], ...] = (
+    ("en", "English", False),
+    ("en", "English (auto-generated)", True),
+    ("de-DE", "German (Germany)", False),
+    ("ja", "Japanese", False),
+    ("pt-BR", "Portuguese (Brazil)", False),
+    ("es-419", "Spanish (Latin America)", False),
+)
+
+
+def caption_track(
+    code: str, name: str, generated: bool, *, video_id: str = VIDEO_ID
+) -> dict[str, Any]:
+    """One ``captionTracks`` entry shaped like the ANDROID client's."""
+    url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={code}&fmt=srv3"
+    track: dict[str, Any] = {
+        "baseUrl": url + ("&kind=asr" if generated else ""),
+        "name": {"runs": [{"text": name}]},
+        "vssId": f"{'a' if generated else ''}.{code}",
+        "languageCode": code,
+        "isTranslatable": True,
+        "trackName": "",
+    }
+    if generated:
+        track["kind"] = "asr"
+    return track
+
+
+def player_payload(
+    *,
+    video_id: str = VIDEO_ID,
+    status: str = "OK",
+    reason: str | None = None,
+    sub_reasons: tuple[str, ...] = (),
+    tracks: tuple[tuple[str, str, bool], ...] = DEFAULT_TRACKS,
+    translation_languages: tuple[tuple[str, str], ...] = (("tr", "Turkish"), ("de", "German")),
+    captions: bool = True,
+    title: str = "Rick Astley - Never Gonna Give You Up (Official Video)",
+    author: str = "Rick Astley",
+    length_seconds: str = "213",
+) -> dict[str, Any]:
+    """A ``/player`` response shaped like YouTube's (only the fields utmax reads)."""
+    playability: dict[str, Any] = {"status": status}
+    if reason is not None:
+        playability["reason"] = reason
+    if sub_reasons:
+        playability["errorScreen"] = {
+            "playerErrorMessageRenderer": {
+                "subreason": {"runs": [{"text": s} for s in sub_reasons]}
+            }
+        }
+    payload: dict[str, Any] = {
+        "playabilityStatus": playability,
+        "videoDetails": {
+            "videoId": video_id,
+            "title": title,
+            "lengthSeconds": length_seconds,
+            "channelId": "UCuAXFkgsw1L7xaCfnd5JJOw",
+            "author": author,
+            "isLiveContent": False,
+        },
+    }
+    if captions:
+        payload["captions"] = {
+            "playerCaptionsTracklistRenderer": {
+                "captionTracks": [caption_track(c, n, g, video_id=video_id) for c, n, g in tracks],
+                "translationLanguages": [
+                    {"languageCode": c, "languageName": {"runs": [{"text": n}]}}
+                    for c, n in translation_languages
+                ],
+            }
+        }
+    return payload
