@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal, Protocol, overload
 
@@ -237,3 +237,9 @@ class Transcript(Sequence[Segment]):
         from utmax.core.formats import format_for_path, render
 
         return write_text_atomic(path, render(self, format_for_path(path, format)))
+
+    def merge_sentences(self) -> Transcript:
+        """A copy whose cues are regrouped into sentences (best for auto-generated tracks)."""
+        from utmax.core.segmentation import merge_sentences
+
+        return replace(self, segments=merge_sentences(self.segments), source=None)
