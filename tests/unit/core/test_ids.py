@@ -34,6 +34,7 @@ ID = "dQw4w9WgXcQ"
         f"https://www.youtube.com/embed/{ID}?start=30",
         f"https://www.youtube-nocookie.com/embed/{ID}",
         f"https://www.youtube.com/v/{ID}",
+        f"https://www.youtube.com/e/{ID}",
         f"youtube.com/watch?v={ID}&next=https://evil.example/x",
         f"//www.youtube.com/watch?v={ID}",
     ],
@@ -60,6 +61,8 @@ def test_accepts_ids_and_every_common_url_shape(value: str) -> None:
         f"https://youtube.com.evil.example/watch?v={ID}",
         "http://[::1",
         f"evil.example/?u=https://youtube.com/watch?v={ID}",
+        "https://www.youtube.com/embed/videoseries?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+        "https://www.youtube.com/embed/live_stream?channel=UCuAXFkgsw1L7xaCfnd5JJOw",
     ],
 )
 def test_rejects_anything_without_a_video_id(value: str) -> None:

@@ -23,6 +23,7 @@ _WATCH_HOSTS = frozenset(
 )
 _SHORT_HOSTS = frozenset({"youtu.be", "www.youtu.be"})
 _ID_PATH_PREFIXES = frozenset({"shorts", "live", "embed", "v", "e"})
+_RESERVED_WORDS = frozenset({"videoseries", "live_stream"})
 
 
 def parse_video_id(value: str) -> str:
@@ -64,4 +65,6 @@ def _id_from_url(text: str) -> str | None:
             return None
     else:
         return None
-    return candidate if _VIDEO_ID.fullmatch(candidate) else None
+    return (
+        candidate if _VIDEO_ID.fullmatch(candidate) and candidate not in _RESERVED_WORDS else None
+    )
