@@ -1,0 +1,103 @@
+[build-system]
+requires = ["hatchling>=1.32"]
+build-backend = "hatchling.build"
+
+[project]
+name = "u-transcript-max"
+dynamic = ["version"]
+description = "YouTube transcripts, AI translation and downloads for Python, with zero dependencies."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{ name = "U-C4N" }]
+keywords = ["youtube", "transcript", "subtitles", "captions", "srt", "vtt", "translation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/U-C4N/U-transkript"
+Issues = "https://github.com/U-C4N/U-transkript/issues"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3",
+    "pytest>=9.1",
+    "pytest-cov>=7.1",
+    "ruff>=0.16",
+]
+
+[tool.hatch.version]
+path = "src/utmax/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/utmax"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/tests", "/README.md", "/LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "C4", "SIM", "PIE", "PERF", "RET", "PT", "N", "PL", "RUF", "TID"]
+ignore = [
+    "E501",    # the formatter owns line length; long literals are acceptable
+    "N818",    # error names mirror youtube-transcript-api (VideoUnavailable, ...)
+    "PLC0415", # models import core inside methods to avoid import cycles
+    "PLR0911", # table-like functions return early by design
+    "PLR0912",
+    "PLR0913", # the public API takes many keyword-only options
+    "PLR2004", # protocol constants and test values
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["RUF001", "RUF003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["utmax"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+files = ["src"]
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not live"]
+markers = ["live: talks to the real YouTube API; run with `uv run pytest -m live`"]
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["utmax"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "@overload",
+    "raise NotImplementedError",
+    "^\\s*\\.\\.\\.\\s*$",
+]

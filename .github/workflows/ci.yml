@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, v4]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+
+  test:
+    name: test (${{ matrix.os }}, ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python: "3.14"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run pytest --cov --cov-report=term-missing
+      - run: uv run coverage report --include="*/utmax/core/*" --fail-under=95
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.14"
+      - run: uv build
+      - run: uvx twine check --strict dist/*
+      - name: The wheel contains only the utmax package
+        run: >-
+          uv run --no-project python -c "import glob, zipfile;
+          names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist();
+          bad = [n for n in names if not n.startswith(('utmax/', 'u_transcript_max-'))];
+          assert not bad, bad"
