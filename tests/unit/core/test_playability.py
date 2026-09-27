@@ -20,7 +20,7 @@ from utmax.errors import (
     ("status", "error"),
     [
         (
-            {"status": "LOGIN_REQUIRED", "reason": "Sign in to confirm you're not a bot"},
+            {"status": "LOGIN_REQUIRED", "reason": "Sign in to confirm you\u2019re not a bot"},
             RequestBlocked,
         ),
         ({"status": "LOGIN_REQUIRED", "reason": "Sign in to confirm your age"}, AgeRestricted),

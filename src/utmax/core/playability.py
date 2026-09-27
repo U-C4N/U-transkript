@@ -38,7 +38,7 @@ def check_playability(playability: Playability, *, video_id: str) -> None:
     status = playability.status.upper()
     if status == "OK":
         return
-    reason = playability.reason.replace("'", "'").lower()
+    reason = playability.reason.replace("\u2019", "'").lower()
     message = playability.reason or f"YouTube reported playability status {playability.status}."
     if status == "LOGIN_REQUIRED":
         if "not a bot" in reason:
