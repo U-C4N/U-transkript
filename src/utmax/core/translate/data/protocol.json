@@ -2,7 +2,7 @@
   "version": 1,
   "segmentation": {
     "terminal_punctuation": ".!?…。！？",
-    "closing_characters": "\")]”’»」』",
+    "closing_characters": "\"')]”’»」』",
     "max_gap_seconds": 1.0,
     "max_duration_seconds": 7.0,
     "max_characters": 100

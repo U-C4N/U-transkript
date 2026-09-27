@@ -36,6 +36,7 @@ def test_protocol_file_provides_the_default_rules() -> None:
         100,
     )
     assert '"' in rules.closing_characters
+    assert "'" in rules.closing_characters
 
 
 def test_sentence_punctuation_closes_cues_using_word_timings() -> None:
@@ -107,6 +108,11 @@ def test_closing_quotes_and_cjk_punctuation_end_sentences() -> None:
         )
     )
     assert texts(merged) == ['He said "stop."', "すごい。", "done"]
+
+
+def test_apostrophe_closed_quotes_end_sentences() -> None:
+    merged = merge_sentences((Segment(0, 1, "He said 'stop.'"), Segment(1, 1, "Bye")))
+    assert texts(merged) == ["He said 'stop.'", "Bye"]
 
 
 def test_empty_input_and_blank_segments() -> None:
