@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from tests.helpers.fake_transport import FakeTransport, json_response
+
 VIDEO_ID = "dQw4w9WgXcQ"
 
 MANUAL_JSON3: dict[str, Any] = {
@@ -148,3 +150,22 @@ def player_payload(
             }
         }
     return payload
+
+
+def standard_youtube(*, repeat: bool = False) -> FakeTransport:
+    """A FakeTransport serving one playable video with the default tracks.
+
+    Caption routes: manual English (``lang=en&fmt=json3``), auto English (``kind=asr``) and
+    German (``lang=de-DE``). With ``repeat=True`` every route answers forever (thread tests).
+    """
+    transport = FakeTransport()
+    transport.add("POST", "/youtubei/v1/player", json_response(player_payload()), repeat=repeat)
+    transport.add("GET", "lang=en&fmt=json3", json_response(MANUAL_JSON3), repeat=repeat)
+    transport.add("GET", "kind=asr", json_response(ASR_JSON3), repeat=repeat)
+    transport.add(
+        "GET",
+        "lang=de-DE",
+        json_response(json3_payload((1000, 2000, "Wir sind keine Fremden"))),
+        repeat=repeat,
+    )
+    return transport
