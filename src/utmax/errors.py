@@ -12,17 +12,28 @@ from typing import Any
 
 __all__ = [
     "AgeRestricted",
+    "DownloadError",
     "FailedToCreateConsentCookie",
+    "InvalidModelSpec",
     "InvalidOption",
     "InvalidVideoId",
     "IpBlocked",
+    "MissingExtra",
+    "MuxError",
     "NetworkError",
     "NoTranscriptFound",
     "NotTranslatable",
     "PoTokenRequired",
+    "ProviderAuthError",
+    "ProviderError",
+    "ProviderNotInstalled",
+    "ProviderRateLimited",
     "RequestBlocked",
     "TranscriptsDisabled",
+    "TranslationError",
     "TranslationLanguageNotAvailable",
+    "TranslationMismatch",
+    "TranslationRefused",
     "UTMaxError",
     "UnsupportedFormat",
     "VideoUnavailable",
@@ -33,9 +44,13 @@ __all__ = [
 ]
 
 
+def _install_hint(extra: str) -> str:
+    return f'Install it with pip install "u-transcript-max[{extra}]".'
+
+
 def _restore(cls: type[UTMaxError], message: str, state: dict[str, Any]) -> UTMaxError:
     error = cls.__new__(cls)
-    Exception.__init__(error, message)
+    super(UTMaxError, error).__init__(message)  # also sets ImportError.msg for MissingExtra
     error.__dict__.update(state)
     return error
 
@@ -67,6 +82,14 @@ class InvalidVideoId(UTMaxError, ValueError):
     suggestion = "Pass a YouTube URL or an 11-character video ID."
 
 
+class InvalidModelSpec(UTMaxError, ValueError):
+    """A translator model string is not ``"provider=model-id"``."""
+
+    suggestion = (
+        'Pass model="provider=model-id", where provider is claude, openai, gemini or openrouter.'
+    )
+
+
 class InvalidOption(UTMaxError, ValueError):
     """An option value, or a combination of options, is not supported."""
 
@@ -77,6 +100,23 @@ class UnsupportedFormat(UTMaxError, ValueError):
     """The requested output format is unknown."""
 
     suggestion = "Use a .srt, .vtt, .json or .txt file name, or pass format=... explicitly."
+
+
+class MissingExtra(UTMaxError, ImportError):
+    """An optional dependency (a pip "extra") is not installed."""
+
+    suggestion = 'Install the optional dependency with pip install "u-transcript-max[<extra>]".'
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        extra: str,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, video_id=video_id, suggestion=suggestion or _install_hint(extra))
+        self.extra = extra
 
 
 class NetworkError(UTMaxError):
@@ -220,3 +260,112 @@ class TranslationLanguageNotAvailable(YouTubeError):
     ) -> None:
         super().__init__(message, video_id=video_id, suggestion=suggestion)
         self.available = tuple(available)
+
+
+class DownloadError(UTMaxError):
+    """Downloading or assembling a video or audio file failed."""
+
+    suggestion = "The download failed; check your connection and disk space, then try again."
+
+
+class MuxError(DownloadError):
+    """The downloaded streams could not be combined into the requested file."""
+
+    suggestion = (
+        "The streams could not be combined; try another format, or report it with the video ID."
+    )
+
+
+class TranslationError(UTMaxError):
+    """AI translation failed."""
+
+    suggestion = "Check the provider, the model ID and your API key, then try again."
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, video_id=video_id, suggestion=suggestion)
+        self.provider = provider
+
+
+class ProviderNotInstalled(TranslationError, MissingExtra):
+    """The official SDK of the chosen translation provider is not installed."""
+
+    suggestion = 'Install the provider SDK with pip install "u-transcript-max[<extra>]".'
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        extra: str,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        # The two parents take different keyword arguments, so skip their constructors.
+        UTMaxError.__init__(
+            self, message, video_id=video_id, suggestion=suggestion or _install_hint(extra)
+        )
+        self.provider = provider
+        self.extra = extra
+
+
+class ProviderAuthError(TranslationError):
+    """The provider rejected the API key."""
+
+    suggestion = "Check the API key passed to the translator or set in the environment."
+
+
+class ProviderRateLimited(TranslationError):
+    """The provider rate-limited the request or the account ran out of quota."""
+
+    suggestion = "Wait and retry with lower concurrency, or check the provider account's quota."
+
+
+class ProviderError(TranslationError):
+    """The provider answered with an error."""
+
+    suggestion = "The provider reported an error; check the model ID and try again later."
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        status_code: int | None = None,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, provider=provider, video_id=video_id, suggestion=suggestion)
+        self.status_code = status_code
+
+
+class TranslationRefused(TranslationError):
+    """The model refused to translate the text."""
+
+    suggestion = "The model declined this text; try another model or provider."
+
+
+class TranslationMismatch(TranslationError):
+    """The model kept returning output that does not match the requested lines."""
+
+    suggestion = "The model returned unusable output; retry, or use a more capable model."
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str,
+        ids: Sequence[int],
+        raw_excerpt: str,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, provider=provider, video_id=video_id, suggestion=suggestion)
+        self.ids = tuple(ids)
+        self.raw_excerpt = raw_excerpt
