@@ -3,6 +3,8 @@
 Codes are matched on their primary subtag, case-insensitively (``"pt-BR"`` and ``"PT"`` both
 mean Portuguese); ``_`` works like ``-``. Legacy YouTube codes (``iw``, ``in``, ``ji``, ``jw``)
 and three-letter ISO 639-2 codes (``tur``, ``deu``, ``ger`` ...) are understood as well.
+Chinese is the one exception to primary-subtag matching: its script (``Hant``/``Hans``, or a
+region such as ``TW``) picks the English name and the QuickTime code.
 """
 
 from __future__ import annotations
@@ -287,7 +289,14 @@ _FFMPEG_SPELLINGS: Mapping[str, str] = MappingProxyType({"sve": "sv", "iri": "ga
 
 _TRADITIONAL_CHINESE = 19
 _SIMPLIFIED_CHINESE = 33
-_TRADITIONAL_SUBTAGS = frozenset({"hant", "tw", "hk", "mo"})
+_CHINESE_SCRIPTS = frozenset({"hans", "hant"})
+# Regions that imply a Chinese script when the tag names none.
+_CHINESE_REGION_SCRIPTS: Mapping[str, str] = MappingProxyType(
+    {"tw": "hant", "hk": "hant", "mo": "hant", "cn": "hans", "sg": "hans"}
+)
+_CHINESE_NAMES: Mapping[str, str] = MappingProxyType(
+    {"hant": "Chinese (Traditional)", "hans": "Chinese (Simplified)"}
+)
 
 
 def base_code(code: str) -> str:
@@ -296,8 +305,17 @@ def base_code(code: str) -> str:
 
 
 def english_name(code: str) -> str | None:
-    """The English name of the language, e.g. ``"tr"`` -> ``"Turkish"``; ``None`` if unknown."""
-    entry = _LANGUAGES.get(_canonical(code))
+    """The English name of the language, e.g. ``"tr"`` -> ``"Turkish"``; ``None`` if unknown.
+
+    Chinese names its script when the tag implies one: ``zh-Hant`` and ``zh-TW`` are
+    ``"Chinese (Traditional)"``, ``zh-Hans`` and ``zh-CN`` are ``"Chinese (Simplified)"``,
+    and a bare ``zh`` is ``"Chinese"``.
+    """
+    canonical = _canonical(code)
+    script = _chinese_script(code) if canonical == "zh" else None
+    if script:
+        return _CHINESE_NAMES[script]
+    entry = _LANGUAGES.get(canonical)
     return entry[1] if entry else None
 
 
@@ -310,13 +328,13 @@ def iso639_2t(code: str) -> str:
 def mac_language_code(code: str) -> int | None:
     """The QuickTime (Macintosh) language code for a MOV ``mdhd``; ``None`` when unmapped.
 
-    Chinese follows the script: ``zh-Hant``, ``zh-TW``, ``zh-HK`` and ``zh-MO`` are
-    Traditional (19), every other ``zh`` is Simplified (33).
+    Chinese follows the script: an explicit ``Hant`` or ``Hans`` subtag decides, else
+    ``zh-TW``, ``zh-HK`` and ``zh-MO`` are Traditional (19); every other ``zh`` is
+    Simplified (33).
     """
     canonical = _canonical(code)
     if canonical == "zh":
-        subtags = set(code.strip().replace("_", "-").lower().split("-")[1:])
-        return _TRADITIONAL_CHINESE if subtags & _TRADITIONAL_SUBTAGS else _SIMPLIFIED_CHINESE
+        return _TRADITIONAL_CHINESE if _chinese_script(code) == "hant" else _SIMPLIFIED_CHINESE
     return _MAC_CODES.get(canonical)
 
 
@@ -326,6 +344,18 @@ def _canonical(code: str) -> str:
     if base in _LANGUAGES:
         return base
     return _FROM_ISO639_2.get(base, base)
+
+
+def _chinese_script(code: str) -> str | None:
+    """``"hant"`` or ``"hans"`` when a Chinese tag implies a script; the script subtag wins."""
+    subtags = code.strip().replace("_", "-").lower().split("-")[1:]
+    for subtag in subtags:
+        if subtag in _CHINESE_SCRIPTS:
+            return subtag
+    for subtag in subtags:
+        if subtag in _CHINESE_REGION_SCRIPTS:
+            return _CHINESE_REGION_SCRIPTS[subtag]
+    return None
 
 
 def _mac_codes() -> dict[str, int]:

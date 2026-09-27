@@ -28,7 +28,7 @@ def test_base_code(code: str, expected: str) -> None:
     [
         ("tr", "Turkish"),
         ("pt-BR", "Portuguese"),
-        ("zh-Hant", "Chinese"),
+        ("zh-Hant", "Chinese (Traditional)"),
         ("iw", "Hebrew"),
         ("in", "Indonesian"),
         ("fil", "Filipino"),
@@ -39,6 +39,29 @@ def test_base_code(code: str, expected: str) -> None:
     ],
 )
 def test_english_name(code: str, expected: str) -> None:
+    assert english_name(code) == expected
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("zh", "Chinese"),
+        ("chi", "Chinese"),
+        ("zh-Hant", "Chinese (Traditional)"),
+        ("zh_TW", "Chinese (Traditional)"),
+        ("zh-hk", "Chinese (Traditional)"),
+        ("zh-MO", "Chinese (Traditional)"),
+        ("zh-Hans", "Chinese (Simplified)"),
+        ("zh-CN", "Chinese (Simplified)"),
+        ("zh-SG", "Chinese (Simplified)"),
+        ("zh-Hans-HK", "Chinese (Simplified)"),
+        ("zh-Hant-CN", "Chinese (Traditional)"),
+        ("zho-Hant", "Chinese (Traditional)"),
+        ("zh-US", "Chinese"),
+        ("yue-Hant", "Cantonese"),
+    ],
+)
+def test_chinese_names_follow_the_script(code: str, expected: str) -> None:
     assert english_name(code) == expected
 
 
@@ -92,7 +115,19 @@ def test_mac_language_code(code: str, expected: int) -> None:
 
 @pytest.mark.parametrize(
     ("code", "expected"),
-    [("zh-Hant", 19), ("zh-TW", 19), ("zh-hk", 19), ("zh", 33), ("zh-Hans", 33), ("zh-CN", 33)],
+    [
+        ("zh-Hant", 19),
+        ("zh-TW", 19),
+        ("zh-hk", 19),
+        ("zh_MO", 19),
+        ("zh-Hant-CN", 19),
+        ("zh", 33),
+        ("zh-Hans", 33),
+        ("zh-CN", 33),
+        ("zh-SG", 33),
+        ("zh-Hans-HK", 33),
+        ("zh-Hans-TW", 33),
+    ],
 )
 def test_chinese_mac_code_follows_the_script(code: str, expected: int) -> None:
     assert mac_language_code(code) == expected
