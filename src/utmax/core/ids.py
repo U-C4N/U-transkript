@@ -10,6 +10,7 @@ from utmax.errors import InvalidVideoId
 __all__ = ["parse_video_id"]
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://")
 _WATCH_HOSTS = frozenset(
     {
         "youtube.com",
@@ -42,7 +43,9 @@ def parse_video_id(value: str) -> str:
 def _id_from_url(text: str) -> str | None:
     if not text:
         return None
-    if "://" not in text:
+    if text.startswith("//"):
+        text = f"https:{text}"
+    elif not _SCHEME.match(text):
         text = f"https://{text}"
     try:
         parts = urlsplit(text)
