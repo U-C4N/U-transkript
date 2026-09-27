@@ -19,10 +19,10 @@ def select_track(
 ) -> Track:
     """Pick one track from ``tracks``.
 
-    With ``languages``, each code is tried in order: an exact code match first (manual before
-    auto-generated), then a base-language match (``de`` finds ``de-DE``). Without ``languages``
-    the spoken language (that of the auto-generated track) wins, manual first. YouTube's own
-    translation is never used implicitly.
+    With ``languages``, each code is tried in order: a manual track in exactly that code, then a
+    manual track in the same base language (``de`` finds ``de-DE``), then the same two steps for
+    auto-generated tracks. Without ``languages`` the spoken language (that of the auto-generated
+    track) wins, manual first. YouTube's own translation is never used implicitly.
 
     Raises:
         NoTranscriptFound: nothing matches; the error lists every available track.
@@ -35,9 +35,14 @@ def select_track(
         for code in requested:
             exact = [track for track in candidates if track.language_code.lower() == code.lower()]
             related = [track for track in candidates if _base(track.language_code) == _base(code)]
-            match = _manual_first(exact) or _manual_first(related)
-            if match is not None:
-                return match
+            for pool in (
+                [track for track in exact if not track.is_generated],
+                [track for track in related if not track.is_generated],
+                [track for track in exact if track.is_generated],
+                [track for track in related if track.is_generated],
+            ):
+                if pool:
+                    return pool[0]
         raise _not_found(tracks, requested)
     spoken = next((track.language_code for track in tracks if track.is_generated), None)
     if spoken is not None:

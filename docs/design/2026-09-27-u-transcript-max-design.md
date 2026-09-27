@@ -284,8 +284,9 @@ unsupported); ERROR + "unavailable" → `VideoUnavailable`; else `VideoUnplayabl
 
 **Captions & selection** (from the old spec's domain rules): host allowlist `*.youtube.com`; `exp=xpe` →
 `PoTokenRequired`; `fmt=json3`, skip whitespace-only events, word time `tStartMs+tOffsetMs`, `html.unescape`, asr
-newlines → spaces; XML fallback (reject DOCTYPE/ENTITY; srv3 then legacy). Selection: per requested language exact
-code then base code, manual before auto; no languages → spoken language (first asr track) manual→auto, then first
+newlines → spaces; XML fallback (reject DOCTYPE/ENTITY; srv3 then legacy). Selection: per requested language, manual
+exact code → manual same base language → auto exact code → auto same base language; no languages → spoken language
+(first asr track) manual→auto, then first
 manual, then first auto; `NoTranscriptFound` lists available tracks. **Never tlang implicitly**; explicit tlang is
 best-effort (429 → `IpBlocked` "use AI translation or a proxy").
 

@@ -33,9 +33,15 @@ def test_base_language_matches_regional_tracks() -> None:
     assert pick((make_track("de"),), ["de-AT"]).language_code == "de"
 
 
-def test_an_exact_code_beats_a_base_language_match() -> None:
+def test_a_regional_manual_track_beats_an_exact_auto_track() -> None:
     en_gb = make_track("en-GB")
-    assert pick((en_gb, EN_AUTO), ["en"]) is EN_AUTO
+    assert pick((en_gb, EN_AUTO), ["en"]) is en_gb
+
+
+def test_exact_codes_win_within_the_same_kind() -> None:
+    assert pick((make_track("en-GB"), EN), ["en"]) is EN
+    en_gb_auto = make_track("en-GB", generated=True)
+    assert pick((en_gb_auto, EN_AUTO), ["en"]) is EN_AUTO
 
 
 def test_codes_are_case_insensitive_and_a_bare_string_is_one_code() -> None:
