@@ -1,0 +1,308 @@
+{
+ "playabilityStatus": {
+  "status": "OK"
+ },
+ "videoDetails": {
+  "videoId": "dQw4w9WgXcQ",
+  "title": "Rick Astley - Never Gonna Give You Up (Official Video) (4K Remaster)",
+  "lengthSeconds": "213",
+  "channelId": "UCuAXFkgsw1L7xaCfnd5JJOw",
+  "author": "Rick Astley",
+  "isLiveContent": false
+ },
+ "captions": {
+  "playerCaptionsTracklistRenderer": {
+   "captionTracks": [
+    {
+     "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&ei=REDACTED&caps=asr&opi=112496729&xoaf=5&xowf=1&hl=en&ip=REDACTED&ipbits=0&expire=REDACTED&sparams=ip%2Cipbits%2Cexpire%2Cv%2Cei%2Ccaps%2Copi%2Cxoaf&signature=REDACTED&key=REDACTED&lang=en&fmt=srv3",
+     "name": {
+      "runs": [
+       {
+        "text": "English"
+       }
+      ]
+     },
+     "vssId": ".en",
+     "languageCode": "en",
+     "isTranslatable": true,
+     "trackName": ""
+    },
+    {
+     "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&ei=REDACTED&caps=asr&opi=112496729&xoaf=5&xowf=1&hl=en&ip=REDACTED&ipbits=0&expire=REDACTED&sparams=ip%2Cipbits%2Cexpire%2Cv%2Cei%2Ccaps%2Copi%2Cxoaf&signature=REDACTED&key=REDACTED&kind=asr&lang=en&fmt=srv3",
+     "name": {
+      "runs": [
+       {
+        "text": "English (auto-generated)"
+       }
+      ]
+     },
+     "vssId": "a.en",
+     "languageCode": "en",
+     "kind": "asr",
+     "isTranslatable": true,
+     "trackName": ""
+    },
+    {
+     "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&ei=REDACTED&caps=asr&opi=112496729&xoaf=5&xowf=1&hl=en&ip=REDACTED&ipbits=0&expire=REDACTED&sparams=ip%2Cipbits%2Cexpire%2Cv%2Cei%2Ccaps%2Copi%2Cxoaf&signature=REDACTED&key=REDACTED&lang=de-DE&fmt=srv3",
+     "name": {
+      "runs": [
+       {
+        "text": "German (Germany)"
+       }
+      ]
+     },
+     "vssId": ".de-DE",
+     "languageCode": "de-DE",
+     "isTranslatable": true,
+     "trackName": ""
+    },
+    {
+     "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&ei=REDACTED&caps=asr&opi=112496729&xoaf=5&xowf=1&hl=en&ip=REDACTED&ipbits=0&expire=REDACTED&sparams=ip%2Cipbits%2Cexpire%2Cv%2Cei%2Ccaps%2Copi%2Cxoaf&signature=REDACTED&key=REDACTED&lang=ja&fmt=srv3",
+     "name": {
+      "runs": [
+       {
+        "text": "Japanese"
+       }
+      ]
+     },
+     "vssId": ".ja",
+     "languageCode": "ja",
+     "isTranslatable": true,
+     "trackName": ""
+    },
+    {
+     "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&ei=REDACTED&caps=asr&opi=112496729&xoaf=5&xowf=1&hl=en&ip=REDACTED&ipbits=0&expire=REDACTED&sparams=ip%2Cipbits%2Cexpire%2Cv%2Cei%2Ccaps%2Copi%2Cxoaf&signature=REDACTED&key=REDACTED&lang=pt-BR&fmt=srv3",
+     "name": {
+      "runs": [
+       {
+        "text": "Portuguese (Brazil)"
+       }
+      ]
+     },
+     "vssId": ".pt-BR",
+     "languageCode": "pt-BR",
+     "isTranslatable": true,
+     "trackName": ""
+    },
+    {
+     "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&ei=REDACTED&caps=asr&opi=112496729&xoaf=5&xowf=1&hl=en&ip=REDACTED&ipbits=0&expire=REDACTED&sparams=ip%2Cipbits%2Cexpire%2Cv%2Cei%2Ccaps%2Copi%2Cxoaf&signature=REDACTED&key=REDACTED&lang=es-419&fmt=srv3",
+     "name": {
+      "runs": [
+       {
+        "text": "Spanish (Latin America)"
+       }
+      ]
+     },
+     "vssId": ".es-419",
+     "languageCode": "es-419",
+     "isTranslatable": true,
+     "trackName": ""
+    }
+   ],
+   "audioTracks": [
+    {
+     "captionTrackIndices": [
+      0,
+      2,
+      3,
+      4,
+      5,
+      1
+     ],
+     "defaultCaptionTrackIndex": 0,
+     "hasDefaultTrack": true,
+     "captionsInitialState": "CAPTIONS_INITIAL_STATE_OFF_RECOMMENDED"
+    }
+   ],
+   "translationLanguages": [
+    {
+     "languageCode": "ar",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Arabic"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "zh-Hant",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Chinese (Traditional)"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "nl",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Dutch"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "en",
+     "languageName": {
+      "runs": [
+       {
+        "text": "English"
+       }
+      ]
+     },
+     "translationSourceTrackIndices": [
+      2
+     ]
+    },
+    {
+     "languageCode": "fr",
+     "languageName": {
+      "runs": [
+       {
+        "text": "French"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "de",
+     "languageName": {
+      "runs": [
+       {
+        "text": "German"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "hi",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Hindi"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "id",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Indonesian"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "it",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Italian"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "ja",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Japanese"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "ko",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Korean"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "pt",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Portuguese"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "ru",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Russian"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "es",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Spanish"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "th",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Thai"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "tr",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Turkish"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "uk",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Ukrainian"
+       }
+      ]
+     }
+    },
+    {
+     "languageCode": "vi",
+     "languageName": {
+      "runs": [
+       {
+        "text": "Vietnamese"
+       }
+      ]
+     }
+    }
+   ],
+   "defaultAudioTrackIndex": 0,
+   "defaultTranslationSourceTrackIndices": [
+    0
+   ]
+  }
+ }
+}

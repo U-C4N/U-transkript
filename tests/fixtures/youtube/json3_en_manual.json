@@ -1,0 +1,563 @@
+{
+ "wireMagic": "pb3",
+ "pens": [
+  {}
+ ],
+ "wsWinStyles": [
+  {}
+ ],
+ "wpWinPositions": [
+  {}
+ ],
+ "events": [
+  {
+   "tStartMs": 1360,
+   "dDurationMs": 1680,
+   "segs": [
+    {
+     "utf8": "[♪♪♪]"
+    }
+   ]
+  },
+  {
+   "tStartMs": 18640,
+   "dDurationMs": 3240,
+   "segs": [
+    {
+     "utf8": "♪ We're no strangers to love ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 22640,
+   "dDurationMs": 4320,
+   "segs": [
+    {
+     "utf8": "♪ You know the rules\nand so do I ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 27040,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "♪ A full commitment's\nwhat I'm thinking of ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 31120,
+   "dDurationMs": 3960,
+   "segs": [
+    {
+     "utf8": "♪ You wouldn't get this\nfrom any other guy ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 35160,
+   "dDurationMs": 4360,
+   "segs": [
+    {
+     "utf8": "♪ I just wanna tell you\nhow I'm feeling ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 40520,
+   "dDurationMs": 2400,
+   "segs": [
+    {
+     "utf8": "♪ Gotta make you understand ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 43000,
+   "dDurationMs": 2120,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give you up ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 45200,
+   "dDurationMs": 1880,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna let you down ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 47320,
+   "dDurationMs": 3800,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna run around\nand desert you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 51480,
+   "dDurationMs": 2000,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna make you cry ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 53600,
+   "dDurationMs": 1920,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna say goodbye ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 55720,
+   "dDurationMs": 3640,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna tell a lie\nand hurt you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 60800,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "♪ We've known each other\nfor so long ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 64880,
+   "dDurationMs": 4160,
+   "segs": [
+    {
+     "utf8": "♪ Your heart's been aching\nbut you're too shy to say it ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 69120,
+   "dDurationMs": 3840,
+   "segs": [
+    {
+     "utf8": "♪ Inside we both know\nwhat's been going ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 73360,
+   "dDurationMs": 3840,
+   "segs": [
+    {
+     "utf8": "♪ We know the game\nand we're gonna play it ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 77400,
+   "dDurationMs": 4640,
+   "segs": [
+    {
+     "utf8": "♪ And if you ask me\nhow I'm feeling ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 82400,
+   "dDurationMs": 2840,
+   "segs": [
+    {
+     "utf8": "♪ Don't tell me\nyou're too blind to see ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 85320,
+   "dDurationMs": 1960,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give you up ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 87360,
+   "dDurationMs": 1960,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna let you down ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 89440,
+   "dDurationMs": 4280,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna run around\nand desert you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 93800,
+   "dDurationMs": 1800,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna make you cry ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 95760,
+   "dDurationMs": 2240,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna say goodbye ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 98080,
+   "dDurationMs": 3960,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna tell a lie\nand hurt you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 102200,
+   "dDurationMs": 1920,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give you up ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 104280,
+   "dDurationMs": 2080,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna let you down ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 106480,
+   "dDurationMs": 3600,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna run around\nand desert you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 110760,
+   "dDurationMs": 1960,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna make you cry ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 112800,
+   "dDurationMs": 1880,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna say goodbye ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 114960,
+   "dDurationMs": 3800,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna tell a lie\nand hurt you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 119840,
+   "dDurationMs": 3120,
+   "segs": [
+    {
+     "utf8": "♪ (Ooh, give you up) ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 123720,
+   "dDurationMs": 3640,
+   "segs": [
+    {
+     "utf8": "♪ (Ooh, give you up) ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 128480,
+   "dDurationMs": 1640,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give,\nnever gonna give ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 130240,
+   "dDurationMs": 1320,
+   "segs": [
+    {
+     "utf8": "♪ (Give you up) ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 132480,
+   "dDurationMs": 1760,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give,\nnever gonna give ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 134360,
+   "dDurationMs": 1560,
+   "segs": [
+    {
+     "utf8": "♪ (Give you up) ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 136760,
+   "dDurationMs": 4320,
+   "segs": [
+    {
+     "utf8": "♪ We've known each other\nfor so long ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 141200,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "♪ Your heart's been aching\nbut you're too shy to say it ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 145280,
+   "dDurationMs": 3840,
+   "segs": [
+    {
+     "utf8": "♪ Inside we both know\nwhat's been going ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 149520,
+   "dDurationMs": 3680,
+   "segs": [
+    {
+     "utf8": "♪ We know the game\nand we're gonna play it ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 153360,
+   "dDurationMs": 4680,
+   "segs": [
+    {
+     "utf8": "♪ I just wanna tell you\nhow I'm feeling ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 158640,
+   "dDurationMs": 2680,
+   "segs": [
+    {
+     "utf8": "♪ Gotta make you understand ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 161400,
+   "dDurationMs": 1960,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give you up ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 163440,
+   "dDurationMs": 2200,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna let you down ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 165720,
+   "dDurationMs": 4000,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna run around\nand desert you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 169800,
+   "dDurationMs": 1840,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna make you cry ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 171800,
+   "dDurationMs": 2160,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna say goodbye ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 174040,
+   "dDurationMs": 3560,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna tell a lie\nand hurt you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 178200,
+   "dDurationMs": 2040,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give you up ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 180320,
+   "dDurationMs": 2120,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna let you down ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 182520,
+   "dDurationMs": 4120,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna run around\nand desert you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 186720,
+   "dDurationMs": 2000,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna make you cry ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 188840,
+   "dDurationMs": 1880,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna say goodbye ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 190840,
+   "dDurationMs": 4360,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna tell a lie\nand hurt you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 195280,
+   "dDurationMs": 1840,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna give you up ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 197200,
+   "dDurationMs": 2040,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna let you down ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 199400,
+   "dDurationMs": 3720,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna run around\nand desert you ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 203360,
+   "dDurationMs": 2240,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna make you cry ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 205680,
+   "dDurationMs": 2160,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna say goodbye ♪"
+    }
+   ]
+  },
+  {
+   "tStartMs": 207920,
+   "dDurationMs": 3400,
+   "segs": [
+    {
+     "utf8": "♪ Never gonna tell a lie\nand hurt you ♪"
+    }
+   ]
+  }
+ ]
+}
