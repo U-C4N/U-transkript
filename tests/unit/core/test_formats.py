@@ -53,6 +53,11 @@ def test_cues_are_sorted_by_start() -> None:
     assert srt.index("early") < srt.index("late")
 
 
+def test_cues_starting_together_are_merged_not_dropped() -> None:
+    srt = to_srt((Segment(1.0, 2.0, "SPEAKER A: hi"), Segment(1.0, 1.0, "SPEAKER B: hello")))
+    assert srt == "1\n00:00:01,000 --> 00:00:03,000\nSPEAKER A: hi\nSPEAKER B: hello\n"
+
+
 def test_long_videos_get_hour_timestamps() -> None:
     assert "01:02:03,500 --> 01:02:04,750" in to_srt((Segment(3723.5, 1.25, "late"),))
     assert "01:02:03.500 --> 01:02:04.750" in to_vtt((Segment(3723.5, 1.25, "late"),))

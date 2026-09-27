@@ -63,6 +63,13 @@ def test_other_hosts_are_refused(url: str) -> None:
         check_caption_url(url, video_id=VIDEO_ID)
 
 
+def test_refusal_messages_never_echo_the_url() -> None:
+    with pytest.raises(YouTubeDataUnparsable) as caught:
+        check_caption_url("/api/timedtext?ip=203.0.113.9&signature=abc", video_id=VIDEO_ID)
+    assert "203.0.113.9" not in str(caught.value)
+    assert "signature" not in str(caught.value)
+
+
 @pytest.mark.parametrize("exp", ["xpe", "abc,xpe"])
 def test_proof_of_origin_urls_are_refused(exp: str) -> None:
     with pytest.raises(PoTokenRequired):
@@ -185,6 +192,13 @@ def test_empty_caption_files_suggest_a_proof_of_origin_change() -> None:
     with pytest.raises(YouTubeDataUnparsable) as caught:
         parse_captions(b"", "application/json", is_generated=False)
     assert "proof-of-origin" in caught.value.suggestion
+
+
+def test_web_pages_are_reported_as_web_pages() -> None:
+    page = b"<!DOCTYPE html><html><body>Before you continue</body></html>"
+    for content_type in ("text/html; charset=utf-8", ""):
+        with pytest.raises(YouTubeDataUnparsable, match="web page"):
+            parse_captions(page, content_type, is_generated=False)
 
 
 def test_json_captions_must_be_an_object() -> None:

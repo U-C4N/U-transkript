@@ -49,10 +49,16 @@ def check_caption_url(url: str, *, video_id: str) -> None:
     """Refuse URLs outside youtube.com and ones that need a proof-of-origin token."""
     parts = urlsplit(url)
     host = (parts.hostname or "").lower()
-    if parts.scheme != "https" or not (host == "youtube.com" or host.endswith(".youtube.com")):
+    if not (host == "youtube.com" or host.endswith(".youtube.com")):
+        message = (
+            f"Refusing to download captions from unexpected host {host!r}."
+            if host
+            else "Refusing to download captions from a URL without a host."
+        )
+        raise YouTubeDataUnparsable(message, video_id=video_id)
+    if parts.scheme != "https":
         raise YouTubeDataUnparsable(
-            f"Refusing to download captions from unexpected host {host or url!r}.",
-            video_id=video_id,
+            "Refusing to download captions over plain HTTP.", video_id=video_id
         )
     experiments = dict(parse_qsl(parts.query)).get("exp", "")
     if "xpe" in experiments.split(","):
@@ -70,7 +76,7 @@ def parse_captions(
     video_id: str | None = None,
 ) -> tuple[Segment, ...]:
     """Parse a caption download, whichever format YouTube answered with."""
-    text = body.decode("utf-8", errors="replace").lstrip("﻿").strip()
+    text = body.decode("utf-8", errors="replace").lstrip("\ufeff").strip()
     if not text:
         raise YouTubeDataUnparsable(
             "YouTube returned an empty caption file.",
@@ -79,6 +85,13 @@ def parse_captions(
                 "YouTube may now require a proof-of-origin token or changed its caption "
                 "format; please report it with the video ID."
             ),
+        )
+    lowered = text[:200].lower()
+    if "html" in content_type.lower() or lowered.startswith(("<!doctype html", "<html")):
+        raise YouTubeDataUnparsable(
+            "YouTube returned a web page instead of captions (a consent, CAPTCHA or proxy page).",
+            video_id=video_id,
+            suggestion="Retry later or from another network or proxy; YouTube may be blocking this IP address.",
         )
     try:
         if text.startswith("{") or "json" in content_type.lower():

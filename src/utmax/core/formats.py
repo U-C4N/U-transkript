@@ -140,11 +140,18 @@ def _cues(segments: Sequence[Segment]) -> list[_Cue]:
         ),
         key=lambda item: item[0],
     )
-    cues: list[_Cue] = []
-    for index, (start, duration, text) in enumerate(timed):
+    merged: list[tuple[int, int, str]] = []
+    for start, duration, text in timed:
         end = start + duration
-        if index + 1 < len(timed):
-            end = min(end, timed[index + 1][0])
+        if merged and merged[-1][0] == start:
+            _, previous_end, previous_text = merged[-1]
+            merged[-1] = (start, max(previous_end, end), f"{previous_text}\n{text}")
+        else:
+            merged.append((start, end, text))
+    cues: list[_Cue] = []
+    for index, (start, end, text) in enumerate(merged):
+        if index + 1 < len(merged):
+            end = min(end, merged[index + 1][0])  # noqa: PLW2901
         if end > start:
             cues.append(_Cue(start, end, text))
     return cues

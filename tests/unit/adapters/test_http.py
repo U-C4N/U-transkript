@@ -7,6 +7,7 @@ import socket
 import ssl
 import urllib.error
 import urllib.request
+import zlib
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
@@ -135,6 +136,14 @@ def test_client_errors_are_not_retried(status: int) -> None:
 def test_connection_resets_are_retried() -> None:
     transport, _, _ = retrying(ConnectionResetError("reset"), ok())
     assert transport.send(REQUEST).status == 200
+
+
+def test_corrupt_compressed_bodies_are_retried_then_reported() -> None:
+    transport, _, _ = retrying(zlib.error("bad data"), ok())
+    assert transport.send(REQUEST).status == 200
+    transport, _, _ = retrying(zlib.error("bad"), zlib.error("bad"), zlib.error("bad"))
+    with pytest.raises(NetworkError):
+        transport.send(REQUEST)
 
 
 def test_exhausted_network_errors_become_network_error() -> None:

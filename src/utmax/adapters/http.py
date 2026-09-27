@@ -11,6 +11,7 @@ import ssl
 import time
 import urllib.error
 import urllib.request
+import zlib
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
@@ -23,7 +24,7 @@ __all__ = ["RetryingTransport", "UrllibTransport", "redact"]
 
 log = logging.getLogger("utmax.http")
 
-_NETWORK_ERRORS = (OSError, http.client.HTTPException, EOFError)
+_NETWORK_ERRORS = (OSError, http.client.HTTPException, EOFError, zlib.error)
 
 
 class UrllibTransport:
@@ -155,6 +156,7 @@ def _is_transient(error: BaseException) -> bool:
             http.client.HTTPException,
             EOFError,
             gzip.BadGzipFile,
+            zlib.error,
         ),
     )
 
