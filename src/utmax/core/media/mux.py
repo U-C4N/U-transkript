@@ -198,8 +198,7 @@ def convert_edits(
 def _track_kind(flavor: Flavor, track: IndexedTrack) -> TrackKind:
     header = track.header
     codecs = {entry[4:8].decode("latin-1") for entry in header.sample_entries}
-    kinds = {_KINDS.get((header.handler, codec)) for codec in codecs}
-    kind = kinds.pop() if len(kinds) == 1 else None
+    kind = _KINDS.get((header.handler, next(iter(codecs)))) if len(codecs) == 1 else None
     if kind is None:
         raise MuxError(
             f"Track {header.track_id} holds {header.handler!r}/{'+'.join(sorted(codecs))!r} "

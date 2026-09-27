@@ -256,3 +256,12 @@ def test_a_track_that_switches_to_an_unsupported_codec_is_refused() -> None:
     mixed = data[:second] + b"hvc1" + data[second + 4 :]
     with pytest.raises(MuxError, match=r"'avc1\+hvc1'"):
         plan_mux([BytesSource(mixed)], flavor="mp4")
+
+
+def test_a_track_that_mixes_avc1_and_av01_is_refused() -> None:
+    # Both codecs map to the same TrackKind ("video"); the mix must still be refused.
+    data = simple_file([Sample(512, 10)], track=Track(entries=2))
+    second = data.index(b"avc1", data.index(b"avc1") + 4)
+    mixed = data[:second] + b"av01" + data[second + 4 :]
+    with pytest.raises(MuxError, match=r"'av01\+avc1'"):
+        plan_mux([BytesSource(mixed)], flavor="mp4")
