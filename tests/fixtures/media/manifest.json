@@ -1,0 +1,100 @@
+{
+ "video_id": "dQw4w9WgXcQ",
+ "recorded": "2026-09-27",
+ "client": "ANDROID_VR",
+ "streams": {
+  "137": {
+   "file": "dQw4w9WgXcQ_137.hollow.bin",
+   "mime_type": "video/mp4; codecs=\"avc1.640028\"",
+   "content_length": 80911999,
+   "timescale": 12800,
+   "sidx_references": 38,
+   "elst_media_time": 512,
+   "virtual_size": 2974911,
+   "fragments": [
+    {
+     "tfhd_flags": 131082,
+     "tfdt_version": 0,
+     "trun_version": 0,
+     "trun_flags": 3585,
+     "samples": 131,
+     "sample_bytes": 1339416,
+     "size": 1341088,
+     "mdat_payload": 1339416
+    },
+    {
+     "tfhd_flags": 131082,
+     "tfdt_version": 0,
+     "trun_version": 0,
+     "trun_flags": 3585,
+     "samples": 129,
+     "sample_bytes": 1630945,
+     "size": 1632593,
+     "mdat_payload": 1630945
+    }
+   ]
+  },
+  "140": {
+   "file": "dQw4w9WgXcQ_140.hollow.bin",
+   "mime_type": "audio/mp4; codecs=\"mp4a.40.2\"",
+   "content_length": 3449447,
+   "timescale": 44100,
+   "sidx_references": 22,
+   "elst_media_time": null,
+   "virtual_size": 324634,
+   "fragments": [
+    {
+     "tfhd_flags": 131114,
+     "tfdt_version": 0,
+     "trun_version": 0,
+     "trun_flags": 513,
+     "samples": 430,
+     "sample_bytes": 160259,
+     "size": 162083,
+     "mdat_payload": 160259
+    },
+    {
+     "tfhd_flags": 131114,
+     "tfdt_version": 0,
+     "trun_version": 0,
+     "trun_flags": 513,
+     "samples": 430,
+     "sample_bytes": 159708,
+     "size": 161532,
+     "mdat_payload": 159708
+    }
+   ]
+  },
+  "399": {
+   "file": "dQw4w9WgXcQ_399.hollow.bin",
+   "mime_type": "video/mp4; codecs=\"av01.0.08M.08\"",
+   "content_length": 30415996,
+   "timescale": 12800,
+   "sidx_references": 38,
+   "elst_media_time": null,
+   "virtual_size": 1204720,
+   "fragments": [
+    {
+     "tfhd_flags": 131082,
+     "tfdt_version": 0,
+     "trun_version": 0,
+     "trun_flags": 1537,
+     "samples": 131,
+     "sample_bytes": 508064,
+     "size": 509212,
+     "mdat_payload": 508064
+    },
+    {
+     "tfhd_flags": 131082,
+     "tfdt_version": 0,
+     "trun_version": 0,
+     "trun_flags": 1537,
+     "samples": 129,
+     "sample_bytes": 693188,
+     "size": 694320,
+     "mdat_payload": 693188
+    }
+   ]
+  }
+ }
+}
