@@ -13,6 +13,5 @@ htmlcov/
 .ruff_cache/
 *.part
 *.part.json
-.superpowers/
 .worktrees/
 .claude/settings.local.json

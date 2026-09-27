@@ -1,7 +1,5 @@
 # M2 — AI Translation & Bilingual Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** `utmax.translate`, `utmax.translator` and `utmax.bilingual`: AI translation of any transcript with Claude, OpenAI (and OpenAI-compatible servers such as Ollama), Gemini or OpenRouter that keeps every timing, plus two-language subtitles in every format, while `import utmax` still needs only the standard library.
 
 **Architecture:** Pure `core/translate/` (language-neutral protocol data, batch planning, answer validation, `provider=model-id` parsing) and `core/bilingual.py`; `adapters/providers/` wraps each official SDK behind one call, `Translator.generate_json(system, prompt, schema) -> str`, and imports the SDK only when a translator is created; `services/translation.py` runs the batches on a thread pool with retry → split → `TranslationMismatch`; `client.py` and the facade expose `translate`, `translator` and `bilingual`, and `utmax.providers` exports the translator classes. The engine is tested with a deterministic fake translator, the providers with fake SDK clients that return real SDK objects, and live tests run only when API keys are set.

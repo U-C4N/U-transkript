@@ -1,7 +1,5 @@
 # M3 — Media Muxer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** A pure-Python muxer (`utmax.core.media`) that turns YouTube's fragmented MP4 streams plus transcripts into faststart MP4, MOV and M4A files with toggleable tx3g subtitle tracks, planned as byte copies (`MuxPlan`) and written atomically by `utmax.adapters.files`.
 
 **Architecture:** Pure core modules, each with one job: `boxes` (byte sources, box headers, readers and writers) → `fmp4` (index fragmented inputs through `ByteSource.read(offset, n)`) → `tables`, `tx3g`, `moov` (sample tables, subtitle tracks, `ftyp`/`moov` per flavor) → `mux` (chunking, interleaving, edit lists, co64 and faststart layout into `MuxPlan(ops=[CopyOp | Blob])`), plus `progressive`, which reads finished files back so every invariant is checked on real output. The only I/O lives in `adapters/files.py` (`FileByteSource`, `write_mux_plan`). The public facade does not change; M4 wires the muxer into `download()`.

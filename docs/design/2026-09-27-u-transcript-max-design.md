@@ -473,7 +473,7 @@ only), 10-bit/HDR AV1, VP9/WebM sources, REST API, CLI.
 
 1. Update memory: replace the stale v4 memory with the u-transcript max decisions (old v4 plan and ledger are obsolete).
 2. Commit this spec to `docs/design/2026-09-27-u-transcript-max-design.md` on branch `v4` (the old
-   `docs/superpowers` spec deletion goes in the same commit; LICENSE/.gitattributes are recreated in M1).
+   v4 spec deletion goes in the same commit; LICENSE/.gitattributes are recreated in M1).
 3. Invoke **writing-plans** for M1 → `docs/design/plans/2026-09-27-m1-foundation-transcripts.md`; the user reviews
    it and picks the execution method (subagent-driven development recommended). Repeat per milestone
    (`docs/design/plans/<date>-m<N>-<name>.md`), each plan written after the previous milestone is complete on `v4`.

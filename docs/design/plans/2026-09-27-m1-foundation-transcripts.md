@@ -1,7 +1,5 @@
 # M1 — Foundation & Transcripts Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** A zero-dependency `utmax` package that fetches, selects, parses and saves YouTube transcripts (`utmax.fetch`, `utmax.list_tracks`, `utmax.video_info`, `Transcript.save`) behind a layered, offline-testable architecture with green quality gates.
 
 **Architecture:** Interfaces (`utmax/__init__.py` facade, `client.py`) → `services/transcripts.py` → pure `core/` (IDs, player/caption parsing, selection, formats, segmentation; no I/O) plus `adapters/` (urllib transport with retries, InnerTube client, watch-page fallback, atomic file writes). `models.py` is the shared data kernel. Tests use a scripted fake transport, a local HTTP server and recorded, redacted real responses.
@@ -238,7 +236,6 @@ htmlcov/
 .ruff_cache/
 *.part
 *.part.json
-.superpowers/
 .claude/settings.local.json
 ```
 

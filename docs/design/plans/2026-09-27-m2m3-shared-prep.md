@@ -1,7 +1,5 @@
 # M2/M3 Shared Preparation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Add the two things milestones M2 (AI translation) and M3 (media muxer) both build on — the pure `utmax.core.languages` module and the translation/download error classes — on branch `v4`, before M2 and M3 branch off and run in parallel.
 
 **Architecture:** `src/utmax/core/languages.py` is pure table data plus four lookup functions (no I/O). `src/utmax/errors.py` gains eleven classes in the existing hierarchy style (class-level one-sentence `suggestion`, keyword-only fields, pickling through `UTMaxError.__reduce__`), and `src/utmax/__init__.py` re-exports them. No other file changes, so M2 and M3 can both start from the result without touching these files again.
