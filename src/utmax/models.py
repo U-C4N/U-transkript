@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal, Protocol, overload
 
 __all__ = [
@@ -188,3 +190,50 @@ class Transcript(Sequence[Segment]):
             {"text": segment.text, "start": segment.start, "duration": segment.duration}
             for segment in self.segments
         ]
+
+    def to(self, format: FormatName) -> str:
+        """Render as ``"srt"``, ``"vtt"``, ``"json"``, ``"txt"`` or ``"pretty"``."""
+        from utmax.core.formats import render
+
+        return render(self, format)
+
+    def to_srt(self) -> str:
+        """SubRip text."""
+        from utmax.core.formats import to_srt
+
+        return to_srt(self.segments)
+
+    def to_vtt(self) -> str:
+        """WebVTT text."""
+        from utmax.core.formats import to_vtt
+
+        return to_vtt(self.segments)
+
+    def to_json(self, *, indent: int | None = 2) -> str:
+        """JSON with the metadata and every segment."""
+        from utmax.core.formats import to_json
+
+        return to_json(self, indent=indent)
+
+    def to_text(self, *, separator: str = " ") -> str:
+        """Plain text, segments joined by ``separator``."""
+        from utmax.core.formats import to_text
+
+        return to_text(self.segments, separator=separator)
+
+    def to_pretty(self) -> str:
+        """``[MM:SS] text`` lines (``[HH:MM:SS]`` for videos longer than an hour)."""
+        from utmax.core.formats import to_pretty
+
+        return to_pretty(self.segments)
+
+    def save(self, path: str | os.PathLike[str], format: FormatName | None = None) -> Path:
+        """Write the transcript to ``path``; the extension picks the format unless ``format`` is set.
+
+        Works the same for originals, translations and bilingual transcripts. The file is UTF-8
+        with ``\\n`` line endings and is replaced atomically.
+        """
+        from utmax.adapters.files import write_text_atomic
+        from utmax.core.formats import format_for_path, render
+
+        return write_text_atomic(path, render(self, format_for_path(path, format)))
