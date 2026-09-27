@@ -178,6 +178,23 @@ class TrackList(Sequence[Track]):
         """Tracks produced by YouTube's speech recognition."""
         return tuple(track for track in self.tracks if track.is_generated)
 
+    def find(
+        self,
+        languages: Sequence[str] | str | None = None,
+        *,
+        include_manual: bool = True,
+        include_generated: bool = True,
+    ) -> Track:
+        """Pick the best track; see :func:`utmax.core.selection.select_track` for the rules."""
+        from utmax.core.selection import select_track
+
+        return select_track(
+            self.tracks,
+            languages,
+            include_manual=include_manual,
+            include_generated=include_generated,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Transcript(Sequence[Segment]):
