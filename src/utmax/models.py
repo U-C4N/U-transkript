@@ -12,6 +12,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal, Protocol, overload
 
+from utmax.errors import NotTranslatable, TranslationLanguageNotAvailable
+
 __all__ = [
     "FormatName",
     "Language",
@@ -112,6 +114,37 @@ class Track:
                 "This Track is not bound to a client; get tracks from utmax.list_tracks()."
             )
         return self._fetcher.fetch_track(self, preserve_formatting=preserve_formatting)
+
+    def translate(self, language_code: str) -> Track:
+        """This track machine-translated by YouTube (``tlang``).
+
+        Best effort only: YouTube rate-limits these requests heavily. The track list's
+        ``translation_languages`` is checked when YouTube provided one.
+        """
+        from utmax.core.captions import set_query_param
+
+        if not self.is_translatable:
+            raise NotTranslatable(
+                f"YouTube cannot translate the {self.language_code} track of {self.video_id}.",
+                video_id=self.video_id,
+            )
+        names = {language.code: language.name for language in self._translation_languages}
+        if names and language_code not in names:
+            raise TranslationLanguageNotAvailable(
+                f"YouTube cannot translate video {self.video_id} into {language_code!r}.",
+                available=tuple(names),
+                video_id=self.video_id,
+            )
+        return replace(
+            self,
+            language_code=language_code,
+            language=names.get(language_code, language_code),
+            is_generated=True,
+            is_translatable=False,
+            vss_id="",
+            translation_of=self.language_code,
+            _url=set_query_param(self._url, "tlang", language_code),
+        )
 
 
 @dataclass(frozen=True, slots=True)
