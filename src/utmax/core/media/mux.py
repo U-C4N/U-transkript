@@ -1,12 +1,12 @@
-"""Plan a progressive MP4, MOV or M4A file from fragmented streams.
+"""Plan a progressive MP4, MOV or M4A file from fragmented streams and subtitles.
 
 :func:`plan_mux` never reads sample data. It indexes the inputs and lays out ``ftyp``, a
 "faststart" ``moov`` and one ``mdat`` as a :class:`MuxPlan`: literal bytes (:class:`Blob`) and
 byte ranges to copy from the inputs (:class:`CopyOp`), which
 ``utmax.adapters.files.write_mux_plan`` streams to disk. Chunks hold at most one second of
-media and are interleaved by time; tracks keep their source timescales and edit lists
-(converted to the 1000 Hz movie timescale); ``co64`` and a 64-bit ``mdat`` size appear
-exactly when an offset or size needs them; equal inputs give equal bytes.
+media (ten seconds of subtitles) and are interleaved by time; tracks keep their source
+timescales and edit lists (converted to the 1000 Hz movie timescale); ``co64`` and a 64-bit
+``mdat`` size appear exactly when an offset or size needs them; equal inputs give equal bytes.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from utmax.core.media.boxes import U32_MAX, ByteSource, read_exact, u32, u64
 from utmax.core.media.fmp4 import Edit, IndexedTrack, index_fragments
 from utmax.core.media.moov import (
     MOVIE_TIMESCALE,
+    UNITY_MATRIX,
     Flavor,
     TrackKind,
     TrackPlan,
@@ -32,7 +33,9 @@ from utmax.core.media.moov import (
     unpack_language,
 )
 from utmax.core.media.tables import chunk_ranges
+from utmax.core.media.tx3g import TIMESCALE, default_subtitle_index, sample_entry, subtitle_track
 from utmax.errors import MuxError
+from utmax.models import Transcript
 
 __all__ = [
     "FLAVORS",
@@ -47,6 +50,7 @@ __all__ = [
 
 FLAVORS: tuple[Flavor, ...] = ("mp4", "mov", "m4a")
 _MEDIA_CHUNK_SECONDS = 1
+_SUBTITLE_CHUNK_SECONDS = 10
 _KINDS: dict[tuple[str, str], TrackKind] = {
     ("vide", "avc1"): "video",
     ("vide", "av01"): "video",
@@ -109,29 +113,44 @@ class PlanSource:
 
 @dataclass(frozen=True, slots=True)
 class _Layout:
-    """Where one track's chunks come from: byte ranges of one input."""
+    """Where one track's chunks come from: an input's byte ranges, or generated payloads."""
 
     chunks: list[tuple[int, int]]  # (first sample, sample count)
     times: list[Fraction]  # when each chunk starts, in seconds on the movie timeline
     source: int  # input number (media tracks)
     offsets: Sequence[int]  # sample offsets in that input
     sizes: Sequence[int]
+    payloads: tuple[bytes, ...] | None = None  # sample bytes of a subtitle track
 
 
-def plan_mux(sources: Sequence[ByteSource], *, flavor: Flavor) -> MuxPlan:
-    """Plan one progressive file from fragmented MP4 ``sources``.
+def plan_mux(
+    sources: Sequence[ByteSource],
+    *,
+    flavor: Flavor,
+    subtitles: Sequence[Transcript] = (),
+    default_subtitle: str | None = None,
+) -> MuxPlan:
+    """Plan one progressive file from fragmented MP4 ``sources`` and ``subtitles``.
 
-    Every track of every source is kept in order (YouTube serves one track per stream).
+    Every track of every source is kept in order (YouTube serves one track per stream),
+    followed by one tx3g track per transcript; ``default_subtitle`` (a language code) picks the
+    subtitle track that is enabled, else the first one is.
 
     Raises:
         MuxError: an input is not fragmented MP4, is truncated, uses a codec other than H.264
-            (avc1), AV1 (av01) or AAC (mp4a), or does not fit the flavor: video in m4a; AV1,
-            multichannel audio or 64-bit durations in mov.
+            (avc1), AV1 (av01) or AAC (mp4a), or does not fit the flavor: video or subtitles in
+            m4a; AV1, multichannel audio or 64-bit durations in mov.
+        InvalidOption: ``default_subtitle`` names none of ``subtitles``.
     """
     if flavor not in FLAVORS:
         raise MuxError(f"Unknown container flavor {flavor!r}; use mp4, mov or m4a.")
     if not sources:
         raise MuxError("There is nothing to mux: no input streams were given.")
+    if flavor == "m4a" and subtitles:
+        raise MuxError("M4A files cannot hold subtitle tracks; write sidecar files instead.")
+    enabled_subtitle = default_subtitle_index(
+        [t.language_code for t in subtitles], default_subtitle
+    )
     inputs = [
         (number, track)
         for number, source in enumerate(sources)
@@ -154,6 +173,13 @@ def plan_mux(sources: Sequence[ByteSource], *, flavor: Flavor) -> MuxPlan:
             enabled=kind not in seen,
         )
         seen.add(kind)
+        plans.append(plan)
+        layouts.append(layout)
+    limit = max(plan.duration for plan in plans)
+    for index, transcript in enumerate(subtitles):
+        plan, layout = _subtitle_track(
+            transcript, track_id=len(plans) + 1, limit=limit, enabled=index == enabled_subtitle
+        )
         plans.append(plan)
         layouts.append(layout)
     return _layout(flavor, plans, layouts)
@@ -275,6 +301,39 @@ def _media_track(
     return plan, _Layout(chunks, times, number, samples.offsets, samples.sizes)
 
 
+def _subtitle_track(
+    transcript: Transcript, *, track_id: int, limit: int, enabled: bool
+) -> tuple[TrackPlan, _Layout]:
+    track = subtitle_track(transcript, limit=limit)
+    durations = [duration for duration, _ in track.samples]
+    payloads = tuple(payload for _, payload in track.samples)
+    dts = list(accumulate(durations, initial=0))
+    chunks = chunk_ranges(dts[:-1], [1] * len(durations), span=_SUBTITLE_CHUNK_SECONDS * TIMESCALE)
+    plan = TrackPlan(
+        track_id=track_id,
+        kind="subtitle",
+        timescale=TIMESCALE,
+        language=track.language,
+        tag=track.tag,
+        name=track.name,
+        enabled=enabled,
+        matrix=UNITY_MATRIX,
+        width=0,
+        height=0,
+        edits=(),
+        duration=dts[-1],
+        media_duration=dts[-1],
+        sample_entries=(sample_entry(),),
+        durations=durations,
+        ctos=[0] * len(durations),
+        sync=bytes([1]) * len(durations),
+        sizes=[len(payload) for payload in payloads],
+        chunks=tuple((count, 1) for _, count in chunks),
+    )
+    times = [Fraction(dts[first], TIMESCALE) for first, _ in chunks]
+    return plan, _Layout(chunks, times, -1, (), (), payloads)
+
+
 def _interleave(layouts: list[_Layout]) -> tuple[list[CopyOp | Blob], list[list[int]]]:
     """The mdat payload in time order, and every chunk's offset from the payload's start."""
     order = sorted(
@@ -289,6 +348,11 @@ def _interleave(layouts: list[_Layout]) -> tuple[list[CopyOp | Blob], list[list[
         layout = layouts[track]
         first, count = layout.chunks[chunk]
         offsets[track][chunk] = position
+        if layout.payloads is not None:
+            data = b"".join(layout.payloads[first : first + count])
+            ops.append(Blob(data))
+            position += len(data)
+            continue
         for sample in range(first, first + count):
             position += _add_copy(
                 ops, CopyOp(layout.source, layout.offsets[sample], layout.sizes[sample])
