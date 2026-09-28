@@ -9,17 +9,21 @@ Quick start::
 
     turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5")
     utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
+
+    utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 + AAC + English subtitles
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from utmax._version import __version__
 from utmax.client import Client
+from utmax.core.downloads import DEFAULT_CHUNK_SIZE
 from utmax.errors import (
     AgeRestricted,
     DownloadCancelled,
@@ -67,7 +71,9 @@ from utmax.models import (
     FormatName,
     Language,
     Progress,
+    Quality,
     Segment,
+    SubtitleMode,
     Track,
     TrackList,
     Transcript,
@@ -131,6 +137,7 @@ __all__ = [
     "YouTubeRequestFailed",
     "__version__",
     "bilingual",
+    "download",
     "fetch",
     "list_tracks",
     "translate",
@@ -296,3 +303,90 @@ def bilingual(
         InvalidOption: one of the transcripts is already bilingual.
     """
     return _client().bilingual(original, translation, translation_first=translation_first)
+
+
+def download(
+    video: str,
+    path: str | os.PathLike[str],
+    *,
+    format: Container | None = None,
+    quality: Quality = "compat",
+    subtitles: Sequence[str | Transcript] | None = None,
+    subtitle_mode: SubtitleMode = "embed",
+    default_subtitle: str | None = None,
+    connections: int = 4,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    resume: bool = True,
+    overwrite: bool = False,
+    ffmpeg: str | os.PathLike[str] | None = None,
+    progress: Callable[[Progress], None] | None = None,
+    cancel: threading.Event | None = None,
+) -> DownloadResult:
+    """Download a video (``.mp4``, ``.mov``) or its audio (``.m4a``, ``.mp3``) with subtitles.
+
+    Examples::
+
+        utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 up to 1080p, AAC, English subtitles
+        utmax.download("dQw4w9WgXcQ", "rick.m4a")  # audio only; no ffmpeg needed
+        utmax.download("dQw4w9WgXcQ", "videos/", quality="max")  # AV1 up to 4K, named by title
+        utmax.download("dQw4w9WgXcQ", "rick.mp4", subtitles=[english, turkish])
+
+    Args:
+        video: a video ID or any YouTube URL.
+        path: the output file; its extension picks the type (``.mp4``, ``.mov``, ``.m4a``,
+            ``.mp3``). A folder (an existing one, or a path ending with ``/``) gets
+            ``"{title} [{video_id}].{ext}"``.
+        format: the file type when ``path`` is a folder or has no extension; it must match the
+            extension otherwise.
+        quality: ``"compat"`` (H.264 up to 1080p, plays everywhere) or ``"max"`` (AV1 or
+            H.264 up to 2160p; ``.mp4`` only).
+        subtitles: language codes and/or transcripts (translations and bilingual ones too).
+            ``None`` embeds the spoken-language track in videos and adds nothing to audio;
+            ``[]`` adds none. Codes are chosen like :func:`fetch`, never with YouTube's own
+            translation.
+        subtitle_mode: ``"embed"`` (toggleable tracks in the video), ``"sidecar"`` (``.srt``
+            files next to it) or ``"both"``; audio files always get sidecar files.
+        default_subtitle: the language code of the embedded track shown by default (else the
+            first one).
+        connections: parallel connections, 1 to 16.
+        chunk_size: bytes per range request, at least 256 KiB.
+        resume: continue an interrupted download from its ``.part`` files.
+        overwrite: replace existing files instead of raising :class:`OutputExists`.
+        ffmpeg: the ffmpeg executable for ``.mp3`` (default: ``$UTMAX_FFMPEG``, then ``PATH``).
+        progress: called with a :class:`Progress` at most four times a second, never in
+            parallel; keep it quick. An exception it raises stops the download.
+        cancel: set this event to stop; the ``.part`` files stay, so a new call resumes.
+
+    Streams are downloaded into ``<file>.<itag>.part`` files next to the target and then
+    combined, so the disk briefly holds about twice the file size; the parts are deleted only
+    after success. Stream URLs work only from the IP address that requested them, so do not
+    switch proxies or VPNs during a download.
+
+    Raises:
+        InvalidVideoId, InvalidOption, UnsupportedFormat: bad arguments (before any request).
+        OutputExists: the file or a subtitle file exists and ``overwrite`` is false.
+        FFmpegNotFound: ``.mp3`` without a usable ffmpeg (before any request).
+        NoTranscriptFound: a requested subtitle language does not exist (before any media byte).
+        FormatNotAvailable: no stream fits the type and quality (live streams, for example).
+        StreamForbidden, DownloadIncomplete, NetworkError: the download failed; call again to
+            resume.
+        DownloadCancelled: ``cancel`` was set.
+        MuxError, FFmpegFailed: the file could not be assembled.
+        VideoUnavailable, VideoUnplayable, AgeRestricted, RequestBlocked: YouTube refused.
+    """
+    return _client().download(
+        video,
+        path,
+        format=format,
+        quality=quality,
+        subtitles=subtitles,
+        subtitle_mode=subtitle_mode,
+        default_subtitle=default_subtitle,
+        connections=connections,
+        chunk_size=chunk_size,
+        resume=resume,
+        overwrite=overwrite,
+        ffmpeg=ffmpeg,
+        progress=progress,
+        cancel=cancel,
+    )
