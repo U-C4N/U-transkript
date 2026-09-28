@@ -27,7 +27,7 @@ COPY_BLOCK_SIZE = 1 << 20
 
 
 def write_text_atomic(path: str | os.PathLike[str], text: str) -> Path:
-    """Write ``text`` as UTF-8 with ``\n`` newlines; readers never see a half-written file."""
+    """Write ``text`` as UTF-8 with ``\\n`` newlines; readers never see a half-written file."""
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.{secrets.token_hex(4)}.tmp")
