@@ -56,3 +56,18 @@ jobs:
           names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist();
           bad = [n for n in names if not n.startswith(('utmax/', 'u_transcript_max-'))];
           assert not bad, bad"
+
+  ffmpeg:
+    name: muxer vs ffmpeg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.14"
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends ffmpeg
+      - run: uv sync --locked
+      - run: uv run pytest -m ffmpeg -v
+        env:
+          UTMAX_REQUIRE_FFMPEG: "1"
