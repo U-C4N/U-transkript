@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Self
+from typing import Any, Self
 
 from utmax.adapters.http import RetryingTransport, UrllibTransport
 from utmax.adapters.innertube import InnerTubeClient
+from utmax.adapters.providers import Translator, create_translator
+from utmax.core.bilingual import bilingual
 from utmax.errors import InvalidOption
 from utmax.models import TrackList, Transcript, VideoInfo
 from utmax.services.transcripts import TranscriptService
+from utmax.services.translation import translate
 from utmax.transport import Transport
 
 __all__ = ["Client"]
@@ -86,6 +89,36 @@ class Client:
     def video_info(self, video: str) -> VideoInfo:
         """Title, channel and duration of ``video``."""
         return self._transcripts.video_info(video)
+
+    def translator(self, model: str, **options: Any) -> Translator:
+        """The translator for ``"provider=model-id"``; see :func:`utmax.translator`."""
+        return create_translator(model, **options)
+
+    def translate(
+        self,
+        transcript: Transcript,
+        to: str,
+        *,
+        model: str | Translator,
+        instructions: str | None = None,
+        resegment: bool | None = None,
+        **options: Any,
+    ) -> Transcript:
+        """Translate ``transcript`` with an AI model; see :func:`utmax.translate`."""
+        return translate(
+            transcript,
+            to,
+            model=model,
+            instructions=instructions,
+            resegment=resegment,
+            **options,
+        )
+
+    def bilingual(
+        self, original: Transcript, translation: Transcript, *, translation_first: bool = False
+    ) -> Transcript:
+        """Combine a transcript and its translation; see :func:`utmax.bilingual`."""
+        return bilingual(original, translation, translation_first=translation_first)
 
     def close(self) -> None:
         """Release resources; utmax keeps no open connections today, so this does nothing yet."""

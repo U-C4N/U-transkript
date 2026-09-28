@@ -27,6 +27,13 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+claude = ["anthropic>=1.8,<2"]
+openai = ["openai>=3.19,<4"]
+gemini = ["google-genai>=2.25,<3"]
+openrouter = ["openai>=3.19,<4"]
+ai = ["anthropic>=1.8,<2", "google-genai>=2.25,<3", "openai>=3.19,<4"]
+
 [project.urls]
 Homepage = "https://github.com/U-C4N/U-transkript"
 Issues = "https://github.com/U-C4N/U-transkript/issues"

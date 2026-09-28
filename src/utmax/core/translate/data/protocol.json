@@ -6,5 +6,12 @@
     "max_gap_seconds": 1.0,
     "max_duration_seconds": 7.0,
     "max_characters": 100
+  },
+  "translation": {
+    "batch_chars": 4000,
+    "batch_items": 50,
+    "context_items": 3,
+    "concurrency": 4,
+    "max_attempts": 2
   }
 }

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "utmax subtitle translation request (the user message)",
+  "type": "object",
+  "properties": {
+    "source_language": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["code", "name"],
+      "additionalProperties": false
+    },
+    "target_language": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["code", "name"],
+      "additionalProperties": false
+    },
+    "instructions": { "type": ["string", "null"] },
+    "context_before": { "type": "array", "items": { "type": "string" } },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "text": { "type": "string" }
+        },
+        "required": ["id", "text"],
+        "additionalProperties": false
+      }
+    },
+    "context_after": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": [
+    "source_language",
+    "target_language",
+    "instructions",
+    "context_before",
+    "items",
+    "context_after"
+  ],
+  "additionalProperties": false
+}

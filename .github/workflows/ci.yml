@@ -37,9 +37,20 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: ${{ matrix.python }}
-      - run: uv sync --locked
+      - run: uv sync --locked --all-extras
       - run: uv run pytest --cov --cov-report=term-missing
       - run: uv run coverage report --include="*/utmax/core/*" --fail-under=95
+
+  core:
+    name: core without extras
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.11"
+      - run: uv sync --locked
+      - run: uv run pytest
 
   build:
     runs-on: ubuntu-latest

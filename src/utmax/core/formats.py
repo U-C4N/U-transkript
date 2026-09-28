@@ -17,6 +17,7 @@ __all__ = [
     "FORMATS",
     "format_for_path",
     "render",
+    "to_bilingual_text",
     "to_json",
     "to_pretty",
     "to_srt",
@@ -59,6 +60,8 @@ def render(transcript: Transcript, fmt: str) -> str:
     name = format_for_path("", fmt)
     if name == "json":
         return to_json(transcript)
+    if name == "txt" and transcript.is_bilingual:
+        return to_bilingual_text(transcript.segments)
     return _SEGMENT_RENDERERS[name](transcript.segments)
 
 
@@ -109,6 +112,12 @@ def to_text(segments: Sequence[Segment], *, separator: str = " ") -> str:
     """Plain text: each segment whitespace-collapsed, joined by ``separator``."""
     parts = [" ".join(segment.text.split()) for segment in segments if segment.text.strip()]
     return separator.join(parts) + "\n" if parts else ""
+
+
+def to_bilingual_text(segments: Sequence[Segment]) -> str:
+    """Plain text for bilingual transcripts: every cue keeps its lines, a blank line between cues."""
+    blocks = ["\n".join(_lines(segment.text)) for segment in segments if segment.text.strip()]
+    return "\n\n".join(blocks) + "\n" if blocks else ""
 
 
 def to_pretty(segments: Sequence[Segment]) -> str:
