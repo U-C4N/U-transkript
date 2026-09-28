@@ -283,3 +283,10 @@ def test_describe_stream() -> None:
     assert describe_stream(webm) == "248 webm vp9 1080p25 (WebM)"
     (usable,) = streams(audio(140))
     assert describe_stream(usable) == "140 mp4 aac 44.1kHz"
+
+
+def test_stream_reprs_hide_the_ip_bound_url() -> None:
+    (stream,) = streams(video(137, "avc1.640028", 1920, 1080))
+    assert "googlevideo" in stream.url
+    assert "googlevideo" not in repr(stream)
+    assert "itag=137" in repr(stream)

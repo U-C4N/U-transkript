@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 from urllib.parse import parse_qsl, urlsplit
 
@@ -45,7 +45,7 @@ class Stream:
     """A format plus what downloading it takes; internal, because the URL is bound to your IP."""
 
     format: Format
-    url: str = ""
+    url: str = field(default="", repr=False)
     expires_at: int | None = None
     user_agent: str = DESKTOP_USER_AGENT
     bit_depth: int = 8
