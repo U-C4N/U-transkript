@@ -15,9 +15,17 @@ from typing import Literal, Protocol, overload
 from utmax.errors import NotTranslatable, TranslationLanguageNotAvailable
 
 __all__ = [
+    "Codec",
+    "Container",
+    "DownloadResult",
+    "Format",
     "FormatName",
     "Language",
+    "Progress",
+    "ProgressPhase",
+    "Quality",
     "Segment",
+    "SubtitleMode",
     "Track",
     "TrackFetcher",
     "TrackList",
@@ -27,6 +35,11 @@ __all__ = [
 ]
 
 FormatName = Literal["txt", "srt", "vtt", "json", "pretty"]
+Container = Literal["mp4", "mov", "m4a", "mp3"]
+Quality = Literal["compat", "max"]
+SubtitleMode = Literal["embed", "sidecar", "both"]
+ProgressPhase = Literal["downloading", "muxing", "converting", "finished"]
+Codec = Literal["h264", "av1", "vp9", "aac", "he-aac", "opus", "other"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,3 +306,72 @@ class Transcript(Sequence[Segment]):
         from utmax.core.segmentation import merge_sentences
 
         return replace(self, segments=merge_sentences(self.segments), source=None)
+
+
+@dataclass(frozen=True, slots=True)
+class Format:
+    """One stream YouTube offers for a video; its URL never leaves utmax."""
+
+    itag: int
+    kind: Literal["video", "audio"]
+    container: Literal["mp4", "webm"]
+    codec: Codec
+    codecs: str
+    width: int | None = None
+    height: int | None = None
+    fps: int | None = None
+    bitrate: int = 0
+    content_length: int | None = None
+    audio_sample_rate: int | None = None
+    audio_channels: int | None = None
+    is_default_audio: bool = True
+    is_drc: bool = False
+    last_modified: str = ""
+
+    @property
+    def label(self) -> str:
+        """A short description such as ``"137 mp4 h264 1080p25"`` or ``"140 mp4 aac 44.1kHz"``."""
+        words = [str(self.itag), self.container, self.codec]
+        if self.kind == "video":
+            side = min((n for n in (self.width, self.height) if n), default=0)
+            words.append(f"{side}p{self.fps or ''}")
+        else:
+            if self.audio_sample_rate:
+                words.append(f"{self.audio_sample_rate / 1000:g}kHz")
+            if self.is_drc:
+                words.append("drc")
+        return " ".join(words)
+
+
+@dataclass(frozen=True, slots=True)
+class Progress:
+    """How far a download has come; passed to ``download(progress=...)`` callbacks."""
+
+    video_id: str
+    phase: ProgressPhase
+    bytes_done: int
+    bytes_total: int | None
+    speed_bps: float | None = None
+    eta_seconds: float | None = None
+
+    @property
+    def fraction(self) -> float | None:
+        """``bytes_done / bytes_total`` between 0 and 1; ``None`` while the total is unknown."""
+        if not self.bytes_total:
+            return None
+        return min(1.0, self.bytes_done / self.bytes_total)
+
+
+@dataclass(frozen=True, slots=True)
+class DownloadResult:
+    """What :func:`utmax.download` produced."""
+
+    path: Path
+    video: VideoInfo
+    container: Container
+    video_format: Format | None
+    audio_format: Format
+    embedded_subtitles: tuple[str, ...] = ()
+    sidecars: tuple[Path, ...] = ()
+    size_bytes: int = 0
+    resumed: bool = False
