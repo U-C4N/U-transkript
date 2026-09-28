@@ -91,7 +91,7 @@ warn_unreachable = true
 minversion = "9.0"
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config", "-m", "not live"]
-markers = ["live: talks to the real YouTube API; run with `uv run pytest -m live`"]
+markers = ["live: talks to the real YouTube API; run with `uv run pytest -m live`", "ffmpeg: needs ffmpeg and ffprobe on PATH; run with `uv run pytest -m ffmpeg`"]
 xfail_strict = true
 filterwarnings = ["error"]
 
