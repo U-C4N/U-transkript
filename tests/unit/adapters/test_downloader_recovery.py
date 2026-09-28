@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from tests.helpers.fake_media import FakeMedia, Fault, media_stream, pattern
+from tests.helpers.fake_media import FakeBody, FakeMedia, Fault, media_stream, pattern
 from utmax.adapters.downloader import Downloader, Job, ProgressReporter
 from utmax.core.downloads import PartState
 from utmax.core.streams import Stream
@@ -22,6 +22,7 @@ from utmax.errors import (
     StreamForbidden,
 )
 from utmax.models import Progress
+from utmax.transport import HttpRequest
 
 CHUNK = 1000
 
@@ -96,15 +97,28 @@ def test_resume_false_ignores_the_saved_state(tmp_path: Path) -> None:
 
 
 def test_a_403_refreshes_the_urls_once_for_every_thread(tmp_path: Path) -> None:
+    """All four connections meet the stale URL's 403 before any of them refreshes, so the
+    single-flight guard (not just a single-threaded coincidence) is what limits it to one."""
     media, data, job = served(tmp_path, size=8000)
     media.expired.add(job.stream.url)
+    connections = 4
+    barrier = threading.Barrier(connections, timeout=5)
     calls: list[int] = []
 
     def refresh() -> list[Stream]:
         calls.append(1)
         return [media_stream(137, job.stream.url + "?v=2", 8000)]
 
-    downloader(media, connections=4, refresh=refresh).run([job], video_id="v")
+    def opener(request: HttpRequest) -> FakeBody:
+        body = media.stream(request)
+        if body.status == 403:
+            barrier.wait()
+        return body
+
+    run = Downloader(
+        opener, chunk_size=CHUNK, sleep=lambda _: None, connections=connections, refresh=refresh
+    )
+    run.run([job], video_id="v")
     assert calls == [1]
     assert job.part.read_bytes() == data
 
