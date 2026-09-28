@@ -13,7 +13,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 
@@ -55,13 +55,17 @@ class Tools:
 def tools() -> Tools:
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     if ffmpeg is None or ffprobe is None:
-        if os.environ.get("UTMAX_REQUIRE_FFMPEG") == "1":
-            pytest.fail("UTMAX_REQUIRE_FFMPEG=1 but ffmpeg or ffprobe is not on PATH")
-        pytest.skip("ffmpeg and ffprobe are not installed")
+        _unavailable("ffmpeg and ffprobe are not installed")
     encoders = run([ffmpeg, "-hide_banner", "-encoders"]).stdout
     if "libx264" not in encoders:
-        pytest.fail("this ffmpeg build has no libx264 encoder")
+        _unavailable("this ffmpeg build has no libx264 encoder")
     return Tools(ffmpeg, ffprobe, encoders)
+
+
+def _unavailable(reason: str) -> NoReturn:
+    if os.environ.get("UTMAX_REQUIRE_FFMPEG") == "1":
+        pytest.fail(f"UTMAX_REQUIRE_FFMPEG=1 but {reason}")
+    pytest.skip(reason)
 
 
 @pytest.fixture(scope="module")
