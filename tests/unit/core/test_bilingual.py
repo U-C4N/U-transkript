@@ -119,6 +119,55 @@ def test_a_source_of_another_length_is_ignored() -> None:
     ]
 
 
+def test_a_translation_of_the_manual_track_is_not_zipped_onto_the_auto_track() -> None:
+    """A video's auto track and manual track can share a language code (both "en"); the
+    translation's source must also match on generated-ness, or the wrong cues get zipped."""
+    manual = make_transcript(
+        Segment(0.0, 1.0, "Hello"), Segment(1.0, 1.0, "World."), is_generated=False
+    )
+    auto = make_transcript(Segment(0.0, 2.0, "hello world."), is_generated=True)
+    translation = ai_translation(manual, "Merhaba", "D\U000000fcnya.")
+    result = bilingual(auto, translation)
+    assert [segment.text for segment in result] == ["hello world.\nMerhaba D\U000000fcnya."]
+    assert [(segment.start, segment.duration) for segment in result] == [(0.0, 2.0)]
+
+
+def test_a_translation_of_the_auto_track_is_not_zipped_onto_the_manual_track() -> None:
+    """The reverse direction of the auto/manual mix-up: the manual original's own cues and
+    text must win, never the resegmented, lowercased auto track the translation came from."""
+    auto = make_transcript(Segment(0.0, 2.0, "hello world."), is_generated=True)
+    manual = make_transcript(
+        Segment(0.0, 1.0, "Hello"), Segment(1.0, 1.0, "World."), is_generated=False
+    )
+    translation = ai_translation(auto, "Merhaba d\U000000fcnya.")
+    result = bilingual(manual, translation)
+    assert [segment.text for segment in result] == ["Hello", "World.\nMerhaba d\U000000fcnya."]
+
+
+def test_a_source_from_a_different_video_is_ignored() -> None:
+    other_video = replace(VIDEO, video_id="differentVideoId0")
+    original = make_transcript(Segment(1.0, 2.0, "We're no strangers to love"))
+    mismatched_source = Transcript(
+        video=other_video,
+        language_code="en",
+        language="English",
+        is_generated=False,
+        segments=(Segment(1.0, 2.0, "A cue from a different video"),),
+    )
+    translation = Transcript(
+        video=VIDEO,
+        language_code="tr",
+        language="Turkish",
+        is_generated=True,
+        segments=(Segment(1.0, 2.0, LINE_1),),
+        translated_from="en",
+        translator="claude=claude-opus-5",
+        source=mismatched_source,
+    )
+    result = bilingual(original, translation)
+    assert [segment.text for segment in result] == [f"We're no strangers to love\n{LINE_1}"]
+
+
 def test_original_cues_without_a_translation_keep_their_text_alone() -> None:
     original = make_transcript(
         Segment(0.0, 1.0, "one"), Segment(1.0, 1.0, "   "), Segment(10.0, 1.0, "two")

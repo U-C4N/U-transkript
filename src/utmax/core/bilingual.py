@@ -18,8 +18,10 @@ def bilingual(
     """One transcript that shows ``original`` and ``translation`` together.
 
     AI translations remember the exact cues they were made from (``translation.source``); when
-    those cues belong to ``original`` the two are paired one to one. Otherwise, for example
-    with YouTube's own translation or another track, every translated cue joins the original
+    those cues belong to ``original`` (same video, same language code and the same auto/manual
+    kind, since a video's auto track and manual track can share a language code) the two are
+    paired one to one. Otherwise, for example with YouTube's own translation, another track or
+    the sibling auto/manual track in the same language, every translated cue joins the original
     cue that contains its midpoint (or the nearest one), so the timing always follows
     ``original``.
 
@@ -63,6 +65,7 @@ def _pairs(original: Transcript, translation: Transcript) -> list[tuple[Segment,
         and len(source) == len(translation)
         and source.language_code == original.language_code
         and source.video.video_id == original.video.video_id
+        and source.is_generated == original.is_generated
     ):
         return [
             (cue, translated.text)
