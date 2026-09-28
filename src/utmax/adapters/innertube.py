@@ -40,13 +40,18 @@ class InnerTubeClient:
         self._block_retries = block_retries
 
     def player(self, video_id: str, *, purpose: Purpose = "captions") -> PlayerData:
-        """A playable player response, trying each profile for ``purpose`` in order."""
+        """A playable player response, trying each profile for ``purpose`` in order.
+
+        For ``"streams"``, a response without a direct MP4 stream URL counts as a failed profile.
+        """
         profiles = ORDER[purpose]
         failures: list[YouTubeError] = []
         http_failures = 0
         for profile in profiles:
             try:
-                return self._with_block_retries(partial(self._playable, profile, video_id, None))
+                return self._with_block_retries(
+                    partial(self._playable, profile, video_id, None, purpose=purpose)
+                )
             except _HTTP_LEVEL_FAILURES as error:
                 http_failures += 1
                 failures.append(error)
@@ -58,7 +63,9 @@ class InnerTubeClient:
         if http_failures == len(profiles):
             log.info("every InnerTube client failed at the HTTP level; trying the watch page")
             api_key = fetch_api_key(self._transport, video_id)
-            return self._with_block_retries(partial(self._playable, ANDROID, video_id, api_key))
+            return self._with_block_retries(
+                partial(self._playable, ANDROID, video_id, api_key, purpose=purpose)
+            )
         raise failures[0]
 
     def player_json(
@@ -84,10 +91,20 @@ class InnerTubeClient:
         url = caption_url(base_url, fmt="json3")
         return self._with_block_retries(partial(self._caption_response, url, video_id))
 
-    def _playable(self, profile: ClientProfile, video_id: str, api_key: str | None) -> PlayerData:
+    def _playable(
+        self, profile: ClientProfile, video_id: str, api_key: str | None, *, purpose: Purpose
+    ) -> PlayerData:
         data = self.player_json(profile, video_id, api_key=api_key)
         player = parse_player_response(data, video_id=video_id)
         check_playability(player.playability, video_id=video_id)
+        if purpose == "streams" and not any(
+            stream.url and stream.format.container == "mp4" and not stream.drm
+            for stream in player.streams
+        ):
+            raise YouTubeDataUnparsable(
+                f"The {profile.name} client returned no direct MP4 stream URLs for {video_id}.",
+                video_id=video_id,
+            )
         return player
 
     def _caption_response(self, url: str, video_id: str) -> HttpResponse:

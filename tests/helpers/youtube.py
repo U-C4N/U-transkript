@@ -127,6 +127,7 @@ def player_payload(
     title: str = "Rick Astley - Never Gonna Give You Up (Official Video)",
     author: str = "Rick Astley",
     length_seconds: str = "213",
+    streaming_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """A ``/player`` response shaped like YouTube's (only the fields utmax reads)."""
     playability: dict[str, Any] = {"status": status}
@@ -159,6 +160,8 @@ def player_payload(
                 ],
             }
         }
+    if streaming_data is not None:
+        payload["streamingData"] = streaming_data
     return payload
 
 

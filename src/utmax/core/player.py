@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from utmax.core.playability import Playability, parse_playability
+from utmax.core.streams import Stream, parse_streams
 from utmax.core.ytdata import items, mapping, text_of
 from utmax.models import Language, VideoInfo
 
@@ -33,6 +34,7 @@ class PlayerData:
     playability: Playability
     caption_tracks: tuple[CaptionTrackInfo, ...] | None
     translation_languages: tuple[Language, ...]
+    streams: tuple[Stream, ...] = ()
 
 
 def parse_player_response(data: Mapping[str, Any], *, video_id: str) -> PlayerData:
@@ -65,6 +67,7 @@ def parse_player_response(data: Mapping[str, Any], *, video_id: str) -> PlayerDa
         playability=parse_playability(data),
         caption_tracks=tracks or None,
         translation_languages=languages if tracks else (),
+        streams=parse_streams(mapping(data.get("streamingData"))),
     )
 
 

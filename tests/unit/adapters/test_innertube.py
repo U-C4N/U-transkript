@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
 from tests.helpers.fake_transport import FakeTransport, json_response, text_response
-from tests.helpers.youtube import MANUAL_JSON3, VIDEO_ID, player_payload
+from tests.helpers.youtube import MANUAL_JSON3, VIDEO_ID, player_payload, streaming_data
 from utmax.adapters.innertube import InnerTubeClient
 from utmax.core.clients import IOS
 from utmax.errors import (
@@ -186,3 +187,58 @@ def test_caption_rate_limits_and_http_errors() -> None:
     with pytest.raises(YouTubeRequestFailed) as missing:
         client.fetch_captions(CAPTION_URL, video_id=VIDEO_ID)
     assert missing.value.status_code == 404
+
+
+def streams_payload(*, direct: bool) -> dict[str, Any]:
+    data = streaming_data()
+    if not direct:
+        ciphered = [
+            {key: value for key, value in entry.items() if key != "url"}
+            | {"signatureCipher": "s=1"}
+            for entry in data["adaptiveFormats"]
+        ]
+        data = {**data, "formats": [], "adaptiveFormats": ciphered}
+    return player_payload(streaming_data=data)
+
+
+def test_stream_players_skip_profiles_without_direct_mp4_urls() -> None:
+    transport = FakeTransport()
+    transport.add(
+        "POST",
+        "/youtubei/v1/player",
+        json_response(streams_payload(direct=False)),
+        json_response(streams_payload(direct=True)),
+    )
+    player = InnerTubeClient(transport).player(VIDEO_ID, purpose="streams")
+    assert client_names(transport) == ["ANDROID_VR", "ANDROID"]
+    assert any(stream.url for stream in player.streams)
+
+
+def test_stream_players_fall_back_to_the_watch_page_then_give_up() -> None:
+    transport = FakeTransport()
+    transport.add(
+        "POST", "/youtubei/v1/player", json_response(streams_payload(direct=False)), repeat=True
+    )
+    transport.add("GET", "/watch", text_response(WATCH_HTML))
+    with pytest.raises(YouTubeDataUnparsable, match="no direct MP4 stream URLs"):
+        InnerTubeClient(transport).player(VIDEO_ID, purpose="streams")
+    assert client_names(transport) == ["ANDROID_VR", "ANDROID", "IOS", "ANDROID"]
+
+
+def test_caption_players_do_not_need_streams() -> None:
+    transport = FakeTransport()
+    transport.add("POST", "/youtubei/v1/player", json_response(player_payload()))
+    assert InnerTubeClient(transport).player(VIDEO_ID).streams == ()
+
+
+def test_a_bot_check_on_one_stream_profile_moves_on_to_the_next() -> None:
+    blocked = player_payload(status="LOGIN_REQUIRED", reason="Sign in to confirm you're not a bot")
+    transport = FakeTransport()
+    transport.add(
+        "POST",
+        "/youtubei/v1/player",
+        json_response(blocked),
+        json_response(streams_payload(direct=True)),
+    )
+    InnerTubeClient(transport).player(VIDEO_ID, purpose="streams")
+    assert client_names(transport) == ["ANDROID_VR", "ANDROID"]

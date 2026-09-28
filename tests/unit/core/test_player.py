@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from tests.helpers.youtube import VIDEO_ID, player_payload
+from tests.helpers.youtube import VIDEO_ID, player_payload, streaming_data
 from utmax.core.player import CaptionTrackInfo, parse_player_response
 from utmax.models import Language, VideoInfo
 
@@ -81,3 +81,14 @@ def test_malformed_video_details_fall_back_to_defaults() -> None:
     assert (
         parse_player_response({"videoDetails": "odd"}, video_id=VIDEO_ID).video.video_id == VIDEO_ID
     )
+
+
+def test_streams_are_parsed_from_streaming_data() -> None:
+    payload = player_payload(streaming_data=streaming_data())
+    player = parse_player_response(payload, video_id=VIDEO_ID)
+    assert len(player.streams) == 27
+    assert player.streams[0].format.itag == 18
+
+
+def test_players_without_streaming_data_have_no_streams() -> None:
+    assert parse_player_response(player_payload(), video_id=VIDEO_ID).streams == ()
