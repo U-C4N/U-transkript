@@ -9,7 +9,7 @@ import secrets
 import threading
 from collections.abc import Callable, Sequence
 from contextlib import ExitStack
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from utmax.adapters.downloader import Downloader, Job, Opener, ProgressReporter
@@ -84,11 +84,17 @@ class DownloadOptions:
             raise InvalidOption(
                 f"chunk_size must be at least {MIN_CHUNK_SIZE} bytes, not {self.chunk_size}."
             )
-        if isinstance(self.subtitles, str):
+        if isinstance(self.subtitles, (str, Transcript)):
             raise InvalidOption(
                 f"subtitles must be a list, such as subtitles=[{self.subtitles!r}].",
                 suggestion=f"Pass subtitles=[{self.subtitles!r}]: a list of codes or transcripts.",
             )
+        if self.subtitles is not None:
+            for item in self.subtitles:
+                if not isinstance(item, (str, Transcript)):
+                    raise InvalidOption(
+                        f"Each subtitle must be a language code or a Transcript, not {item!r}."
+                    )
 
 
 class DownloadService:
@@ -114,6 +120,8 @@ class DownloadService:
     ) -> DownloadResult:
         """Download ``video`` to ``path``; :func:`utmax.download` documents the rules."""
         video_id = parse_video_id(video)
+        if options.subtitles is not None and not isinstance(options.subtitles, (str, Transcript)):
+            options = replace(options, subtitles=tuple(options.subtitles))
         options.check()
         target = resolve_target(path, format=options.format, is_dir=Path(path).is_dir())
         container = target.container

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.helpers.builders import make_transcript
 from tests.helpers.downloads import FakeFFmpegRuns, FakeYouTube, read_movie
 from tests.helpers.youtube import VIDEO_ID
 from utmax.adapters import ffmpeg as ffmpeg_module
@@ -89,6 +90,18 @@ def test_folder_targets_are_checked_once_the_title_is_known(tmp_path: Path) -> N
         ("rick.mp4", DownloadOptions(connections=17), InvalidOption, "connections must be"),
         ("rick.mp4", DownloadOptions(chunk_size=1000), InvalidOption, "chunk_size must be"),
         ("rick.mp4", DownloadOptions(subtitles="en"), InvalidOption, "subtitles must be a list"),
+        (
+            "rick.mp4",
+            DownloadOptions(subtitles=make_transcript()),
+            InvalidOption,
+            "subtitles must be a list",
+        ),
+        (
+            "rick.mp4",
+            DownloadOptions(subtitles=[123]),
+            InvalidOption,
+            "Each subtitle must be",
+        ),
         ("rick.mov", DownloadOptions(quality="max"), InvalidOption, r"needs \.mp4"),
         ("rick.m4a", DownloadOptions(default_subtitle="en"), InvalidOption, "cannot embed"),
         ("rick.avi", DownloadOptions(), UnsupportedFormat, "Cannot tell the file type"),
