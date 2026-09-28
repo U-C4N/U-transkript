@@ -33,6 +33,8 @@ class Client:
         retries: extra attempts for timeouts, connection resets and HTTP 408/5xx.
         block_retries: extra attempts, each on a new connection, when YouTube blocks the IP
             (useful with rotating proxies).
+        force_ipv4: connect over IPv4 only; try it when downloads fail with StreamForbidden on a
+            machine with both IPv4 and IPv6, because stream URLs are bound to one address.
         transport: a custom :class:`utmax.transport.Transport` replacing the whole HTTP stack;
             ``timeout`` and ``retries`` are then ignored and ``proxy`` must not be set.
     """
@@ -44,6 +46,7 @@ class Client:
         timeout: float = 30.0,
         retries: int = 2,
         block_retries: int = 0,
+        force_ipv4: bool = False,
         transport: Transport | None = None,
     ) -> None:
         if timeout <= 0:
@@ -54,10 +57,16 @@ class Client:
             raise InvalidOption(
                 "Pass either proxy= or transport=, not both; configure the proxy in your transport."
             )
+        if transport is not None and force_ipv4:
+            raise InvalidOption(
+                "force_ipv4 applies to utmax's own HTTP stack; configure IPv4 in your transport."
+            )
         if transport is None:
             transport = RetryingTransport(
-                UrllibTransport(proxy=proxy, timeout=timeout), retries=retries
+                UrllibTransport(proxy=proxy, timeout=timeout, force_ipv4=force_ipv4),
+                retries=retries,
             )
+        self._transport = transport
         self._transcripts = TranscriptService(
             InnerTubeClient(transport, block_retries=block_retries)
         )

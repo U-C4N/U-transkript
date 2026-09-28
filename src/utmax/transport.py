@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
-__all__ = ["HttpRequest", "HttpResponse", "Transport"]
+__all__ = ["HttpRequest", "HttpResponse", "HttpStream", "StreamingTransport", "Transport"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,3 +54,28 @@ class Transport(Protocol):
     """Sends requests. Returns a response for any HTTP status; raises only on network failure."""
 
     def send(self, request: HttpRequest) -> HttpResponse: ...
+
+
+@runtime_checkable
+class HttpStream(Protocol):
+    """A response whose body is read piece by piece (media downloads).
+
+    ``read`` returns up to ``n`` bytes and ``b""`` at the end of the body; it raises
+    :class:`utmax.errors.NetworkError` when the connection fails half-way.
+    """
+
+    @property
+    def status(self) -> int: ...
+
+    def header(self, name: str) -> str | None: ...
+
+    def read(self, n: int) -> bytes: ...
+
+    def close(self) -> None: ...
+
+
+@runtime_checkable
+class StreamingTransport(Transport, Protocol):
+    """A :class:`Transport` that can also stream bodies; utmax buffers them for other ones."""
+
+    def stream(self, request: HttpRequest) -> HttpStream: ...
