@@ -141,8 +141,11 @@ def track_languages(code: str) -> tuple[str, str]:
 def subtitle_track(transcript: Transcript, *, limit: int | None = None) -> SubtitleTrack:
     """The tx3g track of ``transcript``; with ``limit`` (ms) no cue runs past it.
 
-    ``<b>``/``<i>``/``<u>`` tags are removed. A transcript without cues becomes one empty sample
-    lasting ``limit`` (at least 1 ms), so the requested track still exists.
+    With ``limit``, an empty sample also follows the last cue until ``limit``. FFmpeg's muxer
+    writes such a terminating sample too: FFmpeg before 7 stretches a track's last sample to
+    the end of the file, which would otherwise keep the last cue on screen until the video
+    ends. ``<b>``/``<i>``/``<u>`` tags are removed. A transcript without cues becomes one empty
+    sample lasting ``limit`` (at least 1 ms), so the requested track still exists.
     """
     cues = normalize_cues(transcript.segments)
     if limit is not None:
@@ -154,8 +157,10 @@ def subtitle_track(transcript: Transcript, *, limit: int | None = None) -> Subti
             timeline.append((cue.start - position, ""))
         timeline.append((cue.end - cue.start, _FORMATTING_TAG.sub("", cue.text)))
         position = cue.end
+    if limit is not None and position < limit:
+        timeline.append((limit - position, ""))
     if not timeline:
-        timeline.append((max(limit or 0, 1), ""))
+        timeline.append((1, ""))
     language, tag = track_languages(transcript.language_code)
     return SubtitleTrack(
         code=transcript.language_code,

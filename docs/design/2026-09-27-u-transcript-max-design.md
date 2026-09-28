@@ -340,7 +340,8 @@ tables `stts/ctts(v1 if negative)/stss/stsz/stsc/stco|co64` → keep source time
 | Audio entry | source `mp4a+esds` | SoundDescription v1 + `wave(frma, mp4a, esds)` | source |
 | hdlr / language | C-string · ISO 639-2/T | Pascal + `minf` dhlr · Mac code if mapped | C-string · ISO |
 
-**tx3g**: normalized cues (sorted, overlaps clamped, ms timescale), empty samples for gaps, sample =
+**tx3g**: normalized cues (sorted, overlaps clamped, ms timescale), empty samples for gaps and after the
+last cue until the media ends (FFmpeg < 7 stretches a track's last sample to the end of the file), sample =
 `u16 length + UTF-8` (`"\n"` line breaks), ffmpeg `mov_text` default sample entry (size 18, white, `ftab`
 Sans-Serif), handler `sbtl`, `nmhd`, `elng` with the BCP-47 tag, `alternate_group=3`, exactly one enabled track
 (`default_subtitle` else first), track names like "Turkish (AI: claude=…)" / "English + Turkish".

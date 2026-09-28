@@ -139,6 +139,11 @@ def test_a_limit_drops_and_cuts_cues_past_the_end() -> None:
     assert texts(track.samples) == [(1000, "a"), (500, ""), (1000, "b")]
 
 
+def test_a_limit_ends_the_last_cue_with_an_empty_sample() -> None:
+    track = subtitle_track(make_transcript(Segment(0.5, 1.0, "a")), limit=3000)
+    assert texts(track.samples) == [(500, ""), (1000, "a"), (1500, "")]
+
+
 def test_transcripts_without_cues_still_make_a_track() -> None:
     assert subtitle_track(make_transcript(), limit=4000).samples == ((4000, b"\x00\x00"),)
     assert subtitle_track(make_transcript(Segment(0, 1, "  "))).samples == ((1, b"\x00\x00"),)

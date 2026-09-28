@@ -105,7 +105,17 @@ def test_subtitle_text_and_timing_round_trip() -> None:
     tracks, output = mux([ENGLISH, TURKISH])
     assert cues_of(tracks[0], output) == list(normalize_cues(ENGLISH.segments))
     assert cues_of(tracks[1], output) == list(normalize_cues(TURKISH.segments))
-    assert [sample.duration for sample in tracks[0].samples] == [500, 1000, 500, 800]
+    assert [sample.duration for sample in tracks[0].samples] == [500, 1000, 500, 800, 280]
+
+
+def test_the_last_cue_is_followed_by_an_empty_sample_until_the_media_ends() -> None:
+    # FFmpeg before 7 stretches a track's last sample to the end of the file; the empty
+    # sample takes that stretch, so "World" still disappears at 2.8 s in every player.
+    (track,), output = mux([ENGLISH])
+    last = track.samples[-1]
+    assert decode_sample(output.read(last.offset, last.size)) == ""
+    assert (last.dts, last.dts + last.duration) == (2800, 3080)
+    assert track.duration == 3080
 
 
 def test_subtitles_end_with_the_media() -> None:
