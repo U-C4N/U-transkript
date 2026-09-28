@@ -363,7 +363,9 @@ def download(
     switch proxies or VPNs during a download.
 
     Raises:
-        InvalidVideoId, InvalidOption, UnsupportedFormat: bad arguments (before any request).
+        InvalidVideoId, InvalidOption, UnsupportedFormat: bad arguments, before any request
+            (subtitle problems, such as a ``default_subtitle`` that is not embedded, before any
+            media byte).
         OutputExists: the file or a subtitle file exists and ``overwrite`` is false.
         FFmpegNotFound: ``.mp3`` without a usable ffmpeg (before any request).
         NoTranscriptFound: a requested subtitle language does not exist (before any media byte).

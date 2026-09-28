@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
@@ -142,12 +143,61 @@ def test_mp3_needs_ffmpeg_before_any_request(tmp_path: Path) -> None:
 def test_mp3_downloads_convert_the_audio_with_ffmpeg(tmp_path: Path) -> None:
     youtube = FakeYouTube()
     runs = FakeFFmpegRuns()
-    result = runs.service(youtube).download(VIDEO_ID, tmp_path / "song.mp3", DownloadOptions())
+    seen: list[Progress] = []
+    options = DownloadOptions(progress=seen.append)
+    result = runs.service(youtube).download(VIDEO_ID, tmp_path / "song.mp3", options)
     assert (result.container, result.video_format) == ("mp3", None)
     assert result.path.read_bytes().startswith(b"ID3")
     conversion = next(call for call in runs.calls if "-i" in call)
     assert conversion[conversion.index("-i") + 1] == str(tmp_path / "song.mp3.140.part")
     assert sorted(path.name for path in tmp_path.iterdir()) == ["song.mp3"]
+    phases = [progress.phase for progress in seen]
+    assert "converting" in phases
+    assert phases == sorted(phases, key=["downloading", "converting", "finished"].index)
+
+
+def missing_ffmpeg(_: object) -> str:
+    raise FFmpegNotFound("no ffmpeg here")
+
+
+@pytest.mark.parametrize(
+    ("name", "options", "service_options", "error"),
+    [
+        ("rick.mp4", DownloadOptions(connections=0), {}, InvalidOption),
+        ("rick.avi", DownloadOptions(), {}, UnsupportedFormat),
+        ("song.mp3", DownloadOptions(), {"locate": missing_ffmpeg}, FFmpegNotFound),
+        ("rick.mp4", DownloadOptions(subtitles=["en"], default_subtitle="de"), {}, InvalidOption),
+    ],
+)
+def test_errors_name_the_video(
+    tmp_path: Path,
+    name: str,
+    options: DownloadOptions,
+    service_options: dict[str, object],
+    error: type[Exception],
+) -> None:
+    with pytest.raises(error) as caught:
+        FakeYouTube().service(**service_options).download(VIDEO_ID, tmp_path / name, options)
+    assert getattr(caught.value, "video_id", None) == VIDEO_ID
+
+
+def test_parts_that_cannot_be_deleted_do_not_fail_a_finished_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    unlink = Path.unlink
+
+    def locked(self: Path, missing_ok: bool = False) -> None:
+        if self.name.endswith(".part"):
+            raise PermissionError(13, "The file is being used by another process", str(self))
+        unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", locked)
+    options = DownloadOptions(subtitles=["en"])
+    with caplog.at_level(logging.WARNING, logger="utmax.download"):
+        result = FakeYouTube().service().download(VIDEO_ID, tmp_path / "rick.m4a", options)
+    assert result.path.exists()
+    assert result.sidecars == (tmp_path / "rick.en.srt",)
+    assert "could not delete rick.m4a.140.part" in caplog.text
 
 
 def test_audio_files_write_requested_subtitles_next_to_them(tmp_path: Path) -> None:

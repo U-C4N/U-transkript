@@ -30,7 +30,7 @@ from utmax.core.media.tx3g import default_subtitle_index
 from utmax.core.player import PlayerData
 from utmax.core.selection import select_track
 from utmax.core.streams import choose_streams
-from utmax.errors import DownloadCancelled, InvalidOption, OutputExists
+from utmax.errors import DownloadCancelled, InvalidOption, OutputExists, UTMaxError
 from utmax.models import (
     Container,
     DownloadResult,
@@ -118,8 +118,22 @@ class DownloadService:
     def download(
         self, video: str, path: str | os.PathLike[str], options: DownloadOptions
     ) -> DownloadResult:
-        """Download ``video`` to ``path``; :func:`utmax.download` documents the rules."""
+        """Download ``video`` to ``path``; :func:`utmax.download` documents the rules.
+
+        Every utmax error raised on the way names the video, even when it comes from a layer
+        that does not know it (option checks, file names, ffmpeg, the muxer, the network).
+        """
         video_id = parse_video_id(video)
+        try:
+            return self._download(video_id, path, options)
+        except UTMaxError as error:
+            if error.video_id is None:
+                error.video_id = video_id
+            raise
+
+    def _download(
+        self, video_id: str, path: str | os.PathLike[str], options: DownloadOptions
+    ) -> DownloadResult:
         if options.subtitles is not None and not isinstance(options.subtitles, (str, Transcript)):
             options = replace(options, subtitles=tuple(options.subtitles))
         options.check()
@@ -186,8 +200,8 @@ class DownloadService:
                 video_id=video_id,
             )
         for job in jobs:
-            job.part.unlink(missing_ok=True)
-            job.state_path.unlink(missing_ok=True)
+            _discard(job.part)
+            _discard(job.state_path)
         written = tuple(write_text_atomic(path, t.to_srt()) for path, t in sidecars)
         size = final.stat().st_size
         reporter.report("finished", size, size, force=True)
@@ -272,6 +286,14 @@ def _placement(
             video_id=video_id,
         )
     return embedded, [(Path(sidecar_name(final, t.language_code)), t) for t in beside]
+
+
+def _discard(leftover: Path) -> None:
+    """Delete a finished download's part or state file; a lock (antivirus, indexer) only warns."""
+    try:
+        leftover.unlink(missing_ok=True)
+    except OSError as error:
+        log.warning("could not delete %s: %s", leftover.name, error)
 
 
 def _check_free(path: Path, overwrite: bool, video_id: str) -> None:
