@@ -121,12 +121,14 @@ class DownloadService:
             raise InvalidOption(
                 'quality="max" needs .mp4: QuickTime .mov files cannot hold AV1 video.',
                 suggestion='Save max quality as .mp4, or use quality="compat" for .mov.',
+                video_id=video_id,
             )
         audio_only = container in ("m4a", "mp3")
         if audio_only and options.default_subtitle is not None:
             raise InvalidOption(
                 f".{container} files cannot embed subtitles, so default_subtitle has no effect.",
                 suggestion="Leave default_subtitle out for audio files.",
+                video_id=video_id,
             )
         ffmpeg = self._ffmpeg(options.ffmpeg) if container == "mp3" else None
         if target.file is not None:
@@ -136,7 +138,9 @@ class DownloadService:
         if target.file is None:
             _check_free(final, options.overwrite, video_id)
         subtitles = self._subtitles(player, options.subtitles, audio_only=audio_only)
-        embedded, sidecars = _placement(subtitles, final, options, audio_only=audio_only)
+        embedded, sidecars = _placement(
+            subtitles, final, options, audio_only=audio_only, video_id=video_id
+        )
         for sidecar, _ in sidecars:
             _check_free(sidecar, options.overwrite, video_id)
         video_stream, audio_stream = choose_streams(
@@ -220,7 +224,8 @@ class DownloadService:
                 if item.video.video_id != video_id:
                     raise InvalidOption(
                         f"A subtitle transcript belongs to video {item.video.video_id}, "
-                        f"not {video_id}."
+                        f"not {video_id}.",
+                        video_id=video_id,
                     )
                 subtitles.append(item)
                 continue
@@ -230,13 +235,19 @@ class DownloadService:
         codes = [transcript.language_code.lower() for transcript in subtitles]
         if len(set(codes)) != len(codes):
             raise InvalidOption(
-                f"Each subtitle needs its own language code; got {', '.join(codes)}."
+                f"Each subtitle needs its own language code; got {', '.join(codes)}.",
+                video_id=video_id,
             )
         return subtitles
 
 
 def _placement(
-    subtitles: list[Transcript], final: Path, options: DownloadOptions, *, audio_only: bool
+    subtitles: list[Transcript],
+    final: Path,
+    options: DownloadOptions,
+    *,
+    audio_only: bool,
+    video_id: str,
 ) -> tuple[list[Transcript], list[tuple[Path, Transcript]]]:
     """Which subtitles go into the file, and which are written next to it (and where)."""
     if audio_only:
@@ -250,6 +261,7 @@ def _placement(
         raise InvalidOption(
             "default_subtitle picks an embedded track, but no subtitles are embedded.",
             suggestion='Use subtitle_mode="embed" or "both", or leave default_subtitle out.',
+            video_id=video_id,
         )
     return embedded, [(Path(sidecar_name(final, t.language_code)), t) for t in beside]
 
