@@ -5,8 +5,8 @@
 byte ranges to copy from the inputs (:class:`CopyOp`), which
 ``utmax.adapters.files.write_mux_plan`` streams to disk. Chunks hold at most one second of
 media and are interleaved by time; tracks keep their source timescales and edit lists
-(converted to the 1000 Hz movie timescale); equal inputs give equal bytes. Outputs must stay
-below 4 GiB for now.
+(converted to the 1000 Hz movie timescale); ``co64`` and a 64-bit ``mdat`` size appear
+exactly when an offset or size needs them; equal inputs give equal bytes.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from itertools import accumulate
 
-from utmax.core.media.boxes import U32_MAX, ByteSource, read_exact, u32
+from utmax.core.media.boxes import U32_MAX, ByteSource, read_exact, u32, u64
 from utmax.core.media.fmp4 import Edit, IndexedTrack, index_fragments
 from utmax.core.media.moov import (
     MOVIE_TIMESCALE,
@@ -299,14 +299,24 @@ def _interleave(layouts: list[_Layout]) -> tuple[list[CopyOp | Blob], list[list[
 def _layout(flavor: Flavor, plans: list[TrackPlan], layouts: list[_Layout]) -> MuxPlan:
     ops, offsets = _interleave(layouts)
     size = sum(_op_size(op) for op in ops)
+    if size + 8 <= U32_MAX:
+        mdat_header = u32(size + 8) + b"mdat"
+    else:
+        mdat_header = u32(1) + b"mdat" + u64(size + 16)
     ftyp = ftyp_box(flavor, {plan.sample_entries[0][4:8].decode("latin-1") for plan in plans})
-    narrow = [False] * len(plans)
-    zeros = [[0] * len(track_offsets) for track_offsets in offsets]
-    base = len(ftyp) + len(moov_box(flavor, plans, zeros, narrow)) + 8
-    if base + size > U32_MAX:
-        raise MuxError("Files larger than 4 GiB are not supported yet.")
+    wide = [False] * len(plans)
+    while True:  # co64 enlarges the moov and moves every chunk, so repeat until stable
+        zeros = [[0] * len(track_offsets) for track_offsets in offsets]
+        base = len(ftyp) + len(moov_box(flavor, plans, zeros, wide)) + len(mdat_header)
+        needed = [
+            flag or (bool(track_offsets) and track_offsets[-1] + base > U32_MAX)
+            for flag, track_offsets in zip(wide, offsets, strict=True)
+        ]
+        if needed == wide:
+            break
+        wide = needed
     shifted = [[offset + base for offset in track_offsets] for track_offsets in offsets]
-    header = ftyp + moov_box(flavor, plans, shifted, narrow) + u32(size + 8) + b"mdat"
+    header = ftyp + moov_box(flavor, plans, shifted, wide) + mdat_header
     return MuxPlan((Blob(header), *ops))
 
 
