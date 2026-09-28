@@ -376,7 +376,8 @@ class Downloader:
         for stream in fresh:
             new = stream.format
             if (
-                new.itag == old.itag
+                stream.url
+                and new.itag == old.itag
                 and new.last_modified == old.last_modified
                 and (new.content_length or target.size) == target.size
             ):

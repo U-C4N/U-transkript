@@ -190,6 +190,9 @@ def test_caption_rate_limits_and_http_errors() -> None:
 
 
 def streams_payload(*, direct: bool) -> dict[str, Any]:
+    """Without direct URLs, this keeps the progressive itag 18's URL and only ciphers the
+    adaptive formats, the shape of YouTube's SABR-style answers: a profile that offers only a
+    progressive URL must still count as having no usable direct stream."""
     data = streaming_data()
     if not direct:
         ciphered = [
@@ -197,7 +200,7 @@ def streams_payload(*, direct: bool) -> dict[str, Any]:
             | {"signatureCipher": "s=1"}
             for entry in data["adaptiveFormats"]
         ]
-        data = {**data, "formats": [], "adaptiveFormats": ciphered}
+        data = {**data, "adaptiveFormats": ciphered}
     return player_payload(streaming_data=data)
 
 

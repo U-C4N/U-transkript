@@ -158,6 +158,16 @@ def test_a_refresh_that_changes_the_stream_is_reported(tmp_path: Path) -> None:
         downloader(media, refresh=lambda: [changed]).run([job], video_id="v")
 
 
+def test_a_refresh_without_a_url_is_treated_as_no_match(tmp_path: Path) -> None:
+    """A same-itag, same-size, same-lmt candidate with no URL (still ciphered) is not a match:
+    using it would fail the next range request with a raw error instead of a utmax one."""
+    media, _, job = served(tmp_path, size=3000)
+    media.expired.add(job.stream.url)
+    ciphered = media_stream(137, "", 3000)
+    with pytest.raises(DownloadIncomplete, match="changed on YouTube"):
+        downloader(media, refresh=lambda: [ciphered]).run([job], video_id="v")
+
+
 def test_a_failing_refresh_propagates(tmp_path: Path) -> None:
     media, _, job = served(tmp_path, size=3000)
     media.expired.add(job.stream.url)

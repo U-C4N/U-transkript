@@ -98,7 +98,10 @@ class InnerTubeClient:
         player = parse_player_response(data, video_id=video_id)
         check_playability(player.playability, video_id=video_id)
         if purpose == "streams" and not any(
-            stream.url and stream.format.container == "mp4" and not stream.drm
+            stream.url
+            and stream.format.container == "mp4"
+            and not stream.drm
+            and not stream.progressive
             for stream in player.streams
         ):
             raise YouTubeDataUnparsable(
