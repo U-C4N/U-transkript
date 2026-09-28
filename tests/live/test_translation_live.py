@@ -77,4 +77,4 @@ def test_fetch_translate_and_save_bilingual_subtitles(tmp_path: Path) -> None:
     for name in ("rick.en+tr.srt", "rick.en+tr.vtt", "rick.en+tr.json", "rick.en+tr.txt"):
         data = combined.save(tmp_path / name).read_bytes()
         assert b"\r\n" not in data
-        assert "♪".encode() in data
+        assert "\U0000266a".encode() in data
