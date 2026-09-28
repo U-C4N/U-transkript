@@ -17,6 +17,7 @@ __all__ = [
     "DESKTOP_USER_AGENT",
     "IOS",
     "ORDER",
+    "PROFILES",
     "WEB",
     "ClientProfile",
     "Purpose",
@@ -105,4 +106,8 @@ ORDER: Mapping[Purpose, tuple[ClientProfile, ...]] = MappingProxyType(
         "browse": (ANDROID_VR, WEB),
         "resolve": (ANDROID_VR, WEB),
     }
+)
+
+PROFILES: Mapping[str, ClientProfile] = MappingProxyType(
+    {profile.name: profile for profile in (ANDROID, IOS, ANDROID_VR, WEB)}
 )

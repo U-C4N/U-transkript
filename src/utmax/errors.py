@@ -12,8 +12,14 @@ from typing import Any
 
 __all__ = [
     "AgeRestricted",
+    "DownloadCancelled",
     "DownloadError",
+    "DownloadIncomplete",
+    "FFmpegError",
+    "FFmpegFailed",
+    "FFmpegNotFound",
     "FailedToCreateConsentCookie",
+    "FormatNotAvailable",
     "InvalidModelSpec",
     "InvalidOption",
     "InvalidVideoId",
@@ -23,12 +29,14 @@ __all__ = [
     "NetworkError",
     "NoTranscriptFound",
     "NotTranslatable",
+    "OutputExists",
     "PoTokenRequired",
     "ProviderAuthError",
     "ProviderError",
     "ProviderNotInstalled",
     "ProviderRateLimited",
     "RequestBlocked",
+    "StreamForbidden",
     "TranscriptsDisabled",
     "TranslationError",
     "TranslationLanguageNotAvailable",
@@ -274,6 +282,97 @@ class MuxError(DownloadError):
     suggestion = (
         "The streams could not be combined; try another format, or report it with the video ID."
     )
+
+
+class FormatNotAvailable(DownloadError):
+    """No stream of the video fits the requested file type and quality."""
+
+    suggestion = (
+        'Try quality="compat" or another file type; live streams can be downloaded after they end.'
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        available: Sequence[str] = (),
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, video_id=video_id, suggestion=suggestion)
+        self.available = tuple(available)
+
+
+class StreamForbidden(DownloadError):
+    """YouTube kept refusing a stream (HTTP 403) even with fresh URLs."""
+
+    suggestion = (
+        "Stream URLs only work from the IP address that requested them: avoid rotating proxies "
+        "and VPN switches during a download, and try Client(force_ipv4=True)."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        itag: int,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, video_id=video_id, suggestion=suggestion)
+        self.itag = itag
+
+
+class DownloadIncomplete(DownloadError):
+    """A stream could not be downloaded completely."""
+
+    suggestion = "Run the same download again; finished parts are kept and it resumes."
+
+
+class DownloadCancelled(DownloadError):
+    """The download was stopped through its ``cancel`` event."""
+
+    suggestion = "Run the same download again to resume where it stopped."
+
+
+class OutputExists(DownloadError):
+    """The target file (or a subtitle file next to it) already exists."""
+
+    suggestion = "Pass overwrite=True to replace it, or choose another file name."
+
+
+class FFmpegError(DownloadError):
+    """ffmpeg, which utmax needs only for MP3 files, failed."""
+
+    suggestion = "Check your ffmpeg installation, or download .m4a audio, which needs no ffmpeg."
+
+
+class FFmpegNotFound(FFmpegError):
+    """No usable ffmpeg executable was found."""
+
+    suggestion = (
+        "Install ffmpeg (winget install Gyan.FFmpeg | brew install ffmpeg | apt install ffmpeg), "
+        'or pass ffmpeg="/path/to/ffmpeg".'
+    )
+
+
+class FFmpegFailed(FFmpegError):
+    """ffmpeg exited with an error."""
+
+    suggestion = "ffmpeg could not convert the audio; see stderr_tail, or download .m4a instead."
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        returncode: int,
+        stderr_tail: str,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, video_id=video_id, suggestion=suggestion)
+        self.returncode = returncode
+        self.stderr_tail = stderr_tail
 
 
 class TranslationError(UTMaxError):

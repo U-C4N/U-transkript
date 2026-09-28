@@ -129,3 +129,19 @@ def test_preserve_formatting_reaches_the_parser() -> None:
     transport.add("GET", "lang=en&fmt=json3", json_response(styled))
     transcript = service(transport).fetch(VIDEO_ID, preserve_formatting=True)
     assert transcript.text == "so <i>cool</i>"
+
+
+def test_track_list_reuses_a_player_response_without_another_request() -> None:
+    transport = standard_youtube()
+    innertube = InnerTubeClient(transport)
+    tracks = TranscriptService(innertube).track_list(innertube.player(VIDEO_ID))
+    assert len(tracks) == 6
+    assert len(transport.urls("POST")) == 1
+    assert tracks[0].fetch().language_code == "en"
+
+
+def test_track_list_is_empty_without_captions() -> None:
+    transport = FakeTransport()
+    transport.add("POST", "/youtubei/v1/player", json_response(player_payload(captions=False)))
+    innertube = InnerTubeClient(transport)
+    assert len(TranscriptService(innertube).track_list(innertube.player(VIDEO_ID))) == 0

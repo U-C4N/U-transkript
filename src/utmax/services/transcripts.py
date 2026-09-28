@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from utmax.adapters.innertube import InnerTubeClient
 from utmax.core.captions import parse_captions
 from utmax.core.ids import parse_video_id
+from utmax.core.player import PlayerData
 from utmax.errors import TranscriptsDisabled
 from utmax.models import Track, TrackList, Transcript, VideoInfo
 
@@ -21,9 +22,13 @@ class TranscriptService:
 
     def list_tracks(self, video: str) -> TrackList:
         video_id = parse_video_id(video)
-        player = self._innertube.player(video_id, purpose="captions")
-        if not player.caption_tracks:
+        tracks = self.track_list(self._innertube.player(video_id, purpose="captions"))
+        if not tracks:
             raise TranscriptsDisabled(f"Video {video_id} has no subtitles.", video_id=video_id)
+        return tracks
+
+    def track_list(self, player: PlayerData) -> TrackList:
+        """The tracks of an already fetched player response, bound to this service."""
         tracks = tuple(
             Track(
                 video=player.video,
@@ -36,7 +41,7 @@ class TranscriptService:
                 _translation_languages=player.translation_languages,
                 _fetcher=self,
             )
-            for info in player.caption_tracks
+            for info in player.caption_tracks or ()
         )
         return TrackList(
             video=player.video, tracks=tracks, translation_languages=player.translation_languages

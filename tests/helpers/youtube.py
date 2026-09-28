@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from tests.helpers.fake_transport import FakeTransport, json_response
 
 VIDEO_ID = "dQw4w9WgXcQ"
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "youtube"
+
+
+def streaming_data() -> dict[str, Any]:
+    """The recorded ANDROID_VR ``streamingData`` of dQw4w9WgXcQ (URLs are placeholders)."""
+    data = json.loads((FIXTURES / "streams_android_vr.json").read_text(encoding="utf-8"))
+    return dict(data["streamingData"])
+
 
 MANUAL_JSON3: dict[str, Any] = {
     "wireMagic": "pb3",
@@ -117,6 +127,7 @@ def player_payload(
     title: str = "Rick Astley - Never Gonna Give You Up (Official Video)",
     author: str = "Rick Astley",
     length_seconds: str = "213",
+    streaming_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """A ``/player`` response shaped like YouTube's (only the fields utmax reads)."""
     playability: dict[str, Any] = {"status": status}
@@ -149,6 +160,8 @@ def player_payload(
                 ],
             }
         }
+    if streaming_data is not None:
+        payload["streamingData"] = streaming_data
     return payload
 
 

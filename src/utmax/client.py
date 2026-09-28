@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import os
+import threading
+from collections.abc import Callable, Sequence
+from functools import partial
 from typing import Any, Self
 
-from utmax.adapters.http import RetryingTransport, UrllibTransport
+from utmax.adapters.http import RetryingTransport, UrllibTransport, open_stream
 from utmax.adapters.innertube import InnerTubeClient
 from utmax.adapters.providers import Translator, create_translator
 from utmax.core.bilingual import bilingual
+from utmax.core.downloads import DEFAULT_CHUNK_SIZE
 from utmax.errors import InvalidOption
-from utmax.models import TrackList, Transcript, VideoInfo
+from utmax.models import (
+    Container,
+    DownloadResult,
+    Progress,
+    Quality,
+    SubtitleMode,
+    TrackList,
+    Transcript,
+    VideoInfo,
+)
+from utmax.services.download import DownloadOptions, DownloadService
 from utmax.services.transcripts import TranscriptService
 from utmax.services.translation import translate
 from utmax.transport import Transport
@@ -33,6 +47,8 @@ class Client:
         retries: extra attempts for timeouts, connection resets and HTTP 408/5xx.
         block_retries: extra attempts, each on a new connection, when YouTube blocks the IP
             (useful with rotating proxies).
+        force_ipv4: connect over IPv4 only; try it when downloads fail with StreamForbidden on a
+            machine with both IPv4 and IPv6, because stream URLs are bound to one address.
         transport: a custom :class:`utmax.transport.Transport` replacing the whole HTTP stack;
             ``timeout`` and ``retries`` are then ignored and ``proxy`` must not be set.
     """
@@ -44,6 +60,7 @@ class Client:
         timeout: float = 30.0,
         retries: int = 2,
         block_retries: int = 0,
+        force_ipv4: bool = False,
         transport: Transport | None = None,
     ) -> None:
         if timeout <= 0:
@@ -54,12 +71,20 @@ class Client:
             raise InvalidOption(
                 "Pass either proxy= or transport=, not both; configure the proxy in your transport."
             )
+        if transport is not None and force_ipv4:
+            raise InvalidOption(
+                "force_ipv4 applies to utmax's own HTTP stack; configure IPv4 in your transport."
+            )
         if transport is None:
             transport = RetryingTransport(
-                UrllibTransport(proxy=proxy, timeout=timeout), retries=retries
+                UrllibTransport(proxy=proxy, timeout=timeout, force_ipv4=force_ipv4),
+                retries=retries,
             )
-        self._transcripts = TranscriptService(
-            InnerTubeClient(transport, block_retries=block_retries)
+        self._transport = transport
+        innertube = InnerTubeClient(transport, block_retries=block_retries)
+        self._transcripts = TranscriptService(innertube)
+        self._downloads = DownloadService(
+            innertube, self._transcripts, partial(open_stream, transport)
         )
 
     def fetch(
@@ -119,6 +144,41 @@ class Client:
     ) -> Transcript:
         """Combine a transcript and its translation; see :func:`utmax.bilingual`."""
         return bilingual(original, translation, translation_first=translation_first)
+
+    def download(
+        self,
+        video: str,
+        path: str | os.PathLike[str],
+        *,
+        format: Container | None = None,
+        quality: Quality = "compat",
+        subtitles: Sequence[str | Transcript] | None = None,
+        subtitle_mode: SubtitleMode = "embed",
+        default_subtitle: str | None = None,
+        connections: int = 4,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        resume: bool = True,
+        overwrite: bool = False,
+        ffmpeg: str | os.PathLike[str] | None = None,
+        progress: Callable[[Progress], None] | None = None,
+        cancel: threading.Event | None = None,
+    ) -> DownloadResult:
+        """Download a video or its audio; see :func:`utmax.download`."""
+        options = DownloadOptions(
+            format=format,
+            quality=quality,
+            subtitles=subtitles,
+            subtitle_mode=subtitle_mode,
+            default_subtitle=default_subtitle,
+            connections=connections,
+            chunk_size=chunk_size,
+            resume=resume,
+            overwrite=overwrite,
+            ffmpeg=ffmpeg,
+            progress=progress,
+            cancel=cancel,
+        )
+        return self._downloads.download(video, path, options)
 
     def close(self) -> None:
         """Release resources; utmax keeps no open connections today, so this does nothing yet."""
