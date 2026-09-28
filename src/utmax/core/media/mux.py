@@ -156,7 +156,7 @@ def plan_mux(
         for number, source in enumerate(sources)
         for track in index_fragments(source)
     ]
-    starts = [Fraction(track.samples.dts[0], track.header.timescale) for _, track in inputs]
+    starts = [_presentation_start(track) for _, track in inputs]
     origin = min(starts)
     plans: list[TrackPlan] = []
     layouts: list[_Layout] = []
@@ -219,6 +219,22 @@ def convert_edits(
     if lead > 0 and not edits:
         converted.append(Edit(_to_movie(presentation_end, timescale), 0))
     return tuple(converted)
+
+
+def _presentation_start(track: IndexedTrack) -> Fraction:
+    """When a track's first sample truly starts, in seconds, for aligning it against others.
+
+    Plain decode time (the first ``tfdt``) is not enough once a track carries an edit list: a
+    fragment that does not start at decode time 0 can still have a composition delay (a
+    leftover B-frame reorder offset, say) that the source edit list was meant to cancel. When
+    the edit's ``media_time`` predates this fragment's first decode time, that cancellation
+    already happened upstream and :func:`convert_edits` rightly emits no trim for it (its
+    ``media_time`` clamps to 0) -- but the leftover shift of ``first_dts - media_time`` still
+    has to move with the track, or it drifts out of sync with a track that has no edit list.
+    """
+    first_dts = track.samples.dts[0]
+    media_time = next((edit.media_time for edit in track.header.edits if edit.media_time >= 0), 0)
+    return Fraction(first_dts - min(media_time, first_dts), track.header.timescale)
 
 
 def _track_kind(flavor: Flavor, track: IndexedTrack) -> TrackKind:

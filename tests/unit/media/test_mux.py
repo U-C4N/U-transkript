@@ -12,6 +12,7 @@ from tests.unit.media.invariants import check_file
 from utmax.core.media.boxes import BytesSource, Reader, child_boxes
 from utmax.core.media.fmp4 import Edit, index_fragments
 from utmax.core.media.mux import Blob, CopyOp, MuxPlan, PlanSource, convert_edits, plan_mux
+from utmax.core.media.progressive import Track as ParsedTrack
 from utmax.errors import MuxError
 
 VIDEO = Track(edits=((0, 1024),))
@@ -87,6 +88,35 @@ def test_a_later_start_becomes_a_leading_empty_edit() -> None:
     assert video.edits[0].media_time == 1024
     assert audio.edits == (Edit(500, -1), Edit(999, 0))
     assert audio.samples[0].dts == 0
+
+
+def test_an_edit_list_keeps_tracks_in_sync_past_the_first_fragment() -> None:
+    # The video's elst media_time (512) matches the composition delay (cto) of its own first
+    # sample -- a B-frame reorder offset the source meant to cancel. This fragment starts well
+    # after that media_time, so convert_edits rightly clamps the in-track trim to 0 (see its
+    # docstring), but the leftover shift must still move with the track so it stays aligned with
+    # the audio, which carries no edit list at all.
+    delayed_video = Track(edits=((0, 512),))
+    video = BytesSource(
+        fragmented_file(
+            [delayed_video], [[Traf(1, (Run((Sample(512, 100, cto=512),)),), tfdt=128_000)]]
+        )
+    )
+    audio = BytesSource(
+        fragmented_file([AUDIO], [[Traf(1, (Run((Sample(1024, 100),)),), tfdt=441_000)]])
+    )
+    video_track, audio_track = check_file(
+        plan_mux([video, audio], flavor="mp4"), [video, audio]
+    ).tracks
+    assert _presentation_start(video_track) == _presentation_start(audio_track)
+
+
+def _presentation_start(track: ParsedTrack) -> Fraction:
+    lead = Fraction(0)
+    if track.edits and track.edits[0].media_time == -1:
+        lead = Fraction(track.edits[0].duration, 1000)
+    sample = track.samples[0]
+    return lead + Fraction(sample.dts + sample.cto, track.timescale)
 
 
 def test_streams_are_rebased_to_start_at_zero() -> None:
