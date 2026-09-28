@@ -26,6 +26,25 @@ VIDEO_ID = "dQw4w9WgXcQ"
 OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "youtube"
 SECRET_PARAMS = frozenset({"ei", "expire", "ip", "key", "lsig", "sig", "signature"})
 KEPT_DETAILS = ("videoId", "title", "lengthSeconds", "channelId", "author", "isLiveContent")
+KEPT_FORMAT_FIELDS = (
+    "itag",
+    "mimeType",
+    "bitrate",
+    "width",
+    "height",
+    "fps",
+    "qualityLabel",
+    "contentLength",
+    "lastModified",
+    "audioQuality",
+    "audioSampleRate",
+    "audioChannels",
+    "isDrc",
+    "audioTrack",
+    "colorInfo",
+    "drmFamilies",
+    "targetDurationSec",
+)
 
 
 def redact_url(url: str) -> str:
@@ -53,6 +72,37 @@ def trim_player(data: dict[str, Any]) -> dict[str, Any]:
     return trimmed
 
 
+def trim_format(raw: dict[str, Any]) -> dict[str, Any]:
+    """The fields utmax reads; the URL becomes a placeholder keeping only the itag and client."""
+    trimmed = {key: raw[key] for key in KEPT_FORMAT_FIELDS if key in raw}
+    if "url" in raw:
+        client = dict(parse_qsl(urlsplit(raw["url"]).query)).get("c", "")
+        trimmed["url"] = (
+            "https://redacted.googlevideo.com/videoplayback"
+            f"?expire=REDACTED&itag={raw['itag']}&c={client}"
+        )
+    if "signatureCipher" in raw or "cipher" in raw:
+        trimmed["signatureCipher"] = "REDACTED"
+    return trimmed
+
+
+def streams_fixture(data: dict[str, Any]) -> str:
+    """``streamingData`` with one format per line (``serverAbrStreamingUrl`` is dropped)."""
+    streaming = data.get("streamingData", {})
+    expires = json.dumps(streaming.get("expiresInSeconds", ""))
+    lines = ["{", ' "streamingData": {', f'  "expiresInSeconds": {expires},']
+    for key in ("formats", "adaptiveFormats"):
+        entries = [
+            json.dumps(trim_format(raw), ensure_ascii=False) for raw in streaming.get(key, [])
+        ]
+        lines.append(f'  "{key}": [')
+        lines.extend(f"   {entry}," for entry in entries[:-1])
+        lines.extend(f"   {entry}" for entry in entries[-1:])
+        lines.append("  ]," if key == "formats" else "  ]")
+    lines += [" }", "}"]
+    return "\n".join(lines) + "\n"
+
+
 def first_elements(xml: str, tag: str, count: int, *, head_end: str, tail: str) -> str:
     head = xml[: xml.index(head_end) + len(head_end)]
     elements = re.findall(rf"<{tag}\b.*?</{tag}>", xml, flags=re.DOTALL)[:count]
@@ -76,6 +126,7 @@ def main() -> None:
             f"player_{name}.json",
             json.dumps(trim_player(players[name]), ensure_ascii=False, indent=1) + "\n",
         )
+    write("streams_android_vr.json", streams_fixture(players["android_vr"]))
 
     tracks = players["android"]["captions"]["playerCaptionsTracklistRenderer"]["captionTracks"]
     manual = next(t for t in tracks if t.get("kind") != "asr" and t["languageCode"] == "en")
@@ -108,7 +159,9 @@ def main() -> None:
         "README.md",
         f"# YouTube fixtures\n\nRecorded {date.today().isoformat()} from video `{VIDEO_ID}` with\n"
         "`uv run python scripts/record_fixtures.py`. URL parameters "
-        f"{', '.join(sorted(SECRET_PARAMS))} are replaced with `REDACTED`.\n",
+        f"{', '.join(sorted(SECRET_PARAMS))} are replaced with `REDACTED`.\n"
+        "`streams_android_vr.json` keeps only the stream fields utmax reads; its URLs are\n"
+        "placeholders that keep the itag and the client name.\n",
     )
 
 
