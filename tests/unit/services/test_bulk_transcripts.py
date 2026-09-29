@@ -74,6 +74,25 @@ def test_existing_files_are_skipped_without_a_request(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    ("existing", "filename"),
+    [
+        (f"Some_title_{IDS[0]}.en.srt", "{title}_{video_id}.{language_code}.{ext}"),
+        (f"01{IDS[0]}.en.srt", "{index:02d}{video_id}.{language_code}.{ext}"),
+        (f"{IDS[0]}{IDS[1]}.en.srt", "{video_id}{title}.{language_code}.{ext}"),
+        (f"{IDS[0]} [{IDS[0]}].en.srt", "{video_id} [{video_id}].{language_code}.{ext}"),
+    ],
+)
+def test_existing_files_are_found_when_the_video_id_touches_other_characters(
+    tmp_path: Path, existing: str, filename: str
+) -> None:
+    (tmp_path / existing).write_text("old", encoding="utf-8")
+    youtube = ManyVideos()
+    report = youtube.bulk().fetch_many(IDS[:1], out_dir=tmp_path, filename=filename)
+    assert (report[0].status, report[0].path) == ("skipped", tmp_path / existing)
+    assert youtube.players == []
+
+
+@pytest.mark.parametrize(
     ("existing", "languages", "skipped"),
     [
         ("en", None, True),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import re
 import threading
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -56,6 +57,7 @@ DEFAULT_TRANSCRIPT_NAME = "{video_id}.{language_code}.{ext}"
 DEFAULT_DOWNLOAD_NAME = "{title} [{video_id}].{ext}"
 _POLL_SECONDS = 0.1
 _UNFINISHED = (".part", ".part.json", ".tmp")
+_VIDEO_ID_RUN = re.compile(r"[A-Za-z0-9_-]{11,}")
 T = TypeVar("T")
 
 
@@ -393,20 +395,37 @@ class _Files:
         self, patterns: Callable[[BulkItem], list[str]]
     ) -> Callable[[BulkItem], Path | None] | None:
         """Finds the file an earlier run left for an item; ``None`` without a folder. The parts
-        and state of an interrupted download, and temporary files, never count."""
+        and state of an interrupted download, and temporary files, never count. Every name
+        holds its video ID as it is, so only the names that contain the item's ID are matched
+        against its patterns."""
         folder = self.folder
         if folder is None:
             return None
         names = sorted(name for name in os.listdir(folder) if not name.endswith(_UNFINISHED))
+        by_video_id = _names_by_video_id(names)
 
         def existing(item: BulkItem) -> Path | None:
+            candidates = by_video_id.get(os.path.normcase(item.video_id), [])
             for pattern in patterns(item):
-                found = fnmatch.filter(names, pattern)
+                found = fnmatch.filter(candidates, pattern)
                 if found:
                     return folder / found[0]
             return None
 
         return existing
+
+
+def _names_by_video_id(names: list[str]) -> dict[str, list[str]]:
+    """``names`` filed under every video ID they may hold: each 11-character stretch of
+    video-ID characters, compared the way the file system compares names."""
+    index: dict[str, list[str]] = {}
+    for name in names:
+        for run in _VIDEO_ID_RUN.findall(name):
+            for start in range(len(run) - 10):
+                bucket = index.setdefault(os.path.normcase(run[start : start + 11]), [])
+                if not bucket or bucket[-1] != name:
+                    bucket.append(name)
+    return index
 
 
 def _folder(out_dir: str | os.PathLike[str]) -> Path:
