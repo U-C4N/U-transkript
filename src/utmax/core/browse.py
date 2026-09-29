@@ -5,21 +5,31 @@ ANDROID_VR pages list ``playlistVideoRenderer`` items (20 a page) and continue t
 ``richItemRenderer``/``shortsLockupViewModel``, and continue through a
 ``continuationItemViewModel`` (older pages: ``continuationItemRenderer``). WEB shows regular
 playlists under a ``pageHeaderRenderer`` and channel upload lists under a
-``playlistHeaderRenderer``, as ANDROID_VR does for both.
+``playlistHeaderRenderer``, as ANDROID_VR does for both. :class:`Pager` decides which page
+comes next; the caller fetches it.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from utmax.core.ytdata import items, mapping, text_of
 from utmax.errors import CollectionNotFound, CollectionUnavailable
 from utmax.models import VideoEntry
 
-__all__ = ["BrowsePage", "alert_error", "parse_browse_page", "resolved_channel_id"]
+__all__ = [
+    "MAX_PAGES",
+    "BrowsePage",
+    "Pager",
+    "alert_error",
+    "parse_browse_page",
+    "resolved_channel_id",
+]
+
+MAX_PAGES = 1000
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _CHANNEL_ID = re.compile(r"UC[A-Za-z0-9_-]{22}")
@@ -94,6 +104,64 @@ def alert_error(page: BrowsePage, *, source: str) -> CollectionNotFound | Collec
     return CollectionUnavailable(
         f"YouTube will not list {source!r}: {reason}", source=source, reason=reason
     )
+
+
+class Pager:
+    """Collects the pages of one listing and says which page to fetch next (no I/O).
+
+    Videos are numbered 1, 2, 3 ... in listing order and a video seen before is dropped. Only
+    the first page has a header, so its owner is the channel of every video that names none.
+    The listing ends at ``limit`` videos, at a page without a continuation or without items, at
+    a continuation seen before, or after ``max_pages`` pages (``truncated`` is then true).
+    """
+
+    def __init__(self, *, limit: int | None = None, max_pages: int = MAX_PAGES) -> None:
+        self._limit = limit
+        self._max_pages = max_pages
+        self._pages = 0
+        self._tokens: set[str] = set()
+        self._seen: set[str] = set()
+        self._entries: list[VideoEntry] = []
+        self._owner = ("", "")
+        self.truncated = False
+
+    @property
+    def entries(self) -> tuple[VideoEntry, ...]:
+        """The videos collected so far, numbered."""
+        return tuple(self._entries)
+
+    def add(self, page: BrowsePage) -> str | None:
+        """Take the next page; return the continuation token to fetch, or ``None`` when done."""
+        self._pages += 1
+        if self._pages == 1:
+            self._owner = (page.owner_name, page.owner_id)
+        for video in page.videos:
+            if self._full():
+                break
+            if video.video_id not in self._seen:
+                self._seen.add(video.video_id)
+                self._entries.append(self._numbered(video))
+        token = page.continuation
+        if token is None or not page.items or self._full() or token in self._tokens:
+            return None
+        if self._pages >= self._max_pages:
+            self.truncated = True
+            return None
+        self._tokens.add(token)
+        return token
+
+    def _numbered(self, video: VideoEntry) -> VideoEntry:
+        """``video`` at the next position; a channel it does not name is the owner's."""
+        name, channel_id = self._owner
+        return replace(
+            video,
+            channel=video.channel or name,
+            channel_id=video.channel_id or channel_id,
+            index=len(self._entries) + 1,
+        )
+
+    def _full(self) -> bool:
+        return self._limit is not None and len(self._entries) >= self._limit
 
 
 @dataclass(frozen=True, slots=True)
