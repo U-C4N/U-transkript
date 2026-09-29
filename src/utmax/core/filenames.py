@@ -30,7 +30,11 @@ __all__ = [
 
 MAX_NAME_CHARS = 150
 MAX_NAME_BYTES = 180
-MAX_BULK_NAME_BYTES = 240
+# The most a bulk name may take, in UTF-8 bytes. Linux and macOS allow 255 per file name, and a
+# download derives longer names: the temporary file of its state, "<name>.401.part.json" written
+# through write_text_atomic (".<...>.<8 hex digits>.tmp"), is 28 bytes longer than the name, and
+# that of a subtitle sidecar is 15 bytes plus the language code longer (255 for 20 characters).
+MAX_BULK_NAME_BYTES = 220
 _SUFFIXES: dict[str, Container] = {".mp4": "mp4", ".mov": "mov", ".m4a": "m4a", ".mp3": "mp3"}
 _WHITESPACE = re.compile(r"\s+")
 _FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')

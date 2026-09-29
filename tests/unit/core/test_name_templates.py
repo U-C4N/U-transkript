@@ -4,20 +4,27 @@ from __future__ import annotations
 
 from dataclasses import replace
 from fnmatch import fnmatchcase
-from pathlib import PurePath
+from pathlib import Path, PurePath
 
 import pytest
 
 from tests.helpers.builders import VIDEO
+from tests.helpers.fake_media import media_stream
+from utmax.adapters import files
+from utmax.adapters.downloader import Job
+from utmax.adapters.files import write_text_atomic
 from utmax.core.filenames import (
     MAX_BULK_NAME_BYTES,
     NameTemplate,
     glob_literal,
+    part_name,
     resolve_target,
+    sidecar_name,
 )
 from utmax.errors import InvalidOption
 from utmax.models import VideoInfo
 
+NAME_MAX = 255  # bytes in a file name on Linux and macOS
 FIELDS = ("video_id", "title", "channel", "index", "language_code", "ext")
 TRANSCRIPT = NameTemplate.parse("{video_id}.{language_code}.{ext}", allowed=FIELDS)
 VIDEO_NAME = NameTemplate.parse("{title} [{video_id}].{ext}", allowed=FIELDS)
@@ -88,6 +95,36 @@ def test_long_names_shorten_the_title_and_keep_the_rest() -> None:
     assert len(name.encode("utf-8")) <= MAX_BULK_NAME_BYTES
     assert name.endswith(" [dQw4w9WgXcQ].mp4")
     assert name.startswith("\U00004e2d" * 60 + " - \U00004e2d")
+
+
+def atomic_write_affix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> int:
+    """How many bytes ``write_text_atomic`` adds to a name for the temporary file it writes."""
+    temporary: list[str] = []
+    replace_file = files.replace_with_retry
+
+    def spy(source: Path, target: Path) -> None:
+        temporary.append(source.name)
+        replace_file(source, target)
+
+    monkeypatch.setattr(files, "replace_with_retry", spy)
+    write_text_atomic(tmp_path / "a", "")
+    return len(temporary[0]) - len("a")
+
+
+def test_the_longest_name_leaves_room_for_the_files_a_download_derives(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    template = NameTemplate.parse("{channel} - {title} [{video_id}].{ext}", allowed=FIELDS)
+    name = template.render(
+        {"video_id": "dQw4w9WgXcQ", "title": "t" * 150, "channel": "c" * 150, "ext": "mp4"}
+    )
+    assert len(name) == MAX_BULK_NAME_BYTES  # ASCII: the title gave way until the name fit
+    final = PurePath(name)
+    job = Job(media_stream(401, "https://media.test/401", 1), Path(part_name(final, 401)))
+    sidecar = sidecar_name(final, "c" * 20)
+    affix = atomic_write_affix(tmp_path, monkeypatch)
+    for written in (final, job.state_path, sidecar):
+        assert len(written.name.encode("utf-8")) + affix <= NAME_MAX
 
 
 def test_patterns_escape_what_is_known_and_match_the_rest() -> None:
