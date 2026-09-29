@@ -59,6 +59,10 @@ def test_templates_remember_their_fields() -> None:
         ("{video_id}{index:<3}", "ends with ' '"),
         ("{video_id}{title:{index}}", "inside a format spec"),
         ("{video_id}.{title:03d}", "cannot be filled in"),
+        ("{video_id}.{title!r}", "converts {title} with !r"),
+        ("{video_id!s}.{ext}", "converts {video_id} with !s"),
+        ("{video_id:.5}.{ext}", "formats {video_id}"),
+        ("{video_id:>12}.{ext}", "formats {video_id}"),
     ],
 )
 def test_bad_templates_are_refused(text: str, message: str) -> None:

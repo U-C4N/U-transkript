@@ -149,9 +149,10 @@ def sidecar_name(media: PurePath, language_code: str) -> PurePath:
 class NameTemplate:
     """The file-name template of a bulk call, such as ``"{title} [{video_id}].{ext}"``.
 
-    Fields are written like :meth:`str.format` fields and may carry a format spec
-    (``{index:03d}``). ``title``, ``channel`` and ``language_code`` values are made safe with
-    :func:`safe_name`; an empty title becomes the video ID.
+    Fields are written like :meth:`str.format` fields, without conversions (``!r``); all but
+    ``{video_id}``, which names hold as it is, may carry a format spec (``{index:03d}``).
+    ``title``, ``channel`` and ``language_code`` values are made safe with :func:`safe_name`;
+    an empty title becomes the video ID.
     """
 
     text: str
@@ -159,8 +160,9 @@ class NameTemplate:
 
     @classmethod
     def parse(cls, text: str, *, allowed: Collection[str]) -> NameTemplate:
-        """Check ``text``: it must contain ``{video_id}`` (every video needs its own name), use
-        only ``allowed`` fields, and give a plain file name that Windows accepts too: no path
+        """Check ``text``: it must contain ``{video_id}`` without a format spec (every video
+        needs its own name), use only ``allowed`` fields and no conversions (``!r``, ``!s``,
+        ``!a``), and give a plain file name that Windows accepts too: no path
         separator, none of ``<>:"|?*`` or a control character (the fill of a format spec
         counts), and no trailing dot or space.
 
@@ -187,6 +189,19 @@ class NameTemplate:
                 f"filename={text!r} does not contain {{video_id}}, so names could repeat.",
                 suggestion='Add {video_id}, as in "{title} [{video_id}].{ext}".',
             )
+        for _, field, spec, conversion in parsed:
+            if field is not None and conversion is not None:
+                raise InvalidOption(
+                    f"filename={text!r} converts {{{field}}} with !{conversion}, which can put "
+                    "characters into names that file systems refuse.",
+                    suggestion=f"Write {{{field}}} without !{conversion}.",
+                )
+            if field == "video_id" and spec:
+                raise InvalidOption(
+                    f"filename={text!r} formats {{video_id}}; names must hold the whole video "
+                    "ID as it is.",
+                    suggestion="Write {video_id} without a format spec.",
+                )
         if any("{" in (spec or "") for _, field, spec, _ in parsed if field is not None):
             raise InvalidOption(f"filename={text!r} puts a field inside a format spec.")
         template = cls(text, fields)
