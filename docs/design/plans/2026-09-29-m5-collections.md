@@ -7827,3 +7827,23 @@ Do not push. List these as pending user actions in the report (the user runs the
 git add tests/live/test_collections_live.py
 git commit -m "test: add live collection checks" -m "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 ```
+
+---
+
+## Follow-ups after the milestone review (2026-09-29)
+
+The whole-milestone review found one Important defect (fixed in the final fix wave: a listing that ends short of YouTube's count logs a warning) and 23 minor findings. The controller then made these changes on `m5-collections`, test first, before merging; the user chose the three design changes marked "user decision".
+
+| Change | Why |
+|---|---|
+| `download_many` passes its folder with a trailing separator, and the name callback uses the extension being written | A folder deleted during a run turned the next video into `<folder>.<ext>` next to it |
+| Skip detection ignores `.part`, `.part.json` and `.tmp` names | With a template that does not end in a fixed extension, an interrupted download counted as done and never resumed |
+| Templates refuse conversions (`!r`, `!s`, `!a`) and a format spec on `{video_id}` | Conversions can bring back characters file systems refuse; a spec such as `{video_id:.5}` makes names that are not unique |
+| Skip detection looks names up by the video ID they hold | O(videos × files): 4000 × 4000 took 7.7 s, now 0.2 s |
+| `{index}` matches any number in skip patterns (user decision) | A new upload shifts every position in a channel listing, so re-runs downloaded everything again under new names |
+| `list_videos(kind=None)`: a channel link's `/videos`, `/shorts` or `/streams` tab chooses the list, an explicit `kind` wins (user decision) | A pasted `/shorts` link listed every upload |
+| `RDCLAK5uy_...` playlists are refused as YouTube Music playlists that are not supported yet, not as Mixes; an 11-character bare value starting with `RD` is a video (user decision: keep refusing) | The Mix message was wrong for them; ANDROID_VR pages them endlessly |
+| Tests pin the pass-through of `include_manual`, `include_generated`, `instructions` and `resegment`; docstrings say what a progress exception and `concurrency` do | Review findings |
+| The spec (§2, §4.1, §4.3, §5, §7, §8.2) states the behaviour above | Spec and code must agree |
+
+Decisions 1, 12 and 13 above describe the plan as executed; the table records where the merged code goes further.
