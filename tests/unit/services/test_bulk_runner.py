@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +147,36 @@ def test_ctrl_c_or_a_progress_error_stops_the_run(error: type[BaseException]) ->
         run_bulk(bulk_items(IDS), work, concurrency=1, progress=progress, stop=stop)
     assert stop.is_set()
     assert 1 <= len(calls) <= 2
+
+
+def test_ctrl_c_while_the_videos_are_queued_stops_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = threading.Event()
+    calls: list[str] = []
+    videos = [letter * 11 for letter in "abcdefgh"]
+    submitted = 0
+    real_submit = ThreadPoolExecutor.submit
+
+    def submit(
+        pool: ThreadPoolExecutor, fn: Callable[..., Any], /, *args: Any, **kwargs: Any
+    ) -> Future[Any]:
+        nonlocal submitted
+        submitted += 1
+        if submitted == 5:
+            raise KeyboardInterrupt
+        return real_submit(pool, fn, *args, **kwargs)
+
+    def work(item: BulkItem) -> tuple[str, Path | None]:
+        calls.append(item.video_id)
+        assert stop.wait(5)
+        return upper(item)
+
+    monkeypatch.setattr(ThreadPoolExecutor, "submit", submit)
+    with pytest.raises(KeyboardInterrupt):
+        run_bulk(bulk_items(videos), work, concurrency=2, stop=stop)
+    assert stop.is_set()
+    assert set(calls) <= set(videos[:2])
 
 
 def test_nothing_to_do() -> None:

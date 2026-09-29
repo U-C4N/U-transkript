@@ -132,10 +132,14 @@ def run_bulk(
     if queued:
         workers = min(concurrency, len(queued))
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="utmax-bulk") as pool:
-            futures = {pool.submit(attempt, items[number]): number for number in queued}
-            pending: set[Future[BulkResult[T]]] = set(futures)
+            futures: dict[Future[BulkResult[T]], int] = {}
+            pending: set[Future[BulkResult[T]]] = set()
             warned = False
             try:
+                for number in queued:
+                    future = pool.submit(attempt, items[number])
+                    futures[future] = number
+                    pending.add(future)
                 while pending:
                     done, pending = wait(
                         pending, timeout=_POLL_SECONDS, return_when=FIRST_COMPLETED

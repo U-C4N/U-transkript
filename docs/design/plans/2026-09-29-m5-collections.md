@@ -29,7 +29,7 @@
 2. **Listings that break or change shape** — ANDROID_VR answering an unreadable page, a server error, or failing on page two; WEB's older continuation shape; a continuation token that repeats or never ends; private videos and repeated videos → one complete, numbered listing from a single client, never half a list glued from two. Pinned in Task 4 (`test_unplayable_and_foreign_items_are_counted_but_skipped`, `test_older_web_pages_continue_through_a_continuation_item_renderer`), Task 5 (all Pager tests) and Task 6 (`test_web_takes_over_when_android_vr_fails`, `test_web_restarts_the_listing_when_android_vr_fails_midway`, `test_an_unreadable_first_page_falls_back_to_web`, `test_the_page_cap_stops_endless_listings`).
 3. **Playlists and channels that cannot be listed** — an unknown handle, a mistyped channel ID, a channel without Shorts or live streams, a channel without uploads, a private or deleted playlist, a rate limit → `CollectionNotFound`, `CollectionUnavailable` with YouTube's reason, an empty list, or `IpBlocked` at once. Pinned in Task 6 (`test_missing_playlists_are_not_found`, `test_youtube_alerts_explain_unviewable_playlists`, `test_channels_without_shorts_list_nothing`, `test_channels_without_uploads_are_not_found`, `test_unknown_handles_are_not_found_without_browsing`, `test_rate_limits_stop_the_listing_at_once`).
 4. **Running a bulk job again into the same folder** — files from an earlier run (possibly in another language or for another target language), titles containing `[` or `*`, `{index}` templates, a video listed twice, a half-finished download → a video is skipped without any request only when its file really exists; everything else runs, and interrupted downloads resume. Pinned in Task 7 (`test_patterns_escape_what_is_known_and_match_the_rest`, `test_glob_literals_match_only_themselves`), Task 9 (`test_existing_files_are_skipped_without_a_request`, `test_the_requested_languages_decide_which_files_count`, `test_translate_many_skips_what_it_would_write`) and Task 10 (`test_existing_downloads_are_skipped_without_a_request`).
-5. **Long bulk runs that go wrong** — YouTube blocks the IP address half-way, an API key is rejected, one video is private, the user presses Ctrl-C, a progress callback raises → the other videos still finish (or are reported as not attempted after a block), nothing hangs, Ctrl-C propagates once the running videos stopped, and the report keeps the input order. Pinned in Task 8 (`test_a_block_stops_the_run`, `test_ctrl_c_or_a_progress_error_stops_the_run`, `test_items_that_need_no_work_are_decided_first`), Task 9 (`test_a_block_stops_fetch_many`, `test_a_rejected_api_key_stops_translate_many`) and Task 10 (`test_ctrl_c_stops_the_downloads`, `test_failures_are_reported_and_blocks_stop_the_run`).
+5. **Long bulk runs that go wrong** — YouTube blocks the IP address half-way, an API key is rejected, one video is private, the user presses Ctrl-C, a progress callback raises → the other videos still finish (or are reported as not attempted after a block), nothing hangs, Ctrl-C propagates once the running videos stopped, and the report keeps the input order. Pinned in Task 8 (`test_a_block_stops_the_run`, `test_ctrl_c_or_a_progress_error_stops_the_run`, `test_ctrl_c_while_the_videos_are_queued_stops_the_run`, `test_items_that_need_no_work_are_decided_first`), Task 9 (`test_a_block_stops_fetch_many`, `test_a_rejected_api_key_stops_translate_many`) and Task 10 (`test_ctrl_c_stops_the_downloads`, `test_failures_are_reported_and_blocks_stop_the_run`).
 
 ## Verified facts this plan relies on
 
@@ -4700,6 +4700,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -4842,6 +4844,36 @@ def test_ctrl_c_or_a_progress_error_stops_the_run(error: type[BaseException]) ->
     assert 1 <= len(calls) <= 2
 
 
+def test_ctrl_c_while_the_videos_are_queued_stops_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = threading.Event()
+    calls: list[str] = []
+    videos = [letter * 11 for letter in "abcdefgh"]
+    submitted = 0
+    real_submit = ThreadPoolExecutor.submit
+
+    def submit(
+        pool: ThreadPoolExecutor, fn: Callable[..., Any], /, *args: Any, **kwargs: Any
+    ) -> Future[Any]:
+        nonlocal submitted
+        submitted += 1
+        if submitted == 5:
+            raise KeyboardInterrupt
+        return real_submit(pool, fn, *args, **kwargs)
+
+    def work(item: BulkItem) -> tuple[str, Path | None]:
+        calls.append(item.video_id)
+        assert stop.wait(5)
+        return upper(item)
+
+    monkeypatch.setattr(ThreadPoolExecutor, "submit", submit)
+    with pytest.raises(KeyboardInterrupt):
+        run_bulk(bulk_items(videos), work, concurrency=2, stop=stop)
+    assert stop.is_set()
+    assert set(calls) <= set(videos[:2])
+
+
 def test_nothing_to_do() -> None:
     assert len(run_bulk([], upper, concurrency=4)) == 0
     report = run_bulk(bulk_items(["nope"]), upper, concurrency=4)
@@ -4881,7 +4913,7 @@ Expected: collection error — `ModuleNotFoundError: No module named 'utmax.serv
 
 - [ ] **Step 3: Write the runner**
 
-Results are collected on the calling thread, which waits in 0.1-second steps so that Ctrl-C reaches it on Windows too. Workers check the stop and breaker events before starting a video, so after a block the remaining videos return `"not_attempted"` at once.
+Results are collected on the calling thread, which waits in 0.1-second steps so that Ctrl-C reaches it on Windows too. Workers check the stop and breaker events before starting a video, so after a block the remaining videos return `"not_attempted"` at once. The jobs are submitted inside the `try` as well: Ctrl-C while a long list is still being queued sets `stop` and drops the queue, instead of letting the pool work off every video already submitted.
 
 `src/utmax/services/bulk.py`:
 
@@ -5020,10 +5052,14 @@ def run_bulk(
     if queued:
         workers = min(concurrency, len(queued))
         with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="utmax-bulk") as pool:
-            futures = {pool.submit(attempt, items[number]): number for number in queued}
-            pending: set[Future[BulkResult[T]]] = set(futures)
+            futures: dict[Future[BulkResult[T]], int] = {}
+            pending: set[Future[BulkResult[T]]] = set()
             warned = False
             try:
+                for number in queued:
+                    future = pool.submit(attempt, items[number])
+                    futures[future] = number
+                    pending.add(future)
                 while pending:
                     done, pending = wait(
                         pending, timeout=_POLL_SECONDS, return_when=FIRST_COMPLETED
@@ -5052,11 +5088,11 @@ def run_bulk(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/services/test_bulk_runner.py -q`
-Expected: 16 passed.
+Expected: 17 passed.
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 16 to 1296 passed).
+Run the four gates (the suite grows by 17 to 1297 passed).
 
 ```bash
 git add src/utmax/services/bulk.py tests/unit/services/test_bulk_runner.py
@@ -5840,7 +5876,7 @@ Expected: the new file reports 25 passed; the runner and translation tests still
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 25 to 1321 passed).
+Run the four gates (the suite grows by 25 to 1322 passed).
 
 ```bash
 git add src/utmax/services/translation.py src/utmax/services/bulk.py tests/helpers/bulk.py tests/unit/services/test_bulk_transcripts.py
@@ -6581,7 +6617,7 @@ Expected: the new file reports 18 passed; the M4 download tests still pass.
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 18 to 1339 passed).
+Run the four gates (the suite grows by 18 to 1340 passed).
 
 ```bash
 git add tests/helpers/files.py tests/unit/services/test_download_audio.py src/utmax/services/download.py src/utmax/services/bulk.py tests/unit/services/test_bulk_downloads.py
@@ -7290,7 +7326,7 @@ Expected: the new file reports 7 passed; the existing facade and client tests st
 
 - [ ] **Step 6: Gates and commit**
 
-Run the four gates (the suite grows by 7 to 1346 passed, 15 deselected).
+Run the four gates (the suite grows by 7 to 1347 passed, 15 deselected).
 
 ```bash
 git add src/utmax/client.py src/utmax/__init__.py tests/unit/test_collections_api.py
@@ -7419,7 +7455,7 @@ uv sync --locked --all-extras
 uv build --out-dir <a scratch folder outside the repository>
 ```
 
-Expected: ruff, format and mypy clean; 1346 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
+Expected: ruff, format and mypy clean; 1347 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
 
 - [ ] **Step 4: Check the spec's acceptance list for M5**
 
