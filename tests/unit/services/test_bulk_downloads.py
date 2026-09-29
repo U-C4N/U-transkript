@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import threading
 from pathlib import Path
 from typing import Any
@@ -214,3 +215,39 @@ def test_ctrl_c_stops_the_downloads(tmp_path: Path) -> None:
     assert [result.status for result in report] == ["skipped", "ok"]
     assert rerun.players == [IDS[1]]
     assert folder_names(tmp_path) == sorted([finished, interrupted])
+
+
+class RemovesTheFolder(DownloadService):
+    """A DownloadService whose output folder vanishes (another program deletes it) just
+    before each video starts."""
+
+    def download(
+        self, video: str, path: str | os.PathLike[str], options: DownloadOptions
+    ) -> DownloadResult:
+        shutil.rmtree(path, ignore_errors=True)
+        return super().download(video, path, options)
+
+
+def test_a_vanished_output_folder_is_made_again(tmp_path: Path) -> None:
+    youtube = ManyVideos()
+    innertube = InnerTubeClient(youtube)
+    transcripts = TranscriptService(innertube)
+    downloads = RemovesTheFolder(innertube, transcripts, youtube.stream)
+    folder = tmp_path / "videos"
+    bulk = BulkService(transcripts, downloads)
+    report = bulk.download_many(IDS[:1], folder, format="m4a")
+    assert report[0].path == folder / f"{TITLES[IDS[0]]} [{IDS[0]}].m4a"
+    assert folder_names(tmp_path) == ["videos"]
+
+
+def test_parts_of_an_interrupted_download_do_not_count_as_its_file(tmp_path: Path) -> None:
+    stem = f"{IDS[0]} {TITLES[IDS[0]]}"
+    for leftover in (f"{stem}.140.part", f"{stem}.140.part.json"):
+        (tmp_path / leftover).write_bytes(b"")
+    youtube = ManyVideos()
+    report = youtube.bulk().download_many(
+        IDS[:1], tmp_path, format="m4a", filename="{video_id} {title}"
+    )
+    assert (report[0].status, report[0].path) == ("ok", tmp_path / stem)
+    assert youtube.players == [IDS[0]]
+    assert folder_names(tmp_path) == [stem]

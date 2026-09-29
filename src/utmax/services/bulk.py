@@ -55,6 +55,7 @@ DOWNLOAD_FIELDS = ("video_id", "title", "channel", "index", "ext")
 DEFAULT_TRANSCRIPT_NAME = "{video_id}.{language_code}.{ext}"
 DEFAULT_DOWNLOAD_NAME = "{title} [{video_id}].{ext}"
 _POLL_SECONDS = 0.1
+_UNFINISHED = (".part", ".part.json", ".tmp")
 T = TypeVar("T")
 
 
@@ -334,11 +335,15 @@ class BulkService:
         folder = _folder(out_dir)
         files = _Files(folder, template, format)
 
+        # The trailing separator keeps the target a folder even if the folder vanishes during
+        # the run; the download then creates it again instead of writing "<folder>.<ext>".
+        target = os.path.join(folder, "")
+
         def work(item: BulkItem) -> tuple[DownloadResult, Path | None]:
             def name(video: VideoInfo, ext: str) -> str:
-                return files.name(item, video)
+                return files.name(item, video, ext=ext)
 
-            result = self._downloads.download(item.video_id, folder, replace(options, name=name))
+            result = self._downloads.download(item.video_id, target, replace(options, name=name))
             return result, result.path
 
         existing = files.finder(lambda item: [files.pattern(item)]) if skip_existing else None
@@ -387,11 +392,12 @@ class _Files:
     def finder(
         self, patterns: Callable[[BulkItem], list[str]]
     ) -> Callable[[BulkItem], Path | None] | None:
-        """Finds the file an earlier run left for an item; ``None`` without a folder."""
+        """Finds the file an earlier run left for an item; ``None`` without a folder. The parts
+        and state of an interrupted download, and temporary files, never count."""
         folder = self.folder
         if folder is None:
             return None
-        names = sorted(os.listdir(folder))
+        names = sorted(name for name in os.listdir(folder) if not name.endswith(_UNFINISHED))
 
         def existing(item: BulkItem) -> Path | None:
             for pattern in patterns(item):
