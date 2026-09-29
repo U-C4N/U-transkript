@@ -73,6 +73,31 @@ def web_page(*items: dict[str, Any], header: dict[str, Any] | None = None) -> di
     return page
 
 
+def shorts_page(*video_ids: str, count: str = "") -> dict[str, Any]:
+    """A WEB page of a channel's Shorts: a ``richGridRenderer`` with one ``richItemRenderer``
+    per video and no continuation, as WEB answers (live on 2026-09-29: 100 items whatever the
+    header counts). With ``count`` set the page has a playlist header that says so."""
+    grid = [
+        {
+            "richItemRenderer": {
+                "content": {
+                    "shortsLockupViewModel": {
+                        "onTap": {"innertubeCommand": {"reelWatchEndpoint": {"videoId": video_id}}},
+                        "overlayMetadata": {"primaryText": {"content": f"Short {video_id}"}},
+                    }
+                }
+            }
+        }
+        for video_id in video_ids
+    ]
+    header = None
+    if count:
+        title = {"simpleText": "Short videos"}
+        numbers = {"runs": [{"text": count}]}
+        header = {"playlistHeaderRenderer": {"title": title, "numVideosText": numbers}}
+    return web_page({"richGridRenderer": {"contents": grid}}, header=header)
+
+
 def vr_page(*video_ids: str, token: str | None = None, count: str = "") -> dict[str, Any]:
     """An ANDROID_VR page of playable videos, with a playlist header when ``count`` is set."""
     videos = [

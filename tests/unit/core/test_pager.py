@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from tests.helpers.browse import CHANNEL_ID, browse_fixture
 from utmax.core.browse import MAX_PAGES, BrowsePage, Pager, parse_browse_page
 from utmax.models import VideoEntry
@@ -104,3 +106,48 @@ def test_videos_keep_the_channel_they_name() -> None:
         ("Other", other),
         ("Owner", owner),
     ]
+
+
+def test_items_sum_every_list_item_of_every_page() -> None:
+    pager = Pager()
+    assert pager.items == 0
+    assert pager.add(page("a", token="t1", items=20)) == "t1"  # 19 items were skipped
+    assert pager.add(page("b", "a", token="t2")) == "t2"  # a repeated video is an item too
+    assert pager.add(page("c")) is None  # the last page counts as well
+    assert pager.items == 23
+    assert len(pager.entries) == 3
+
+
+@pytest.mark.parametrize(
+    ("count", "short"), [(None, False), (2, False), (3, False), (4, True), (139, True)]
+)
+def test_a_listing_that_ended_on_its_own_is_short_of_a_larger_count(
+    count: int | None, short: bool
+) -> None:
+    pager = Pager()
+    assert pager.add(page("a", "b", token="t1")) == "t1"
+    assert pager.add(page("c")) is None
+    assert pager.ended_short(count) is short
+
+
+@pytest.mark.parametrize(
+    "last",
+    [page("c"), page(token="t2"), page("c", token="t1")],
+    ids=["no continuation", "no items", "repeated token"],
+)
+def test_every_way_a_listing_ends_on_its_own_can_leave_it_short(last: BrowsePage) -> None:
+    pager = Pager()
+    assert pager.add(page("a", "b", token="t1")) == "t1"
+    assert pager.add(last) is None
+    assert pager.ended_short(139)
+
+
+def test_a_limit_or_the_page_cap_is_not_a_short_listing() -> None:
+    limited = Pager(limit=2)
+    assert limited.add(page("a", "b", token="t1")) is None
+    assert not limited.ended_short(139)
+    capped = Pager(max_pages=2)
+    assert capped.add(page("a", token="t1")) == "t1"
+    assert capped.add(page("b", token="t2")) is None
+    assert capped.truncated
+    assert not capped.ended_short(139)

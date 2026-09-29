@@ -113,12 +113,17 @@ class Pager:
     the first page has a header, so its owner is the channel of every video that names none.
     The listing ends at ``limit`` videos, at a page without a continuation or without items, at
     a continuation seen before, or after ``max_pages`` pages (``truncated`` is then true).
+    From outside, a listing that stopped early looks like a complete one: a page without items
+    or a continuation ends a listing as quietly as the real last page, and WEB ends a channel's
+    Shorts after 100 with no continuation at all. ``ended_short`` tells them apart by comparing
+    ``items`` with the number of videos YouTube says the playlist has.
     """
 
     def __init__(self, *, limit: int | None = None, max_pages: int = MAX_PAGES) -> None:
         self._limit = limit
         self._max_pages = max_pages
         self._pages = 0
+        self._items = 0
         self._tokens: set[str] = set()
         self._seen: set[str] = set()
         self._entries: list[VideoEntry] = []
@@ -130,9 +135,31 @@ class Pager:
         """The videos collected so far, numbered."""
         return tuple(self._entries)
 
+    @property
+    def items(self) -> int:
+        """The list items on all pages so far, unplayable and repeated ones included (the
+        video count of a playlist header counts them too)."""
+        return self._items
+
+    def ended_short(self, video_count: int | None) -> bool:
+        """Whether the finished listing holds fewer items than the ``video_count`` of the header.
+
+        Only a listing that ended on its own can be short: one that stopped at ``limit`` was
+        cut by the caller, and ``truncated`` has a report of its own. ANDROID_VR lists
+        unplayable videos as items, so its complete listings match the count. Without a count
+        (``None``) there is nothing to compare with.
+        """
+        return (
+            video_count is not None
+            and not self.truncated
+            and not self._full()
+            and self._items < video_count
+        )
+
     def add(self, page: BrowsePage) -> str | None:
         """Take the next page; return the continuation token to fetch, or ``None`` when done."""
         self._pages += 1
+        self._items += page.items
         if self._pages == 1:
             self._owner = (page.owner_name, page.owner_id)
         for video in page.videos:

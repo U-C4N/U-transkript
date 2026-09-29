@@ -442,6 +442,13 @@ def list_videos(
     video listed twice appears once. A channel without Shorts or live streams gives an empty
     list for those kinds.
 
+    utmax lists a playlist with the ANDROID_VR client, which lists all of it, and lists it once
+    more with the WEB client when ANDROID_VR fails. WEB shows at most 100 Shorts of a channel
+    and hides an occasional video, so a listing that fell back to WEB can hold fewer videos
+    than ``VideoList.video_count``. A listing that ends by itself (not at ``limit``) before that
+    count is returned as it is, and a warning on the ``utmax.youtube`` logger says so:
+    ``listed 100 of the 297 videos YouTube counts; the list may be incomplete``.
+
     Raises:
         InvalidSource: ``source`` names no playlist or channel (checked before any request).
         InvalidOption: ``kind`` or ``limit`` is invalid, or ``kind`` was given for a playlist.

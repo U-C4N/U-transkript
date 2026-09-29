@@ -115,6 +115,18 @@ class CollectionService:
                 playlist_id,
                 self._max_pages,
             )
+        elif pager.ended_short(first.video_count):
+            # WEB answers a channel's Shorts with 100 items and no continuation, and a page
+            # that holds nothing ends any listing, so a short list is not an error, but it
+            # must not pass unnoticed either.
+            log.warning(
+                "InnerTube client %s, playlist %s: listed %d of the %d videos YouTube counts; "
+                "the list may be incomplete",
+                profile.name,
+                playlist_id,
+                pager.items,
+                first.video_count,
+            )
         return VideoList(
             title=first.title,
             source_id=playlist_id,

@@ -17,6 +17,7 @@ from tests.helpers.browse import (
     alert_page,
     browse_fixture,
     error_body,
+    shorts_page,
     vr_page,
 )
 from tests.helpers.fake_transport import FakeTransport, json_response, text_response
@@ -65,6 +66,15 @@ def first_token() -> str:
     tab = VR_1["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]
     renderer = tab["content"]["sectionListRenderer"]["contents"][0]["playlistVideoListRenderer"]
     return str(renderer["continuations"][0]["nextContinuationData"]["continuation"])
+
+
+def warned(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """The warnings a listing logged on utmax.youtube."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "utmax.youtube" and record.levelno >= logging.WARNING
+    ]
 
 
 def test_a_playlist_is_listed_page_by_page() -> None:
@@ -288,6 +298,92 @@ def test_the_page_cap_stops_endless_listings(caplog: pytest.LogCaptureFixture) -
         videos = service(transport, max_pages=2).list_videos(PLAYLIST)
     assert [entry.video_id for entry in videos] == ["a" * 11, "b" * 11]
     assert "stopped listing" in caplog.text
+
+
+def test_web_lists_at_most_100_shorts_and_the_listing_says_so(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Live on 2026-09-29: WEB answers a channel's Shorts with 100 items and no continuation of
+    # any shape, whatever the header counts; ANDROID_VR lists all 297.
+    first_hundred = [f"short{number:06d}" for number in range(100)]
+    transport = FakeTransport()
+    transport.add("POST", RESOLVE, json_response(browse_fixture("resolve_handle")))
+    web = json_response(shorts_page(*first_hundred, count="297 videos"))
+    transport.add("POST", BROWSE, json_response(error_body(400), status=503), web)
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(HANDLE, kind="shorts")
+    assert [entry.video_id for entry in videos] == first_hundred
+    assert (videos.video_count, videos.source_id) == (297, f"UUSH{CHANNEL_ID[2:]}")
+    assert [client for client, _ in sent(transport)] == ["ANDROID_VR", "ANDROID_VR", "WEB"]
+    assert warned(caplog) == [
+        f"InnerTube client WEB, playlist UUSH{CHANNEL_ID[2:]}: listed 100 of the 297 videos "
+        "YouTube counts; the list may be incomplete"
+    ]
+
+
+def test_a_continuation_page_without_items_ends_the_listing_with_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transport = FakeTransport()
+    nothing = json_response({"responseContext": {}})  # valid JSON: no items, no token
+    transport.add("POST", BROWSE, json_response(VR_1), nothing)
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(VIDEOS_LIST)
+    assert [entry.video_id for entry in videos] == VR_PAGE_1
+    assert [client for client, _ in sent(transport)] == ["ANDROID_VR", "ANDROID_VR"]
+    assert warned(caplog) == [
+        f"InnerTube client ANDROID_VR, playlist {VIDEOS_LIST}: listed 3 of the 139 videos "
+        "YouTube counts; the list may be incomplete"
+    ]
+
+
+def test_complete_listings_stay_silent_although_videos_are_hidden(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # ANDROID_VR lists a private video as an unplayable item and counts it: 3 items, "3 videos".
+    hidden = {"playlistVideoRenderer": {"videoId": "c" * 11, "isPlayable": False}}
+    second = vr_page("b" * 11)
+    second["continuationContents"]["playlistVideoListContinuation"]["contents"].append(hidden)
+    transport = FakeTransport()
+    first = vr_page("a" * 11, token="t1", count="3 videos")
+    transport.add("POST", BROWSE, json_response(first), json_response(second))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(PLAYLIST)
+    assert [entry.video_id for entry in videos] == ["a" * 11, "b" * 11]
+    assert videos.video_count == 3
+    assert warned(caplog) == []
+
+
+def test_a_limit_is_not_a_shortfall(caplog: pytest.LogCaptureFixture) -> None:
+    transport = FakeTransport()
+    transport.add("POST", BROWSE, json_response(VR_1))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(VIDEOS_LIST, limit=2)
+    assert [entry.video_id for entry in videos] == VR_PAGE_1[:2]
+    assert warned(caplog) == []
+
+
+def test_a_listing_without_a_video_count_stays_silent(caplog: pytest.LogCaptureFixture) -> None:
+    transport = FakeTransport()
+    pages = [vr_page("a" * 11, token="t1"), vr_page()]  # no header, so no count; then nothing
+    transport.add("POST", BROWSE, *(json_response(page) for page in pages))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(PLAYLIST)
+    assert (len(videos), videos.video_count) == (1, None)
+    assert warned(caplog) == []
+
+
+def test_the_page_cap_is_the_only_warning_of_a_capped_listing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transport = FakeTransport()
+    pages = [vr_page("a" * 11, token="t1", count="30 videos"), vr_page("b" * 11, token="t2")]
+    transport.add("POST", BROWSE, *(json_response(page) for page in pages))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport, max_pages=2).list_videos(PLAYLIST)
+    assert len(videos) == 2
+    (message,) = warned(caplog)
+    assert message.startswith("stopped listing")
 
 
 @pytest.mark.parametrize(
