@@ -7551,6 +7551,8 @@ def test_missing_playlists_and_mixes_are_reported() -> None:
 
 def test_fetch_many_saves_one_file_per_video_and_skips_them_next_time(tmp_path: Path) -> None:
     report = utmax.fetch_many([ZOO, "dQw4w9WgXcQ"], out_dir=tmp_path)
+    # A block is reported per video, not raised; raising it lets conftest.py skip the test.
+    report.raise_for_errors()
     assert [result.status for result in report] == ["ok", "ok"]
     assert sorted(path.name for path in tmp_path.glob("*.srt")) == [
         "dQw4w9WgXcQ.en.srt",
