@@ -160,7 +160,9 @@ class NameTemplate:
     @classmethod
     def parse(cls, text: str, *, allowed: Collection[str]) -> NameTemplate:
         """Check ``text``: it must contain ``{video_id}`` (every video needs its own name), use
-        only ``allowed`` fields, and give a file name, not a path.
+        only ``allowed`` fields, and give a plain file name that Windows accepts too: no path
+        separator, none of ``<>:"|?*`` or a control character (the fill of a format spec
+        counts), and no trailing dot or space.
 
         Raises:
             InvalidOption: ``text`` breaks one of these rules or is not a valid template.
@@ -196,6 +198,22 @@ class NameTemplate:
             raise InvalidOption(
                 f"filename={text!r} makes a path; it must be a plain file name.",
                 suggestion="Remove / and \\ from the template and choose the folder with out_dir.",
+            )
+        forbidden = _FORBIDDEN.search(sample)
+        if forbidden is not None:
+            raise InvalidOption(
+                f"filename={text!r} contains {forbidden.group()!r}, which Windows does not allow "
+                "in a file name.",
+                suggestion=(
+                    'Leave <>:"|?* and control characters out of the template; titles and '
+                    "channels are made safe for you."
+                ),
+            )
+        if sample.endswith((".", " ")):
+            raise InvalidOption(
+                f"filename={text!r} makes a name that ends with {sample[-1]!r}, which Windows "
+                "does not allow.",
+                suggestion='End the template with a field or a letter, as in "{video_id}.{ext}".',
             )
         return template
 

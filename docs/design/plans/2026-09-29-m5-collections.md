@@ -63,7 +63,7 @@
 9. **Circuit breaker**: `RequestBlocked` (and so `IpBlocked`) stops every bulk call; `translate_many` also stops on `ProviderAuthError`. Running videos finish; videos not started yet become `"not_attempted"`.
 10. **Ctrl-C**, or an exception raised by `progress`: the run's stop event is set (running downloads use it as their `cancel` event, so their `.part` files stay), videos not started are dropped, the running ones are awaited, and the exception propagates; there is no report.
 11. **One video's failure** is any `Exception`, not only a `UTMaxError`, so a disk error on one file does not end a long run; `BaseException` (Ctrl-C) propagates.
-12. **File-name templates** use `str.format` fields; `{video_id}` is required (names must differ per video, and skip detection relies on it); the fields are `video_id title channel index language_code ext` (`download_many` has no `language_code`); path separators are refused; `title`, `channel` and `language_code` go through `safe_name`; an empty title becomes the video ID; a name longer than 220 UTF-8 bytes gets a shorter title (room, within Linux's 255-byte limit, for the longest names a download derives: the temporary file of its `.401.part.json` state file is 28 bytes longer than the name, and that of a `.srt` sidecar is 15 bytes plus the language code longer, up to 20 characters). `{index}` is a `VideoEntry`'s listing position, otherwise the position in `videos`.
+12. **File-name templates** use `str.format` fields; `{video_id}` is required (names must differ per video, and skip detection relies on it); the fields are `video_id title channel index language_code ext` (`download_many` has no `language_code`); path separators, the characters Windows does not allow in a file name (`<>:"|?*` and control characters, also as the fill of a format spec) and a name that ends with a dot or a space are refused, so a template that no file system accepts raises `InvalidOption` before any request; `title`, `channel` and `language_code` go through `safe_name`; an empty title becomes the video ID; a name longer than 220 UTF-8 bytes gets a shorter title (room, within Linux's 255-byte limit, for the longest names a download derives: the temporary file of its `.401.part.json` state file is 28 bytes longer than the name, and that of a `.srt` sidecar is 15 bytes plus the language code longer, up to 20 characters). `{index}` is a `VideoEntry`'s listing position, otherwise the position in `videos`.
 13. **`skip_existing`** matches the file names that were in `out_dir` when the call started against a glob built from the template: known values are escaped, `title` and `channel` are always `*`. `language_code` is `*` without `languages`; with `languages`, it is each requested base language alone or with a region (`de`, `de-*`), as track selection matches; `translate_many` uses the target code, or `"<source glob>+<target>"` when bilingual. So a run for other languages, or for another target, does not skip because of a file in a different language.
 14. **Folders**: `out_dir=None` keeps transcripts in memory (`fetch_many`, `translate_many`); a missing folder is created, but only after every argument was checked; a path to a file is `InvalidOption`.
 15. **`translate_many`** also takes `instructions` and `resegment`, as `translate()` does (`**options` go to the translator, which would refuse them). It creates one translator before any request, through `resolve_translator`, which `translate()` now shares; `check_language_code` (the former `_language_code`) checks `to` up front.
@@ -4233,6 +4233,15 @@ def test_templates_remember_their_fields() -> None:
         ("subs/{video_id}.{ext}", "makes a path"),
         ("{video_id}\\{ext}", "makes a path"),
         ("{title:/>9} {video_id}", "makes a path"),
+        ("{title}: {video_id}.{ext}", "contains ':'"),
+        ("{title}|{video_id}.{ext}", "contains '|'"),
+        ("{video_id}*.{ext}", "contains '*'"),
+        ("{video_id}?.{ext}", "contains '?'"),
+        ('{video_id}".{ext}', "contains '\"'"),
+        ("{video_id}\x00.{ext}", "contains '\\x00'"),
+        ("{title:*>9} {video_id}", "contains '*'"),
+        ("{video_id}.{ext}.", "ends with '.'"),
+        ("{video_id}{index:<3}", "ends with ' '"),
         ("{video_id}{title:{index}}", "inside a format spec"),
         ("{video_id}.{title:03d}", "cannot be filled in"),
     ],
@@ -4530,7 +4539,9 @@ class NameTemplate:
     @classmethod
     def parse(cls, text: str, *, allowed: Collection[str]) -> NameTemplate:
         """Check ``text``: it must contain ``{video_id}`` (every video needs its own name), use
-        only ``allowed`` fields, and give a file name, not a path.
+        only ``allowed`` fields, and give a plain file name that Windows accepts too: no path
+        separator, none of ``<>:"|?*`` or a control character (the fill of a format spec
+        counts), and no trailing dot or space.
 
         Raises:
             InvalidOption: ``text`` breaks one of these rules or is not a valid template.
@@ -4566,6 +4577,22 @@ class NameTemplate:
             raise InvalidOption(
                 f"filename={text!r} makes a path; it must be a plain file name.",
                 suggestion="Remove / and \\ from the template and choose the folder with out_dir.",
+            )
+        forbidden = _FORBIDDEN.search(sample)
+        if forbidden is not None:
+            raise InvalidOption(
+                f"filename={text!r} contains {forbidden.group()!r}, which Windows does not allow "
+                "in a file name.",
+                suggestion=(
+                    'Leave <>:"|?* and control characters out of the template; titles and '
+                    "channels are made safe for you."
+                ),
+            )
+        if sample.endswith((".", " ")):
+            raise InvalidOption(
+                f"filename={text!r} makes a name that ends with {sample[-1]!r}, which Windows "
+                "does not allow.",
+                suggestion='End the template with a field or a letter, as in "{video_id}.{ext}".',
             )
         return template
 
@@ -4632,11 +4659,11 @@ def _shorten(text: str, max_chars: int, max_bytes: int) -> str:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/core/test_name_templates.py tests/unit/core/test_filenames.py -q`
-Expected: the new file reports 21 passed; the existing file-name tests still pass.
+Expected: the new file reports 30 passed; the existing file-name tests still pass.
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 21 to 1271 passed).
+Run the four gates (the suite grows by 30 to 1280 passed).
 
 ```bash
 git add src/utmax/core/filenames.py tests/unit/core/test_name_templates.py
@@ -5029,7 +5056,7 @@ Expected: 16 passed.
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 16 to 1287 passed).
+Run the four gates (the suite grows by 16 to 1296 passed).
 
 ```bash
 git add src/utmax/services/bulk.py tests/unit/services/test_bulk_runner.py
@@ -5813,7 +5840,7 @@ Expected: the new file reports 25 passed; the runner and translation tests still
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 25 to 1312 passed).
+Run the four gates (the suite grows by 25 to 1321 passed).
 
 ```bash
 git add src/utmax/services/translation.py src/utmax/services/bulk.py tests/helpers/bulk.py tests/unit/services/test_bulk_transcripts.py
@@ -6554,7 +6581,7 @@ Expected: the new file reports 18 passed; the M4 download tests still pass.
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 18 to 1330 passed).
+Run the four gates (the suite grows by 18 to 1339 passed).
 
 ```bash
 git add tests/helpers/files.py tests/unit/services/test_download_audio.py src/utmax/services/download.py src/utmax/services/bulk.py tests/unit/services/test_bulk_downloads.py
@@ -7263,7 +7290,7 @@ Expected: the new file reports 7 passed; the existing facade and client tests st
 
 - [ ] **Step 6: Gates and commit**
 
-Run the four gates (the suite grows by 7 to 1337 passed, 15 deselected).
+Run the four gates (the suite grows by 7 to 1346 passed, 15 deselected).
 
 ```bash
 git add src/utmax/client.py src/utmax/__init__.py tests/unit/test_collections_api.py
@@ -7392,7 +7419,7 @@ uv sync --locked --all-extras
 uv build --out-dir <a scratch folder outside the repository>
 ```
 
-Expected: ruff, format and mypy clean; 1337 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
+Expected: ruff, format and mypy clean; 1346 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
 
 - [ ] **Step 4: Check the spec's acceptance list for M5**
 
