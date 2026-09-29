@@ -6704,6 +6704,8 @@ git commit -m "feat: add download_many" -m "Co-Authored-By: Claude Opus 5.5 (1M 
 
 - [ ] **Step 1: Write the failing tests**
 
+The four calls only forward their arguments, so two tests pin that wiring. `test_the_facade_and_the_client_take_the_arguments_of_the_service` compares every parameter (name, kind, default, annotation, in order) and the result annotation of `utmax.<call>` and `Client.<call>` with the service method's. `test_every_argument_reaches_the_service_under_its_own_name` gives every parameter of a call a value of its own (and `**options` two more keys), puts a spy in place of the `Client`'s service, and checks for `utmax.<call>` and for `Client.<call>` that each value reaches the service method under its own name and that the spy's answer comes back unchanged. Without it, a later edit that stops passing one argument leaves every other test green: the seven tests of the first version of this file killed 40 of 152 single-step mutants (a parameter's default in place of the caller's value, an argument left out, two arguments swapped, a sibling method called), the fifteen below kill all 152.
+
 `tests/unit/test_collections_api.py`:
 
 ```python
@@ -6712,7 +6714,9 @@ git commit -m "feat: add download_many" -m "Co-Authored-By: Claude Opus 5.5 (1M 
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -6768,18 +6772,71 @@ PARAMETERS = {
         "progress",
     ],
 }
+# The Client attribute that holds the service behind each call.
+SERVICES = {
+    "list_videos": "_collections",
+    "fetch_many": "_bulk",
+    "translate_many": "_bulk",
+    "download_many": "_bulk",
+}
+
+
+class Spy:
+    """Stands in for a service: records every call and answers each with the same object."""
+
+    def __init__(self) -> None:
+        self.answer = object()
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def __getattr__(self, name: str) -> Callable[..., object]:
+        def record(*args: Any, **kwargs: Any) -> object:
+            self.calls.append((name, args, kwargs))
+            return self.answer
+
+        return record
+
+
+def contract(function: Callable[..., object]) -> tuple[list[inspect.Parameter], object]:
+    """Name, kind, default and annotation of every parameter, then the result's annotation.
+
+    The annotations are evaluated, so it is the types that are compared, not how they are spelled.
+    """
+    signature = inspect.signature(function, eval_str=True)
+    return list(signature.parameters.values()), signature.return_annotation
 
 
 @pytest.mark.parametrize("name", sorted(PARAMETERS))
-def test_the_facade_and_the_client_take_the_same_arguments(name: str) -> None:
-    facade = inspect.signature(getattr(utmax, name))
-    method = inspect.signature(getattr(Client, name))
-    assert list(facade.parameters) == PARAMETERS[name]
-    assert list(method.parameters) == ["self", *PARAMETERS[name]]
-    for parameter in facade.parameters.values():
-        twin = method.parameters[parameter.name]
-        assert (twin.kind, twin.default) == (parameter.kind, parameter.default)
+def test_the_facade_and_the_client_take_the_arguments_of_the_service(name: str) -> None:
+    client = Client(transport=FakeTransport())
+    service = contract(getattr(getattr(client, SERVICES[name]), name))
+    assert [parameter.name for parameter in service[0]] == PARAMETERS[name]
+    assert contract(getattr(client, name)) == service
+    assert contract(getattr(utmax, name)) == service
     assert name in utmax.__all__
+
+
+@pytest.mark.parametrize("layer", ["facade", "client"])
+@pytest.mark.parametrize("name", sorted(PARAMETERS))
+def test_every_argument_reaches_the_service_under_its_own_name(
+    name: str, layer: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each layer hands every argument on, unchanged and under its own name, and the result back."""
+    client = Client(transport=FakeTransport())
+    call = getattr(utmax if layer == "facade" else client, name)
+    signature = inspect.signature(getattr(getattr(client, SERVICES[name]), name))
+    spy = Spy()
+    monkeypatch.setattr(client, SERVICES[name], spy)
+    monkeypatch.setattr(utmax, "_default_client", client)
+    # Every parameter gets a value of its own, and **options two more keys.
+    values = {parameter: f"<{parameter}>" for parameter in PARAMETERS[name]}
+    if "options" in values:
+        del values["options"]
+        values |= {"first_option": "<first_option>", "second_option": "<second_option>"}
+    given = inspect.signature(call).bind(**values)
+    assert call(*given.args, **given.kwargs) is spy.answer
+    assert [method for method, _, _ in spy.calls] == [name]
+    _, args, kwargs = spy.calls[0]
+    assert signature.bind(*args, **kwargs).arguments == given.arguments
 
 
 def test_list_videos_uses_the_default_client(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -6820,7 +6877,7 @@ def test_video_lists_feed_the_bulk_calls(tmp_path: Path) -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/unit/test_collections_api.py -q`
-Expected: 7 failed — `AttributeError: module 'utmax' has no attribute 'download_many'` (and likewise `fetch_many`, `list_videos` and `translate_many`; the last test fails on `Client.fetch_many`).
+Expected: 15 failed — `AttributeError: module 'utmax' has no attribute 'download_many'` (and likewise `fetch_many`, `list_videos` and `translate_many`) for the calls on `utmax`, `'Client' object has no attribute 'fetch_many'` (and likewise the other three) for the calls on `Client` and for the last test, and `'Client' object has no attribute '_bulk'` (`'_collections'` for `list_videos`) for the four signature tests.
 
 - [ ] **Step 3: Add the calls to `Client`**
 
@@ -7388,11 +7445,11 @@ def download_many(
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/test_collections_api.py tests/unit/test_facade.py tests/unit/test_client.py -q`
-Expected: the new file reports 7 passed; the existing facade and client tests still pass.
+Expected: the new file reports 15 passed; the existing facade and client tests still pass.
 
 - [ ] **Step 6: Gates and commit**
 
-Run the four gates (the suite grows by 7 to 1348 passed, 15 deselected).
+Run the four gates (the suite grows by 15 to 1356 passed, 15 deselected).
 
 ```bash
 git add src/utmax/client.py src/utmax/__init__.py tests/unit/test_collections_api.py
@@ -7521,7 +7578,7 @@ uv sync --locked --all-extras
 uv build --out-dir <a scratch folder outside the repository>
 ```
 
-Expected: ruff, format and mypy clean; 1348 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
+Expected: ruff, format and mypy clean; 1356 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
 
 - [ ] **Step 4: Check the spec's acceptance list for M5**
 

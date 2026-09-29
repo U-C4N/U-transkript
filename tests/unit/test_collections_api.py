@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -59,18 +61,71 @@ PARAMETERS = {
         "progress",
     ],
 }
+# The Client attribute that holds the service behind each call.
+SERVICES = {
+    "list_videos": "_collections",
+    "fetch_many": "_bulk",
+    "translate_many": "_bulk",
+    "download_many": "_bulk",
+}
+
+
+class Spy:
+    """Stands in for a service: records every call and answers each with the same object."""
+
+    def __init__(self) -> None:
+        self.answer = object()
+        self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def __getattr__(self, name: str) -> Callable[..., object]:
+        def record(*args: Any, **kwargs: Any) -> object:
+            self.calls.append((name, args, kwargs))
+            return self.answer
+
+        return record
+
+
+def contract(function: Callable[..., object]) -> tuple[list[inspect.Parameter], object]:
+    """Name, kind, default and annotation of every parameter, then the result's annotation.
+
+    The annotations are evaluated, so it is the types that are compared, not how they are spelled.
+    """
+    signature = inspect.signature(function, eval_str=True)
+    return list(signature.parameters.values()), signature.return_annotation
 
 
 @pytest.mark.parametrize("name", sorted(PARAMETERS))
-def test_the_facade_and_the_client_take_the_same_arguments(name: str) -> None:
-    facade = inspect.signature(getattr(utmax, name))
-    method = inspect.signature(getattr(Client, name))
-    assert list(facade.parameters) == PARAMETERS[name]
-    assert list(method.parameters) == ["self", *PARAMETERS[name]]
-    for parameter in facade.parameters.values():
-        twin = method.parameters[parameter.name]
-        assert (twin.kind, twin.default) == (parameter.kind, parameter.default)
+def test_the_facade_and_the_client_take_the_arguments_of_the_service(name: str) -> None:
+    client = Client(transport=FakeTransport())
+    service = contract(getattr(getattr(client, SERVICES[name]), name))
+    assert [parameter.name for parameter in service[0]] == PARAMETERS[name]
+    assert contract(getattr(client, name)) == service
+    assert contract(getattr(utmax, name)) == service
     assert name in utmax.__all__
+
+
+@pytest.mark.parametrize("layer", ["facade", "client"])
+@pytest.mark.parametrize("name", sorted(PARAMETERS))
+def test_every_argument_reaches_the_service_under_its_own_name(
+    name: str, layer: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each layer hands every argument on, unchanged and under its own name, and the result back."""
+    client = Client(transport=FakeTransport())
+    call = getattr(utmax if layer == "facade" else client, name)
+    signature = inspect.signature(getattr(getattr(client, SERVICES[name]), name))
+    spy = Spy()
+    monkeypatch.setattr(client, SERVICES[name], spy)
+    monkeypatch.setattr(utmax, "_default_client", client)
+    # Every parameter gets a value of its own, and **options two more keys.
+    values = {parameter: f"<{parameter}>" for parameter in PARAMETERS[name]}
+    if "options" in values:
+        del values["options"]
+        values |= {"first_option": "<first_option>", "second_option": "<second_option>"}
+    given = inspect.signature(call).bind(**values)
+    assert call(*given.args, **given.kwargs) is spy.answer
+    assert [method for method, _, _ in spy.calls] == [name]
+    _, args, kwargs = spy.calls[0]
+    assert signature.bind(*args, **kwargs).arguments == given.arguments
 
 
 def test_list_videos_uses_the_default_client(monkeypatch: pytest.MonkeyPatch) -> None:
