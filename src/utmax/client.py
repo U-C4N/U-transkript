@@ -191,7 +191,7 @@ class Client:
         return self._downloads.download(video, path, options)
 
     def list_videos(
-        self, source: str, *, kind: CollectionKind = "all", limit: int | None = None
+        self, source: str, *, kind: CollectionKind | None = None, limit: int | None = None
     ) -> VideoList:
         """The videos of a playlist or channel; see :func:`utmax.list_videos`."""
         return self._collections.list_videos(source, kind=kind, limit=limit)

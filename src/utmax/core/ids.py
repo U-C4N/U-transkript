@@ -46,6 +46,7 @@ _UPLOADS_PREFIXES: dict[CollectionKind, str] = {
     "shorts": "UUSH",
     "live": "UULV",
 }
+_TABS: dict[str, CollectionKind] = {"videos": "videos", "shorts": "shorts", "streams": "live"}
 
 
 def parse_video_id(value: str) -> str:
@@ -91,11 +92,14 @@ class Source:
 
     ``id`` is the playlist ID, or the channel ID when it was given; for channels given by
     handle or custom URL it is empty and ``url`` must be resolved to the channel ID first.
+    ``tab`` is the list a channel link's tab shows (``/videos``, ``/shorts``, ``/streams``),
+    or ``None``.
     """
 
     kind: Literal["playlist", "channel"]
     id: str = ""
     url: str = ""
+    tab: CollectionKind | None = None
 
 
 def parse_source(value: str) -> Source:
@@ -103,8 +107,10 @@ def parse_source(value: str) -> Source:
 
     Playlists: any YouTube URL with ``list=``, or a bare playlist ID (``PL``, ``UU``, ``FL`` or
     ``OLAK5uy_`` followed by at least 10 characters). Channels: ``/@handle``,
-    ``/channel/UC...``, ``/c/name`` and ``/user/name`` URLs (tabs such as ``/videos`` are
-    ignored), a bare ``@handle``, or a bare channel ID (``UC`` followed by 22 characters).
+    ``/channel/UC...``, ``/c/name`` and ``/user/name`` URLs, a bare ``@handle``, or a bare
+    channel ID (``UC`` followed by 22 characters). A channel URL's ``/videos``, ``/shorts`` or
+    ``/streams`` tab becomes ``tab`` (``"videos"``, ``"shorts"``, ``"live"``); other tabs are
+    ignored.
 
     Raises:
         CollectionUnavailable: ``value`` is a Mix (``RD...``), which YouTube never lists.
@@ -158,14 +164,20 @@ def _source_from_url(text: str, value: str) -> Source | None:
         return None
     first = segments[0]
     if _HANDLE.fullmatch(first):
-        return Source("channel", url=f"https://www.youtube.com/{first}")
+        return Source("channel", url=f"https://www.youtube.com/{first}", tab=_tab(segments, 1))
     if len(segments) < 2:
         return None
     if first.lower() == "channel" and _CHANNEL_ID.fullmatch(segments[1]):
-        return Source("channel", id=segments[1])
+        return Source("channel", id=segments[1], tab=_tab(segments, 2))
     if first.lower() in ("c", "user"):
-        return Source("channel", url=f"https://www.youtube.com/{first.lower()}/{segments[1]}")
+        url = f"https://www.youtube.com/{first.lower()}/{segments[1]}"
+        return Source("channel", url=url, tab=_tab(segments, 2))
     return None
+
+
+def _tab(segments: list[str], position: int) -> CollectionKind | None:
+    """The list the channel tab at ``position`` of a URL path shows, if it names one."""
+    return _TABS.get(segments[position].lower()) if len(segments) > position else None
 
 
 def _split_url(text: str) -> SplitResult | None:

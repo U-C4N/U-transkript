@@ -41,12 +41,18 @@ def test_playlists(value: str, playlist_id: str) -> None:
     [
         (CHANNEL, Source("channel", id=CHANNEL)),
         (f"https://www.youtube.com/channel/{CHANNEL}", Source("channel", id=CHANNEL)),
-        (f"www.youtube.com/channel/{CHANNEL}/videos", Source("channel", id=CHANNEL)),
+        (f"www.youtube.com/channel/{CHANNEL}/videos", Source("channel", id=CHANNEL, tab="videos")),
         (f"https://music.youtube.com/channel/{CHANNEL}", Source("channel", id=CHANNEL)),
         ("@RickAstleyYT", Source("channel", url=HANDLE_URL)),
         (HANDLE_URL, Source("channel", url=HANDLE_URL)),
-        (f"{HANDLE_URL}/shorts", Source("channel", url=HANDLE_URL)),
-        ("m.youtube.com/@RickAstleyYT/videos?view=0", Source("channel", url=HANDLE_URL)),
+        (f"{HANDLE_URL}/shorts", Source("channel", url=HANDLE_URL, tab="shorts")),
+        (f"{HANDLE_URL}/streams", Source("channel", url=HANDLE_URL, tab="live")),
+        (f"{HANDLE_URL}/Shorts/", Source("channel", url=HANDLE_URL, tab="shorts")),
+        (f"{HANDLE_URL}/playlists", Source("channel", url=HANDLE_URL)),
+        (
+            "m.youtube.com/@RickAstleyYT/videos?view=0",
+            Source("channel", url=HANDLE_URL, tab="videos"),
+        ),
         ("//www.youtube.com/@RickAstleyYT", Source("channel", url=HANDLE_URL)),
         (
             "https://www.youtube.com/c/RickAstleyYT/featured",
@@ -55,6 +61,10 @@ def test_playlists(value: str, playlist_id: str) -> None:
         (
             "https://www.youtube.com/user/RickAstleyVEVO",
             Source("channel", url="https://www.youtube.com/user/RickAstleyVEVO"),
+        ),
+        (
+            "https://www.youtube.com/user/RickAstleyVEVO/streams",
+            Source("channel", url="https://www.youtube.com/user/RickAstleyVEVO", tab="live"),
         ),
         (
             "https://www.youtube.com/@%D0%9A%D0%B0%D0%BD%D0%B0%D0%BB",

@@ -419,22 +419,24 @@ def download(
 
 
 def list_videos(
-    source: str, *, kind: CollectionKind = "all", limit: int | None = None
+    source: str, *, kind: CollectionKind | None = None, limit: int | None = None
 ) -> VideoList:
     """The videos of a playlist or a channel, in YouTube's order.
 
     Examples::
 
         videos = utmax.list_videos("https://www.youtube.com/playlist?list=PL...")
-        shorts = utmax.list_videos("@RickAstleyYT", kind="shorts", limit=50)
+        shorts = utmax.list_videos("https://www.youtube.com/@RickAstleyYT/shorts")
+        latest = utmax.list_videos("@RickAstleyYT", kind="videos", limit=50)
         report = utmax.fetch_many(videos, out_dir="subs")
 
     Args:
         source: a playlist URL or ID, a channel URL (``/@handle``, ``/channel/UC...``,
-            ``/c/name``, ``/user/name``; tabs such as ``/videos`` are ignored), an ``@handle``
-            or a channel ID.
+            ``/c/name``, ``/user/name``), an ``@handle`` or a channel ID.
         kind: for channels, ``"all"`` uploads, long-form ``"videos"``, ``"shorts"`` or past
-            ``"live"`` streams; playlists are always listed whole.
+            ``"live"`` streams. By default a channel link's tab chooses (``/videos``,
+            ``/shorts``, ``/streams``), and a link without one lists every upload. Playlists
+            are always listed whole.
         limit: stop after this many videos; ``None`` lists everything (at most 1000 pages).
 
     Each :class:`VideoEntry` has the video ID, title, duration (``None`` when YouTube does not

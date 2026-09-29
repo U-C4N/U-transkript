@@ -22,6 +22,7 @@ from tests.helpers.browse import (
 )
 from tests.helpers.fake_transport import FakeTransport, json_response, text_response
 from utmax.adapters.innertube import InnerTubeClient
+from utmax.core.ids import uploads_playlist_id
 from utmax.errors import (
     CollectionNotFound,
     CollectionUnavailable,
@@ -133,7 +134,7 @@ def test_web_resolves_what_android_vr_does_not_know() -> None:
 
 
 @pytest.mark.parametrize(
-    "source", [CHANNEL_ID, f"https://www.youtube.com/channel/{CHANNEL_ID}/videos"]
+    "source", [CHANNEL_ID, f"https://www.youtube.com/channel/{CHANNEL_ID}/featured"]
 )
 def test_channel_ids_need_no_resolving(source: str) -> None:
     transport = FakeTransport()
@@ -141,6 +142,26 @@ def test_channel_ids_need_no_resolving(source: str) -> None:
     videos = service(transport).list_videos(source)
     assert (videos.source_id, videos.kind) == (f"UU{CHANNEL_ID[2:]}", "all")
     assert transport.urls() == ["https://www.youtube.com/youtubei/v1/browse?prettyPrint=false"]
+
+
+@pytest.mark.parametrize(
+    ("tab", "kind", "expected"),
+    [
+        ("shorts", None, "shorts"),
+        ("videos", None, "videos"),
+        ("streams", None, "live"),
+        ("shorts", "all", "all"),
+        ("videos", "shorts", "shorts"),
+    ],
+)
+def test_a_channel_tab_chooses_the_list_unless_kind_is_given(
+    tab: str, kind: CollectionKind | None, expected: CollectionKind
+) -> None:
+    transport = FakeTransport()
+    transport.add("POST", BROWSE, json_response(vr_page("aaaaaaaaaaa", count="1 video")))
+    source = f"https://www.youtube.com/channel/{CHANNEL_ID}/{tab}"
+    videos = service(transport).list_videos(source, kind=kind)
+    assert (videos.kind, videos.source_id) == (expected, uploads_playlist_id(CHANNEL_ID, expected))
 
 
 def test_web_takes_over_when_android_vr_fails() -> None:

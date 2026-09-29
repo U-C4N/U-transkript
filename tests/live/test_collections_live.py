@@ -51,9 +51,9 @@ def test_kinds_a_channel_lacks_are_empty() -> None:
 
 def test_shorts_and_live_streams_have_their_own_lists() -> None:
     shorts = utmax.list_videos("@RickAstleyYT", kind="shorts", limit=3)
-    live = utmax.list_videos("@RickAstleyYT", kind="live", limit=3)
+    live = utmax.list_videos("https://www.youtube.com/@RickAstleyYT/streams", limit=3)
     assert (len(shorts), shorts.source_id) == (3, f"UUSH{RICK[2:]}")
-    assert live.source_id == f"UULV{RICK[2:]}"
+    assert (live.kind, live.source_id) == ("live", f"UULV{RICK[2:]}")
     assert len(live) >= 1
 
 

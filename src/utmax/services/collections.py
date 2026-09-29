@@ -40,23 +40,28 @@ class CollectionService:
         self._max_pages = max_pages
 
     def list_videos(
-        self, source: str, *, kind: CollectionKind = "all", limit: int | None = None
+        self, source: str, *, kind: CollectionKind | None = None, limit: int | None = None
     ) -> VideoList:
-        """The videos of a playlist or channel; :func:`utmax.list_videos` documents the rules."""
-        if kind not in COLLECTION_KINDS:
-            raise InvalidOption(f'kind={kind!r} is not "all", "videos", "shorts" or "live".')
+        """The videos of a playlist or channel; :func:`utmax.list_videos` documents the rules.
+
+        Without ``kind``, a channel link's tab (``/shorts`` and so on) chooses the list, and
+        otherwise every upload is listed.
+        """
+        if kind is not None and kind not in COLLECTION_KINDS:
+            raise InvalidOption(f'kind={kind!r} is not "all", "videos", "shorts", "live" or None.')
         if limit is not None and (
             isinstance(limit, bool) or not isinstance(limit, int) or limit < 1
         ):
             raise InvalidOption(f"limit must be a positive whole number or None, not {limit!r}.")
         parsed = parse_source(source)
         if parsed.kind == "playlist":
-            if kind != "all":
+            if kind not in (None, "all"):
                 raise InvalidOption(
                     f"kind={kind!r} only applies to channels; a playlist is listed as it is.",
                     suggestion="Leave kind out for playlists.",
                 )
             return self._listing(parsed.id, "all", limit, source=source)
+        kind = kind or parsed.tab or "all"
         channel_id = parsed.id or self._resolve(parsed.url, source=source)
         playlist_id = uploads_playlist_id(channel_id, kind)
         try:
