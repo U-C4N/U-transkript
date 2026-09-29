@@ -138,6 +138,9 @@ def test_ctrl_c_or_a_progress_error_stops_the_run(error: type[BaseException]) ->
 
     def work(item: BulkItem) -> tuple[str, Path | None]:
         calls.append(item.video_id)
+        # Only the first video may finish before the stop, so a third one can never start.
+        if item.video_id != IDS[0]:
+            assert stop.wait(5)
         return upper(item)
 
     def progress(result: BulkResult[str]) -> None:

@@ -4688,7 +4688,7 @@ git commit -m "feat: add file-name templates and skip patterns for bulk calls" -
 
 - [ ] **Step 1: Write the failing tests**
 
-The order and Ctrl-C tests synchronize through events and the progress callback, not through timing; only the concurrency test sleeps (20 ms per video). The file passed eight runs in a row while this plan was verified.
+The order and Ctrl-C tests synchronize through events and the progress callback, not through timing (a video that must not finish before the stop waits for the stop event); only the concurrency test sleeps (20 ms per video). The file passed forty runs in a row while this plan was verified, and its Ctrl-C tests also pass when the calling thread is delayed by 50 ms.
 
 `tests/unit/services/test_bulk_runner.py`:
 
@@ -4833,6 +4833,9 @@ def test_ctrl_c_or_a_progress_error_stops_the_run(error: type[BaseException]) ->
 
     def work(item: BulkItem) -> tuple[str, Path | None]:
         calls.append(item.video_id)
+        # Only the first video may finish before the stop, so a third one can never start.
+        if item.video_id != IDS[0]:
+            assert stop.wait(5)
         return upper(item)
 
     def progress(result: BulkResult[str]) -> None:
