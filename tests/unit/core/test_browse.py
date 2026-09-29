@@ -79,6 +79,16 @@ def test_web_shorts_take_their_channel_from_the_header() -> None:
     }
 
 
+def test_only_a_first_page_names_the_playlist_owner() -> None:
+    whole = browse_fixture("browse_web_shorts")
+    first = parse_browse_page(whole)
+    assert (first.owner_name, first.owner_id) == ("Rick Astley", CHANNEL_ID)
+    # Shorts never name a channel and continuation pages have no header: a listing fills in.
+    later = parse_browse_page({key: value for key, value in whole.items() if key != "header"})
+    assert (later.owner_name, later.owner_id) == ("", "")
+    assert {(video.channel, video.channel_id) for video in later.videos} == {("", "")}
+
+
 def test_unplayable_and_foreign_items_are_counted_but_skipped() -> None:
     hidden = {"playlistVideoRenderer": {"videoId": "aaaaaaaaaaa", "isPlayable": False}}
     broken = {"playlistVideoRenderer": {"videoId": "too-short"}}
@@ -171,6 +181,7 @@ def test_the_title_falls_back_to_the_playlist_metadata() -> None:
         ("No videos", 0),
         ("", None),
         ("many videos", None),
+        (", videos", None),
     ],
 )
 def test_video_counts(text: str, count: int | None) -> None:
@@ -183,6 +194,15 @@ def test_video_counts(text: str, count: int | None) -> None:
 )
 def test_durations_come_from_the_thumbnail_badge(badge: str, seconds: float | None) -> None:
     (video,) = parse_browse_page(web_page(lockup("aaaaaaaaaaa", badge=badge))).videos
+    assert video.duration == seconds
+
+
+@pytest.mark.parametrize(
+    ("length", "seconds"), [("231", 231.0), (231, 231.0), ("\xb2", None), ("2.5", None)]
+)
+def test_android_vr_lengths_are_whole_seconds(length: object, seconds: float | None) -> None:
+    item = {"playlistVideoRenderer": {"videoId": "aaaaaaaaaaa", "lengthSeconds": length}}
+    (video,) = parse_browse_page({"contents": [item]}).videos
     assert video.duration == seconds
 
 

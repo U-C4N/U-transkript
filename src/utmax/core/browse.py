@@ -23,7 +23,7 @@ __all__ = ["BrowsePage", "alert_error", "parse_browse_page", "resolved_channel_i
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _CHANNEL_ID = re.compile(r"UC[A-Za-z0-9_-]{22}")
-_VIDEO_COUNT = re.compile(r"([\d,]+) videos?")
+_VIDEO_COUNT = re.compile(r"(\d[\d,]*) videos?")
 _CLOCK = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})")
 _LISTING_ROOTS = ("contents", "continuationContents", "onResponseReceivedActions")
 _TOKEN_PATHS: dict[str, tuple[str, ...]] = {
@@ -44,7 +44,9 @@ class BrowsePage:
 
     ``videos`` are the playable videos on the page, numbered 0 (a listing numbers them);
     ``items`` counts every list item, skipped ones included; ``continuation`` is the token of
-    the next page. ``title`` and ``video_count`` come from the playlist header of a first page.
+    the next page. ``title``, ``video_count`` and the playlist's owner (``owner_name`` and
+    ``owner_id``, the channel that owns it) come from the playlist header of a first page;
+    continuation pages have no header, so a listing takes the owner from its first page.
     ``alerts`` are YouTube's messages, such as "The playlist does not exist.".
     """
 
@@ -54,6 +56,8 @@ class BrowsePage:
     title: str = ""
     video_count: int | None = None
     alerts: tuple[str, ...] = ()
+    owner_name: str = ""
+    owner_id: str = ""
 
 
 def parse_browse_page(data: Mapping[str, Any]) -> BrowsePage:
@@ -69,6 +73,8 @@ def parse_browse_page(data: Mapping[str, Any]) -> BrowsePage:
         title=title,
         video_count=video_count,
         alerts=_alerts(data),
+        owner_name=owner.name,
+        owner_id=owner.channel_id,
     )
 
 
@@ -281,7 +287,8 @@ def _video_count(text: str) -> int | None:
 
 def _seconds(value: object) -> float | None:
     text = str(value) if isinstance(value, (str, int)) else ""
-    return float(text) if text.isdigit() else None
+    # isdecimal, not isdigit: float() rejects the superscript digits that isdigit accepts.
+    return float(text) if text.isdecimal() else None
 
 
 def _video_id(value: object) -> str | None:
