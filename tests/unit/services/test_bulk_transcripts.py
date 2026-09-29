@@ -15,6 +15,7 @@ from utmax.errors import (
     InvalidOption,
     InvalidVideoId,
     IpBlocked,
+    NoTranscriptFound,
     ProviderAuthError,
     UnsupportedFormat,
     UTMaxError,
@@ -135,6 +136,28 @@ def test_progress_sees_every_video_once() -> None:
     seen: list[BulkResult[Transcript]] = []
     ManyVideos().bulk().fetch_many([*IDS, "nope"], progress=seen.append)
     assert sorted(result.video_id for result in seen) == sorted([*IDS, "nope"])
+
+
+def test_fetch_many_passes_its_track_filters_on() -> None:
+    bulk = ManyVideos().bulk()
+    automatic = bulk.fetch_many(IDS[:1], include_manual=False)
+    assert value(automatic[0]).is_generated is True
+    neither = bulk.fetch_many(IDS[:1], include_manual=False, include_generated=False)
+    assert isinstance(neither[0].error, NoTranscriptFound)
+
+
+def test_translate_many_passes_instructions_and_resegmenting_on() -> None:
+    translator = FakeTranslator()
+    report = (
+        ManyVideos()
+        .bulk()
+        .translate_many(
+            IDS[:1], "tr", model=translator, instructions="Use informal Turkish.", resegment=True
+        )
+    )
+    assert {request["instructions"] for request in translator.requests} == {"Use informal Turkish."}
+    # Resegmenting merges the two lyric lines of the manual track into one sentence.
+    assert len(value(report[0])) == 2
 
 
 def test_translate_many_names_files_by_the_target_language(tmp_path: Path) -> None:
