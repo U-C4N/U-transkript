@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from typing import Any
@@ -23,7 +24,7 @@ from utmax.core.translate.protocol import response_schema, system_prompt
 from utmax.errors import InvalidOption, TranslationError, TranslationMismatch
 from utmax.models import Language, Segment, Transcript
 
-__all__ = ["translate", "translate_transcript"]
+__all__ = ["check_language_code", "resolve_translator", "translate", "translate_transcript"]
 
 log = logging.getLogger("utmax.translate")
 
@@ -41,19 +42,26 @@ def translate(
     **options: Any,
 ) -> Transcript:
     """Pick the translator for ``model``, then translate; see :func:`utmax.translate`."""
+    translator = resolve_translator(model, options, video_id=transcript.video.video_id)
+    return translate_transcript(
+        transcript, to, translator, instructions=instructions, resegment=resegment
+    )
+
+
+def resolve_translator(
+    model: str | Translator, options: Mapping[str, Any], *, video_id: str | None = None
+) -> Translator:
+    """``model`` itself when it is a Translator (``options`` must then be empty), otherwise the
+    built-in translator for ``"provider=model-id"`` made with ``options``."""
     if isinstance(model, Translator):
         if options:
             raise InvalidOption(
                 f"Options such as {', '.join(sorted(options))} only apply when model is a "
                 '"provider=model-id" string; set them on the Translator instead.',
-                video_id=transcript.video.video_id,
+                video_id=video_id,
             )
-        translator = model
-    else:
-        translator = create_translator(model, **options)
-    return translate_transcript(
-        transcript, to, translator, instructions=instructions, resegment=resegment
-    )
+        return model
+    return create_translator(model, **options)
 
 
 def translate_transcript(
@@ -71,7 +79,7 @@ def translate_transcript(
     remembers the source cues in ``source``. Nothing is returned unless every cue translated.
     """
     video_id = transcript.video.video_id
-    target = _language_code(to, video_id=video_id)
+    target = check_language_code(to, video_id=video_id)
     if transcript.is_bilingual:
         raise InvalidOption(
             f"The {transcript.language_code} transcript is bilingual; translate the original "
@@ -179,7 +187,13 @@ class _Job:
         return {**self._translate(first, system, schema), **self._translate(second, system, schema)}
 
 
-def _language_code(to: str, *, video_id: str) -> str:
+def check_language_code(to: str, *, video_id: str | None = None) -> str:
+    """``to`` without surrounding spaces, when it looks like a language code such as ``"tr"``,
+    ``"de"`` or ``"pt-BR"``.
+
+    Raises:
+        InvalidOption: ``to`` is not a language code.
+    """
     code = str(to).strip()
     if not _LANGUAGE_TAG.fullmatch(code):
         raise InvalidOption(
