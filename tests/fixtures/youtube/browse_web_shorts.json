@@ -1,0 +1,100 @@
+{
+ "header": {
+  "playlistHeaderRenderer": {
+   "playlistId": "UUSHuAXFkgsw1L7xaCfnd5JJOw",
+   "title": {
+    "simpleText": "Short videos"
+   },
+   "numVideosText": {
+    "runs": [
+     {
+      "text": "297"
+     },
+     {
+      "text": " videos"
+     }
+    ]
+   },
+   "ownerText": {
+    "runs": [
+     {
+      "text": "Rick Astley",
+      "navigationEndpoint": {
+       "browseEndpoint": {
+        "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "itemSectionRenderer": {
+           "contents": [
+            {
+             "richGridRenderer": {
+              "contents": [
+               {
+                "richItemRenderer": {
+                 "content": {
+                  "shortsLockupViewModel": {
+                   "onTap": {
+                    "innertubeCommand": {
+                     "reelWatchEndpoint": {
+                      "videoId": "E_MGy41IYVw"
+                     }
+                    }
+                   },
+                   "overlayMetadata": {
+                    "primaryText": {
+                     "content": "38 years on, and the music video still hits 🕺 # #rickastley #80smusic"
+                    }
+                   }
+                  }
+                 }
+                }
+               },
+               {
+                "richItemRenderer": {
+                 "content": {
+                  "shortsLockupViewModel": {
+                   "onTap": {
+                    "innertubeCommand": {
+                     "reelWatchEndpoint": {
+                      "videoId": "ihRdK3x3cUY"
+                     }
+                    }
+                   },
+                   "overlayMetadata": {
+                    "primaryText": {
+                     "content": "A message from Rick ♥️ #rickastley"
+                    }
+                   }
+                  }
+                 }
+                }
+               }
+              ]
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

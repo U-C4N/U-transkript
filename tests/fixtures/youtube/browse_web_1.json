@@ -1,0 +1,278 @@
+{
+ "header": {
+  "playlistHeaderRenderer": {
+   "playlistId": "UULFuAXFkgsw1L7xaCfnd5JJOw",
+   "title": {
+    "simpleText": "Videos"
+   },
+   "numVideosText": {
+    "runs": [
+     {
+      "text": "139"
+     },
+     {
+      "text": " videos"
+     }
+    ]
+   },
+   "ownerText": {
+    "runs": [
+     {
+      "text": "Rick Astley",
+      "navigationEndpoint": {
+       "browseEndpoint": {
+        "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "contents": {
+  "twoColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "itemSectionRenderer": {
+           "contents": [
+            {
+             "lockupViewModel": {
+              "contentId": "PXC_PYeB6F8",
+              "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+              "contentImage": {
+               "thumbnailViewModel": {
+                "overlays": [
+                 {
+                  "thumbnailBottomOverlayViewModel": {
+                   "badges": [
+                    {
+                     "thumbnailBadgeViewModel": {
+                      "text": "3:51"
+                     }
+                    }
+                   ]
+                  }
+                 },
+                 {}
+                ]
+               }
+              },
+              "metadata": {
+               "lockupMetadataViewModel": {
+                "title": {
+                 "content": "Rick Astley - Angels On My Side (Live at The O2, London, April 2026)"
+                },
+                "metadata": {
+                 "contentMetadataViewModel": {
+                  "metadataRows": [
+                   {
+                    "metadataParts": [
+                     {
+                      "text": {
+                       "content": "Rick Astley",
+                       "commandRuns": [
+                        {
+                         "onTap": {
+                          "innertubeCommand": {
+                           "browseEndpoint": {
+                            "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+                           }
+                          }
+                         }
+                        }
+                       ]
+                      }
+                     }
+                    ]
+                   },
+                   {
+                    "metadataParts": [
+                     {
+                      "text": {
+                       "content": "100K views"
+                      }
+                     },
+                     {
+                      "text": {
+                       "content": "3 months ago"
+                      }
+                     }
+                    ]
+                   }
+                  ]
+                 }
+                }
+               }
+              }
+             }
+            },
+            {
+             "lockupViewModel": {
+              "contentId": "LaOUkDBDjW8",
+              "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+              "contentImage": {
+               "thumbnailViewModel": {
+                "overlays": [
+                 {
+                  "thumbnailBottomOverlayViewModel": {
+                   "badges": [
+                    {
+                     "thumbnailBadgeViewModel": {
+                      "text": "3:54"
+                     }
+                    }
+                   ]
+                  }
+                 },
+                 {}
+                ]
+               }
+              },
+              "metadata": {
+               "lockupMetadataViewModel": {
+                "title": {
+                 "content": "Rick Astley - Dance (Live at The O2, London, April 2026)"
+                },
+                "metadata": {
+                 "contentMetadataViewModel": {
+                  "metadataRows": [
+                   {
+                    "metadataParts": [
+                     {
+                      "text": {
+                       "content": "Rick Astley",
+                       "commandRuns": [
+                        {
+                         "onTap": {
+                          "innertubeCommand": {
+                           "browseEndpoint": {
+                            "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+                           }
+                          }
+                         }
+                        }
+                       ]
+                      }
+                     }
+                    ]
+                   },
+                   {
+                    "metadataParts": [
+                     {
+                      "text": {
+                       "content": "59K views"
+                      }
+                     },
+                     {
+                      "text": {
+                       "content": "3 months ago"
+                      }
+                     }
+                    ]
+                   }
+                  ]
+                 }
+                }
+               }
+              }
+             }
+            },
+            {
+             "lockupViewModel": {
+              "contentId": "wvr7-pDJUOA",
+              "contentType": "LOCKUP_CONTENT_TYPE_VIDEO",
+              "contentImage": {
+               "thumbnailViewModel": {
+                "overlays": [
+                 {
+                  "thumbnailBottomOverlayViewModel": {
+                   "badges": [
+                    {
+                     "thumbnailBadgeViewModel": {
+                      "text": "4:08"
+                     }
+                    }
+                   ]
+                  }
+                 },
+                 {}
+                ]
+               }
+              },
+              "metadata": {
+               "lockupMetadataViewModel": {
+                "title": {
+                 "content": "Rick Astley - Keep Singing (Live at The O2, London, April 2026)"
+                },
+                "metadata": {
+                 "contentMetadataViewModel": {
+                  "metadataRows": [
+                   {
+                    "metadataParts": [
+                     {
+                      "text": {
+                       "content": "Rick Astley",
+                       "commandRuns": [
+                        {
+                         "onTap": {
+                          "innertubeCommand": {
+                           "browseEndpoint": {
+                            "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+                           }
+                          }
+                         }
+                        }
+                       ]
+                      }
+                     }
+                    ]
+                   },
+                   {
+                    "metadataParts": [
+                     {
+                      "text": {
+                       "content": "88K views"
+                      }
+                     },
+                     {
+                      "text": {
+                       "content": "3 months ago"
+                      }
+                     }
+                    ]
+                   }
+                  ]
+                 }
+                }
+               }
+              }
+             }
+            },
+            {
+             "continuationItemViewModel": {
+              "continuationCommand": {
+               "innertubeCommand": {
+                "continuationCommand": {
+                 "token": "4qmFsgJxEhxWTFVVTEZ1QVhGa2dzdzFMN3hhQ2ZuZDVKSk93GjRDQUY2SGxCVU9rTkhVV2xGUlVrMVRrVlZlbEpxWkVKTlJVWkVUbXBCTTA1RVdRJTNEJTNEmgIaVVVMRnVBWEZrZ3N3MUw3eGFDZm5kNUpKT3c%3D"
+                }
+               }
+              }
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

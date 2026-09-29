@@ -58,9 +58,13 @@ architecture; green quality gates; a minimal, beautiful README with an ASCII arc
   (media_time 512) and signed-cto `trun`; 140 is plain AAC; 399 is `av01`. itag 18 is classic MP4.
 - **Browse**: ANDROID_VR `browse` (no key, no PoToken) → `playlistVideoRenderer`, 20/page, continuation via
   `nextContinuationData` (183/183 items in 10 pages, 2 s). WEB → `lockupViewModel`, 100/page,
-  `continuationItemViewModel`. `navigation/resolve_url` maps `@handle`, `/channel/`, `/c/`, `/user/` → `UC…`
-  (unknown → 404). Channel lists: `UU` (all) / `UULF` (videos) / `UUSH` (shorts) / `UULV` (live) + `id[2:]`.
-  Nonexistent playlist → 400; `RD…` mixes unviewable.
+  `continuationItemViewModel`; WEB shows a channel's Shorts as `shortsLockupViewModel` items, at most 100 and
+  without a continuation, and hides an occasional video. `navigation/resolve_url` maps `@handle`, `/channel/`,
+  `/c/`, `/user/` → `UC…` (unknown handle: WEB 404, ANDROID_VR 200 with only a `urlEndpoint`). Channel lists:
+  `UU` (all) / `UULF` (videos) / `UUSH` (shorts) / `UULV` (live) + `id[2:]`; a list a channel lacks answers 404
+  (ANDROID_VR) or only the alert "The playlist does not exist." (WEB). Nonexistent playlist → 400; `RD…` mixes
+  unviewable (WEB alert "This playlist type is unviewable."); YouTube Music's `RDCLAK5uy_…` playlists list on WEB,
+  but ANDROID_VR pages them endlessly (verified 2026-09-29).
 - **youtube-transcript-api 1.2.4** (2026-01-29) public surface read from source (see §4.6); legacy static methods
   were removed in 1.2.0.
 - **SDKs**: `mcp` 2.2.0 (`from mcp.server import MCPServer`; FastMCP renamed; stdio re-wraps UTF-8; sync tools run
@@ -149,17 +153,20 @@ download(video, path, *, format: Container | None = None, quality: Literal["comp
          subtitle_mode: Literal["embed", "sidecar", "both"] = "embed", default_subtitle=None,
          connections=4, chunk_size=8 * 2**20, resume=True, overwrite=False, ffmpeg=None,
          progress: Callable[[Progress], None] | None = None, cancel: threading.Event | None = None) -> DownloadResult
-list_videos(source, *, kind: Literal["all", "videos", "shorts", "live"] = "all", limit=None) -> VideoList
+list_videos(source, *, kind: Literal["all", "videos", "shorts", "live"] | None = None,  # None: a channel
+            limit=None) -> VideoList                                    # link's tab (/videos /shorts /streams), else all
 fetch_many(videos: Iterable[str | VideoEntry], *, out_dir=None, format: FormatName = "srt", languages=None,
            include_manual=True, include_generated=True, concurrency=4, skip_existing=True,
            filename="{video_id}.{language_code}.{ext}", progress=None) -> BulkReport[Transcript]
 translate_many(videos, to, *, model: str | Translator, out_dir=None, format: FormatName = "srt", languages=None,
-               bilingual=False, concurrency=2, skip_existing=True, filename="{video_id}.{language_code}.{ext}",
-               progress=None, **options) -> BulkReport[Transcript]         # files named by target (or src+dst) language
-download_many(videos, out_dir, *, format: Container = "mp4", quality="compat", subtitles=None,
+               bilingual=False, instructions=None, resegment=None, concurrency=2, skip_existing=True,
+               filename="{video_id}.{language_code}.{ext}", progress=None,
+               **options) -> BulkReport[Transcript]                   # files named by target (or src+dst) language
+download_many(videos, out_dir, *, format: Container = "mp4", quality="compat", subtitles: Sequence[str] | None = None,
               subtitle_mode="embed", concurrency=2, skip_existing=True, filename="{title} [{video_id}].{ext}",
               ffmpeg=None, progress=None) -> BulkReport[DownloadResult]
-# out_dir=None → results in memory only; progress callbacks receive one BulkResult per finished item
+# out_dir=None → results in memory only; progress callbacks receive one BulkResult per finished item, and an
+# exception they raise stops the run like Ctrl-C
 
 Client(*, proxy=None, timeout=30.0, retries=2, block_retries=0, force_ipv4=False, transport=None)  # thread-safe; close()/with
 ```
@@ -195,9 +202,11 @@ from utmax.compat import YouTubeTranscriptApi           # one-line migration
   height, fps, bitrate, content_length, audio_sample_rate, audio_channels, is_default_audio, is_drc)` ·
   `Progress(video_id, phase, bytes_done, bytes_total, speed_bps, eta_seconds)` ·
   `DownloadResult(path, video, container, video_format, audio_format, embedded_subtitles, sidecars, size_bytes, resumed)`
-- `VideoEntry(video_id, title, duration, channel, channel_id, index)` · `VideoList(Sequence[VideoEntry])` ·
+- `VideoEntry(video_id, title, duration, channel, channel_id, index)` (+`url`; `duration` is `None` when YouTube
+  shows none; `index` is the 1-based position in the list) · `VideoList(Sequence[VideoEntry])`: `title, source_id,
+  kind, video_count, entries` (`video_count` is YouTube's own count; `count()` is the `Sequence` method) ·
   `BulkResult[T](video_id, status: ok|skipped|failed|not_attempted, value, path, error)` ·
-  `BulkReport[T]` (`ok`, `skipped`, `failed`, `raise_for_errors()`)
+  `BulkReport[T](Sequence[BulkResult[T]])` (`ok`, `skipped`, `failed`, `not_attempted`, `raise_for_errors()`)
 
 ### 4.4 Translators (`utmax.providers`)
 
@@ -266,7 +275,9 @@ nothing but the SDK writes to stdout.
 
 **Identifiers**: bare 11-char id, watch (`v` anywhere), youtu.be, shorts, live, embed, `/v/`, m./music./www.,
 nocookie, scheme-less → else `InvalidVideoId` before any request. `parse_source`: `list=` / bare `PL|UU|OLAK5uy_|FL`
-→ playlist; `@h`, `/channel/UC…`, bare `UC`+22, `/c/`, `/user/` → channel; `RD…` → `CollectionUnavailable`.
+→ playlist; `@h`, `/channel/UC…`, bare `UC`+22, `/c/`, `/user/` → channel (a `/videos`, `/shorts` or `/streams`
+tab becomes the default `kind`); `RD…` → `CollectionUnavailable` (Mixes, and YouTube Music's `RDCLAK5uy_…`
+playlists, which are not supported yet); a single video → `InvalidSource` pointing to `fetch()`/`download()`.
 
 **InnerTube** (`core/clients.py`, one constant; all add `hl=en`, `gl=US`): ANDROID `20.10.38` (UA
 `com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip`), IOS `20.10.4`, ANDROID_VR `1.62.27` (Oculus
@@ -352,13 +363,19 @@ run `ffmpeg -hide_banner -nostdin -loglevel error -y -i <audio.part> -map 0:a:0 
 `FFmpegFailed(returncode, stderr_tail)` / `FFmpegNotFound` ("winget install Gyan.FFmpeg | brew install ffmpeg |
 apt install ffmpeg, or pass ffmpeg=…").
 
-**Collections**: resolve channel (skip for `UC…`) → uploads-playlist id by `kind` (playlists require `kind="all"`)
-→ browse loop ANDROID_VR (WEB fallback for the whole listing), parser accepts `playlistVideoRenderer`,
-`lockupViewModel`, `richItemRenderer`/`shortsLockupViewModel` and all three continuation shapes; stop on limit,
-repeated token, 1000 pages or empty page; dedupe ids. 400/404 → `CollectionNotFound`; alert-only →
-`CollectionUnavailable`. Bulk helpers: shared `Client`, `ThreadPoolExecutor(concurrency)`, results in input order,
-skip-existing via filename-template glob (no request), per-item errors captured, **circuit breaker** after
-`RequestBlocked`/`IpBlocked` (remaining → `not_attempted`), Ctrl-C cancels pending then re-raises.
+**Collections**: resolve channel (skip for `UC…`; ANDROID_VR, then WEB) → uploads-playlist id by `kind` (default:
+the link's tab, else all; playlists take only `"all"`) → browse loop ANDROID_VR (WEB lists the whole playlist again
+when ANDROID_VR fails), parser accepts `playlistVideoRenderer`, `lockupViewModel`,
+`richItemRenderer`/`shortsLockupViewModel` and all three continuation shapes; stop on limit, repeated token, 1000
+pages or empty page; dedupe ids; a listing that ends short of YouTube's count (WEB shows at most 100 Shorts) is
+returned with a WARNING. 400/404 → `CollectionNotFound`; alert-only → `CollectionNotFound` when it says "does not
+exist", else `CollectionUnavailable(reason)`; a channel's missing videos/Shorts/live list → an empty `VideoList`
+when its `UU` list exists. Bulk helpers: shared `Client`, `ThreadPoolExecutor(concurrency)`, one `BulkResult` per
+input in input order; skip-existing via filename-template glob (no request): templates must contain `{video_id}`
+as it is, title, channel and `{index}` match anything, the language matches the requested base languages (or
+anything without `languages`), and parts, state and temporary files never count; per-item errors captured,
+**circuit breaker** after `RequestBlocked`/`IpBlocked` (+`ProviderAuthError` for `translate_many`; remaining →
+`not_attempted`), Ctrl-C or a progress exception cancels pending items and running downloads, then re-raises.
 
 ## 6. Errors (`utmax.errors`; every class has `.suggestion` and `.video_id`, is raised somewhere and tested)
 
@@ -394,7 +411,7 @@ Compat maps same-named errors 1:1 (upstream constructors); `NetworkError` → `Y
   `InvalidOption` (use a custom `Transport` / compat `http_client`). Downloads need a sticky IP (IP-bound URLs).
 - `force_ipv4=True` → AF_INET-only connections (avoids v4/v6 mismatch 403s). `Client` is thread-safe (immutable
   config; per-call state local; tested with 8 threads).
-- Logging: `logging.getLogger("utmax")` (+`.http .youtube .download .translate .mcp`), `NullHandler`; stream/caption
+- Logging: `logging.getLogger("utmax")` (+`.http .youtube .download .translate .bulk .mcp`), `NullHandler`; stream/caption
   query strings, keys and proxy credentials redacted; **the library never prints**; `utmax-mcp` only reconfigures
   stderr to UTF-8.
 
@@ -403,8 +420,9 @@ Compat maps same-named errors 1:1 (upstream constructors); `NetworkError` → `Y
 1. Pure core: table-driven tests for every rule (ids, playability rows, json3/XML, selection flags, formats,
    segmentation, bilingual, streams, browse shapes, retry/backoff with seeded RNG, filenames, chunk/resume math, spec parser).
 2. Recorded fixtures via `scripts/record_fixtures.py`: trimmed real responses (player ×3, json3 manual/asr, legacy XML,
-   browse page + continuation, resolve 200/404, WEB lockup page) with `ip/ei/sig/lsig/signature/key/expire`
-   **redacted**; synthetic fixtures labeled (age gate, bot check, private, consent HTML, reCAPTCHA, playlist 400, mix alert).
+   browse pages + continuations of both clients, a WEB Shorts page, resolve of a handle and of an unknown handle)
+   with `ip/ei/sig/lsig/signature/key/expire` **redacted**; synthetic fixtures labeled (age gate, bot check, private,
+   consent HTML, reCAPTCHA, playlist 400/404, WEB resolve 404, mix and missing-list alerts).
 3. Media: "hollow" real streams (real `ftyp/moov/sidx/moof` of itags 137/140/399 + mdat sizes, zero payloads, a few
    KB) and `fmp4_factory` synthetic fragments for every flag path. Muxer invariants re-parsed with
    `progressive.py`: box layout, per-track sample counts/durations/cto/sync, **per-sample payload hashes**, chunk

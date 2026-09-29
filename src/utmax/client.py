@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from functools import partial
 from typing import Any, Self
 
@@ -15,15 +15,23 @@ from utmax.core.bilingual import bilingual
 from utmax.core.downloads import DEFAULT_CHUNK_SIZE
 from utmax.errors import InvalidOption
 from utmax.models import (
+    BulkReport,
+    BulkResult,
+    CollectionKind,
     Container,
     DownloadResult,
+    FormatName,
     Progress,
     Quality,
     SubtitleMode,
     TrackList,
     Transcript,
+    VideoEntry,
     VideoInfo,
+    VideoList,
 )
+from utmax.services.bulk import DEFAULT_DOWNLOAD_NAME, DEFAULT_TRANSCRIPT_NAME, BulkService
+from utmax.services.collections import CollectionService
 from utmax.services.download import DownloadOptions, DownloadService
 from utmax.services.transcripts import TranscriptService
 from utmax.services.translation import translate
@@ -86,6 +94,8 @@ class Client:
         self._downloads = DownloadService(
             innertube, self._transcripts, partial(open_stream, transport)
         )
+        self._collections = CollectionService(innertube)
+        self._bulk = BulkService(self._transcripts, self._downloads)
 
     def fetch(
         self,
@@ -179,6 +189,106 @@ class Client:
             cancel=cancel,
         )
         return self._downloads.download(video, path, options)
+
+    def list_videos(
+        self, source: str, *, kind: CollectionKind | None = None, limit: int | None = None
+    ) -> VideoList:
+        """The videos of a playlist or channel; see :func:`utmax.list_videos`."""
+        return self._collections.list_videos(source, kind=kind, limit=limit)
+
+    def fetch_many(
+        self,
+        videos: Iterable[str | VideoEntry],
+        *,
+        out_dir: str | os.PathLike[str] | None = None,
+        format: FormatName = "srt",
+        languages: Sequence[str] | str | None = None,
+        include_manual: bool = True,
+        include_generated: bool = True,
+        concurrency: int = 4,
+        skip_existing: bool = True,
+        filename: str = DEFAULT_TRANSCRIPT_NAME,
+        progress: Callable[[BulkResult[Transcript]], None] | None = None,
+    ) -> BulkReport[Transcript]:
+        """Fetch the transcripts of many videos; see :func:`utmax.fetch_many`."""
+        return self._bulk.fetch_many(
+            videos,
+            out_dir=out_dir,
+            format=format,
+            languages=languages,
+            include_manual=include_manual,
+            include_generated=include_generated,
+            concurrency=concurrency,
+            skip_existing=skip_existing,
+            filename=filename,
+            progress=progress,
+        )
+
+    def translate_many(
+        self,
+        videos: Iterable[str | VideoEntry],
+        to: str,
+        *,
+        model: str | Translator,
+        out_dir: str | os.PathLike[str] | None = None,
+        format: FormatName = "srt",
+        languages: Sequence[str] | str | None = None,
+        bilingual: bool = False,
+        instructions: str | None = None,
+        resegment: bool | None = None,
+        concurrency: int = 2,
+        skip_existing: bool = True,
+        filename: str = DEFAULT_TRANSCRIPT_NAME,
+        progress: Callable[[BulkResult[Transcript]], None] | None = None,
+        **options: Any,
+    ) -> BulkReport[Transcript]:
+        """Fetch and translate many transcripts; see :func:`utmax.translate_many`."""
+        return self._bulk.translate_many(
+            videos,
+            to,
+            model=model,
+            out_dir=out_dir,
+            format=format,
+            languages=languages,
+            bilingual=bilingual,
+            instructions=instructions,
+            resegment=resegment,
+            concurrency=concurrency,
+            skip_existing=skip_existing,
+            filename=filename,
+            progress=progress,
+            **options,
+        )
+
+    def download_many(
+        self,
+        videos: Iterable[str | VideoEntry],
+        out_dir: str | os.PathLike[str],
+        *,
+        format: Container = "mp4",
+        quality: Quality = "compat",
+        subtitles: Sequence[str] | None = None,
+        subtitle_mode: SubtitleMode = "embed",
+        concurrency: int = 2,
+        skip_existing: bool = True,
+        filename: str = DEFAULT_DOWNLOAD_NAME,
+        ffmpeg: str | os.PathLike[str] | None = None,
+        progress: Callable[[BulkResult[DownloadResult]], None] | None = None,
+    ) -> BulkReport[DownloadResult]:
+        """Download many videos into a folder; see :func:`utmax.download_many`."""
+        return self._bulk.download_many(
+            videos,
+            out_dir,
+            format=format,
+            quality=quality,
+            subtitles=subtitles,
+            subtitle_mode=subtitle_mode,
+            concurrency=concurrency,
+            skip_existing=skip_existing,
+            filename=filename,
+            ffmpeg=ffmpeg,
+            progress=progress,
+        )
 
     def close(self) -> None:
         """Release resources; utmax keeps no open connections today, so this does nothing yet."""

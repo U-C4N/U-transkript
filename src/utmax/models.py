@@ -10,12 +10,16 @@ import os
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal, Protocol, overload
+from typing import Generic, Literal, Protocol, TypeVar, overload
 
 from utmax.errors import NotTranslatable, TranslationLanguageNotAvailable
 
 __all__ = [
+    "BulkReport",
+    "BulkResult",
+    "BulkStatus",
     "Codec",
+    "CollectionKind",
     "Container",
     "DownloadResult",
     "Format",
@@ -30,7 +34,9 @@ __all__ = [
     "TrackFetcher",
     "TrackList",
     "Transcript",
+    "VideoEntry",
     "VideoInfo",
+    "VideoList",
     "Word",
 ]
 
@@ -40,6 +46,10 @@ Quality = Literal["compat", "max"]
 SubtitleMode = Literal["embed", "sidecar", "both"]
 ProgressPhase = Literal["downloading", "muxing", "converting", "finished"]
 Codec = Literal["h264", "av1", "vp9", "aac", "he-aac", "opus", "other"]
+CollectionKind = Literal["all", "videos", "shorts", "live"]
+BulkStatus = Literal["ok", "skipped", "failed", "not_attempted"]
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,3 +385,115 @@ class DownloadResult:
     sidecars: tuple[Path, ...] = ()
     size_bytes: int = 0
     resumed: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class VideoEntry:
+    """One video of a playlist or channel, as :func:`utmax.list_videos` lists it."""
+
+    video_id: str
+    title: str
+    duration: float | None
+    channel: str
+    channel_id: str
+    index: int
+
+    @property
+    def url(self) -> str:
+        """The canonical watch URL."""
+        return f"https://www.youtube.com/watch?v={self.video_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class VideoList(Sequence[VideoEntry]):
+    """The videos of a playlist or channel, in YouTube's order.
+
+    ``source_id`` is the playlist that was listed: the playlist's own ID, or for a channel
+    the list YouTube keeps of its uploads (``UU...``, ``UULF...``, ``UUSH...``, ``UULV...``).
+    ``video_count`` is the number of videos YouTube says the playlist has (it can include
+    private videos, which are not listed); ``None`` when YouTube does not say.
+    """
+
+    title: str
+    source_id: str
+    kind: CollectionKind
+    video_count: int | None
+    entries: tuple[VideoEntry, ...]
+
+    @overload
+    def __getitem__(self, index: int) -> VideoEntry: ...
+    @overload
+    def __getitem__(self, index: slice) -> tuple[VideoEntry, ...]: ...
+    def __getitem__(self, index: int | slice) -> VideoEntry | tuple[VideoEntry, ...]:
+        return self.entries[index]
+
+    def __len__(self) -> int:
+        return len(self.entries)
+
+    def __iter__(self) -> Iterator[VideoEntry]:
+        return iter(self.entries)
+
+
+@dataclass(frozen=True, slots=True)
+class BulkResult(Generic[T]):
+    """What happened to one video of ``fetch_many``, ``translate_many`` or ``download_many``.
+
+    ``status`` is ``"ok"`` (``value`` holds the result, ``path`` the file written, if any),
+    ``"skipped"`` (``path`` is the file that already existed; ``None`` for a video listed
+    twice), ``"failed"`` (``error`` says why) or ``"not_attempted"`` (the run stopped first).
+    """
+
+    video_id: str
+    status: BulkStatus
+    value: T | None = None
+    path: Path | None = None
+    error: Exception | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BulkReport(Sequence[BulkResult[T]], Generic[T]):
+    """Every result of a bulk call, in the order the videos were given."""
+
+    results: tuple[BulkResult[T], ...]
+
+    @overload
+    def __getitem__(self, index: int) -> BulkResult[T]: ...
+    @overload
+    def __getitem__(self, index: slice) -> tuple[BulkResult[T], ...]: ...
+    def __getitem__(self, index: int | slice) -> BulkResult[T] | tuple[BulkResult[T], ...]:
+        return self.results[index]
+
+    def __len__(self) -> int:
+        return len(self.results)
+
+    def __iter__(self) -> Iterator[BulkResult[T]]:
+        return iter(self.results)
+
+    @property
+    def ok(self) -> tuple[BulkResult[T], ...]:
+        """The videos that succeeded."""
+        return self._with("ok")
+
+    @property
+    def skipped(self) -> tuple[BulkResult[T], ...]:
+        """The videos whose file already existed (or that were listed twice)."""
+        return self._with("skipped")
+
+    @property
+    def failed(self) -> tuple[BulkResult[T], ...]:
+        """The videos that failed; each result's ``error`` says why."""
+        return self._with("failed")
+
+    @property
+    def not_attempted(self) -> tuple[BulkResult[T], ...]:
+        """The videos never tried because the run stopped (YouTube blocked it, for example)."""
+        return self._with("not_attempted")
+
+    def raise_for_errors(self) -> None:
+        """Raise the error of the first failed video; do nothing when none failed."""
+        for result in self.results:
+            if result.error is not None:
+                raise result.error
+
+    def _with(self, status: BulkStatus) -> tuple[BulkResult[T], ...]:
+        return tuple(result for result in self.results if result.status == status)

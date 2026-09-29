@@ -12,6 +12,8 @@ from typing import Any
 
 __all__ = [
     "AgeRestricted",
+    "CollectionNotFound",
+    "CollectionUnavailable",
     "DownloadCancelled",
     "DownloadError",
     "DownloadIncomplete",
@@ -22,6 +24,7 @@ __all__ = [
     "FormatNotAvailable",
     "InvalidModelSpec",
     "InvalidOption",
+    "InvalidSource",
     "InvalidVideoId",
     "IpBlocked",
     "MissingExtra",
@@ -88,6 +91,15 @@ class InvalidVideoId(UTMaxError, ValueError):
     """The input does not contain a YouTube video ID."""
 
     suggestion = "Pass a YouTube URL or an 11-character video ID."
+
+
+class InvalidSource(UTMaxError, ValueError):
+    """The input is not a playlist or a channel."""
+
+    suggestion = (
+        "Pass a playlist URL or ID, a channel URL, an @handle or a channel ID "
+        "(UC followed by 22 characters)."
+    )
 
 
 class InvalidModelSpec(UTMaxError, ValueError):
@@ -268,6 +280,47 @@ class TranslationLanguageNotAvailable(YouTubeError):
     ) -> None:
         super().__init__(message, video_id=video_id, suggestion=suggestion)
         self.available = tuple(available)
+
+
+class CollectionNotFound(YouTubeError):
+    """The playlist or channel does not exist, is private, or has no public videos."""
+
+    suggestion = (
+        "Check the link; private playlists and channels without public videos cannot be listed."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source: str,
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, video_id=video_id, suggestion=suggestion)
+        self.source = source
+
+
+class CollectionUnavailable(YouTubeError):
+    """YouTube will not list this playlist, such as a Mix."""
+
+    suggestion = (
+        "Mixes (playlists starting with RD) and other generated playlists cannot be listed; "
+        "list a regular playlist or the channel instead."
+    )
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source: str,
+        reason: str = "",
+        video_id: str | None = None,
+        suggestion: str | None = None,
+    ) -> None:
+        super().__init__(message, video_id=video_id, suggestion=suggestion)
+        self.source = source
+        self.reason = reason
 
 
 class DownloadError(UTMaxError):
