@@ -1446,7 +1446,7 @@ git commit -m "feat: add the InnerTube browse and resolve_url requests" -m "Co-A
   - `parse_browse_page(data: Mapping[str, Any]) -> BrowsePage` for first and continuation pages of both clients.
   - `resolved_channel_id(data: Mapping[str, Any]) -> str | None`.
   - `alert_error(page: BrowsePage, *, source: str) -> CollectionNotFound | CollectionUnavailable`.
-- Produces (in `tests.helpers.browse`, for Tasks 6 and 11): `CHANNEL_ID`, `VIDEOS_LIST`, `VR_PAGE_1`, `VR_PAGE_2`, `WEB_LAST_PAGE`, `browse_fixture(name)`, `alert_page(text)`, `error_body(code)`, `lockup(video_id, *, badge="3:51", title="A video", channel_id="")`, `web_page(*items, header=None)`, `vr_page(*video_ids, token=None, count="")`.
+- Produces (in `tests.helpers.browse`, for Tasks 5, 6 and 11): `CHANNEL_ID`, `VIDEOS_LIST`, `VR_PAGE_1`, `VR_PAGE_2`, `WEB_LAST_PAGE`, `browse_fixture(name)`, `alert_page(text)`, `error_body(code)`, `lockup(video_id, *, badge="3:51", title="A video", channel_id="")`, `web_page(*items, header=None)`, `vr_page(*video_ids, token=None, count="")`.
 
 - [ ] **Step 1: Add the recorded answers**
 
@@ -3355,7 +3355,7 @@ git commit -m "feat: read browse pages of both clients over recorded answers" -m
 - Test: `tests/unit/core/test_pager.py` (create)
 
 **Interfaces:**
-- Consumes: `BrowsePage` (Task 4); `VideoEntry` (Task 1).
+- Consumes: `BrowsePage` and `parse_browse_page` (Task 4), and in the tests `CHANNEL_ID` and `browse_fixture` of `tests.helpers.browse` (Task 4); `VideoEntry` (Task 1).
 - Produces (in `utmax.core.browse`):
   - `MAX_PAGES = 1000`.
   - `Pager(*, limit: int | None = None, max_pages: int = MAX_PAGES)` with `add(page: BrowsePage) -> str | None` (the continuation token to fetch next, or `None` when the listing is complete), `entries -> tuple[VideoEntry, ...]` (numbered 1, 2, 3 …, repeats dropped; a video that names no channel gets the playlist owner of the first page, `owner_name` and `owner_id`, because only a first page has a header) and `truncated: bool` (set when `max_pages` stopped the listing).
