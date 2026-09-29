@@ -61,6 +61,8 @@ def test_the_web_client_still_reads_upload_lists() -> None:
     innertube = InnerTubeClient(RetryingTransport(UrllibTransport()))
     page = parse_browse_page(innertube.browse(WEB, browse_id=f"VLUULF{RICK[2:]}"))
     assert page.items >= 50
+    # items counts every list item; videos holds those whose video ID the reader found
+    assert len(page.videos) >= 50
     assert page.continuation is not None
     assert all(video.duration for video in page.videos[:10])
     assert page.video_count is not None
