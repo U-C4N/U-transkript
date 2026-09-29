@@ -1,0 +1,164 @@
+{
+ "header": {
+  "playlistHeaderRenderer": {
+   "playlistId": "UULFuAXFkgsw1L7xaCfnd5JJOw",
+   "title": {
+    "runs": [
+     {
+      "text": "Videos"
+     }
+    ]
+   },
+   "numVideosText": {
+    "runs": [
+     {
+      "text": "139"
+     },
+     {
+      "text": " videos"
+     }
+    ]
+   },
+   "ownerText": {
+    "runs": [
+     {
+      "text": "Rick Astley",
+      "navigationEndpoint": {
+       "browseEndpoint": {
+        "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+       }
+      }
+     }
+    ]
+   }
+  }
+ },
+ "contents": {
+  "singleColumnBrowseResultsRenderer": {
+   "tabs": [
+    {
+     "tabRenderer": {
+      "content": {
+       "sectionListRenderer": {
+        "contents": [
+         {
+          "playlistVideoListRenderer": {
+           "contents": [
+            {
+             "playlistVideoRenderer": {
+              "videoId": "PXC_PYeB6F8",
+              "title": {
+               "runs": [
+                {
+                 "text": "Rick Astley - Angels On My Side (Live at The O2, London, April 2026)"
+                }
+               ]
+              },
+              "index": {
+               "runs": [
+                {
+                 "text": "1"
+                }
+               ]
+              },
+              "shortBylineText": {
+               "runs": [
+                {
+                 "text": "Rick Astley",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+                  }
+                 }
+                }
+               ]
+              },
+              "lengthSeconds": "231",
+              "isPlayable": true
+             }
+            },
+            {
+             "playlistVideoRenderer": {
+              "videoId": "LaOUkDBDjW8",
+              "title": {
+               "runs": [
+                {
+                 "text": "Rick Astley - Dance (Live at The O2, London, April 2026)"
+                }
+               ]
+              },
+              "index": {
+               "runs": [
+                {
+                 "text": "2"
+                }
+               ]
+              },
+              "shortBylineText": {
+               "runs": [
+                {
+                 "text": "Rick Astley",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+                  }
+                 }
+                }
+               ]
+              },
+              "lengthSeconds": "234",
+              "isPlayable": true
+             }
+            },
+            {
+             "playlistVideoRenderer": {
+              "videoId": "wvr7-pDJUOA",
+              "title": {
+               "runs": [
+                {
+                 "text": "Rick Astley - Keep Singing (Live at The O2, London, April 2026)"
+                }
+               ]
+              },
+              "index": {
+               "runs": [
+                {
+                 "text": "3"
+                }
+               ]
+              },
+              "shortBylineText": {
+               "runs": [
+                {
+                 "text": "Rick Astley",
+                 "navigationEndpoint": {
+                  "browseEndpoint": {
+                   "browseId": "UCuAXFkgsw1L7xaCfnd5JJOw"
+                  }
+                 }
+                }
+               ]
+              },
+              "lengthSeconds": "248",
+              "isPlayable": true
+             }
+            }
+           ],
+           "continuations": [
+            {
+             "nextContinuationData": {
+              "continuation": "4qmFsgJUEhxWTFVVTEZ1QVhGa2dzdzFMN3hhQ2ZuZDVKSk93GjRDQUY2SGxCVU9rTkNVV2xGUkU1RlRYcFNSRTFyU2tOUmVsVjNUMFJKTVZKVVRRJTNEJTNE"
+             }
+            }
+           ]
+          }
+         }
+        ]
+       }
+      }
+     }
+    }
+   ]
+  }
+ }
+}

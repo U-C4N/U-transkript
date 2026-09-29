@@ -19,7 +19,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from utmax.adapters.http import RetryingTransport, UrllibTransport
 from utmax.adapters.innertube import InnerTubeClient
 from utmax.core.captions import caption_url
-from utmax.core.clients import ANDROID, ANDROID_VR, IOS
+from utmax.core.clients import ANDROID, ANDROID_VR, IOS, WEB
 from utmax.transport import HttpRequest
 
 VIDEO_ID = "dQw4w9WgXcQ"
@@ -45,6 +45,51 @@ KEPT_FORMAT_FIELDS = (
     "drmFamilies",
     "targetDurationSec",
 )
+CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw"  # Rick Astley
+VIDEOS_LIST = f"UULF{CHANNEL_ID[2:]}"  # his long-form uploads
+SHORTS_LIST = f"UUSH{CHANNEL_ID[2:]}"  # his Shorts
+HANDLE_URL = "https://www.youtube.com/@RickAstleyYT"
+UNKNOWN_HANDLE_URL = "https://www.youtube.com/@thishandledoesnotexist20260928x"
+# What the browse fixtures keep of each renderer (True keeps a whole value).
+OWNER_KEEP = {"runs": {"text": True, "navigationEndpoint": {"browseEndpoint": {"browseId": True}}}}
+HEADER_KEEP = {"playlistId": True, "title": True, "numVideosText": True, "ownerText": OWNER_KEEP}
+PLAYLIST_VIDEO_KEEP = {
+    "videoId": True,
+    "title": True,
+    "index": True,
+    "shortBylineText": OWNER_KEEP,
+    "lengthSeconds": True,
+    "isPlayable": True,
+}
+CHANNEL_RUN_KEEP = {
+    "content": True,
+    "commandRuns": {"onTap": {"innertubeCommand": {"browseEndpoint": {"browseId": True}}}},
+}
+BADGE_KEEP = {
+    "thumbnailBottomOverlayViewModel": {"badges": {"thumbnailBadgeViewModel": {"text": True}}}
+}
+LOCKUP_KEEP = {
+    "contentId": True,
+    "contentType": True,
+    "contentImage": {"thumbnailViewModel": {"overlays": BADGE_KEEP}},
+    "metadata": {
+        "lockupMetadataViewModel": {
+            "title": True,
+            "metadata": {
+                "contentMetadataViewModel": {
+                    "metadataRows": {"metadataParts": {"text": CHANNEL_RUN_KEEP}}
+                }
+            },
+        }
+    },
+}
+SHORTS_KEEP = {
+    "onTap": {"innertubeCommand": {"reelWatchEndpoint": {"videoId": True}}},
+    "overlayMetadata": {"primaryText": True},
+}
+CONTINUATION_KEEP = {
+    "continuationCommand": {"innertubeCommand": {"continuationCommand": {"token": True}}}
+}
 
 
 def redact_url(url: str) -> str:
@@ -103,6 +148,126 @@ def streams_fixture(data: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def prune(node: Any, keep: Any) -> Any:
+    """Only the keys named in ``keep`` (``True`` keeps a whole value); lists are pruned per item."""
+    if keep is True:
+        return node
+    if isinstance(node, list):
+        return [prune(item, keep) for item in node]
+    if isinstance(node, dict):
+        return {key: prune(node[key], sub) for key, sub in keep.items() if key in node}
+    return node
+
+
+def playlist_page(renderer: dict[str, Any], count: int, token: str) -> dict[str, Any]:
+    """An ANDROID_VR video list with its first ``count`` videos and a continuation token."""
+    return {
+        "contents": [
+            {"playlistVideoRenderer": prune(item["playlistVideoRenderer"], PLAYLIST_VIDEO_KEEP)}
+            for item in renderer["contents"][:count]
+        ],
+        "continuations": [{"nextContinuationData": {"continuation": token}}],
+    }
+
+
+def android_vr_pages(innertube: InnerTubeClient) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The first two ANDROID_VR pages of VIDEOS_LIST: three and two videos."""
+    first = innertube.browse(ANDROID_VR, browse_id=f"VL{VIDEOS_LIST}")
+    tab = first["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]
+    renderer = next(
+        item["playlistVideoListRenderer"]
+        for item in tab["content"]["sectionListRenderer"]["contents"]
+        if "playlistVideoListRenderer" in item
+    )
+    token = renderer["continuations"][0]["nextContinuationData"]["continuation"]
+    second = innertube.browse(ANDROID_VR, continuation=token)
+    following = second["continuationContents"]["playlistVideoListContinuation"]
+    next_token = following["continuations"][0]["nextContinuationData"]["continuation"]
+    section = {"playlistVideoListRenderer": playlist_page(renderer, 3, token)}
+    header = prune(first["header"]["playlistHeaderRenderer"], HEADER_KEEP)
+    first_page = {
+        "header": {"playlistHeaderRenderer": header},
+        "contents": {
+            "singleColumnBrowseResultsRenderer": {
+                "tabs": [
+                    {"tabRenderer": {"content": {"sectionListRenderer": {"contents": [section]}}}}
+                ]
+            }
+        },
+    }
+    continuation = playlist_page(following, 2, next_token)
+    second_page = {"continuationContents": {"playlistVideoListContinuation": continuation}}
+    return first_page, second_page
+
+
+def web_items(items: list[Any]) -> list[Any]:
+    """WEB list items with only the fields utmax reads."""
+    kept: list[Any] = []
+    for item in items:
+        if "lockupViewModel" in item:
+            kept.append({"lockupViewModel": prune(item["lockupViewModel"], LOCKUP_KEEP)})
+        elif "continuationItemViewModel" in item:
+            view = prune(item["continuationItemViewModel"], CONTINUATION_KEEP)
+            kept.append({"continuationItemViewModel": view})
+        elif "richItemRenderer" in item:
+            short = prune(item["richItemRenderer"]["content"]["shortsLockupViewModel"], SHORTS_KEEP)
+            kept.append({"richItemRenderer": {"content": {"shortsLockupViewModel": short}}})
+    return kept
+
+
+def web_page(items: list[Any], header: dict[str, Any]) -> dict[str, Any]:
+    """A WEB first page holding ``items`` under a playlist header."""
+    section = {"itemSectionRenderer": {"contents": items}}
+    return {
+        "header": {"playlistHeaderRenderer": prune(header, HEADER_KEEP)},
+        "contents": {
+            "twoColumnBrowseResultsRenderer": {
+                "tabs": [
+                    {"tabRenderer": {"content": {"sectionListRenderer": {"contents": [section]}}}}
+                ]
+            }
+        },
+    }
+
+
+def web_pages(innertube: InnerTubeClient) -> tuple[dict[str, Any], ...]:
+    """WEB pages: the first page of VIDEOS_LIST (three videos) and its last page (the first
+    two and the last video), and the first page of SHORTS_LIST (two Shorts)."""
+    first = innertube.browse(WEB, browse_id=f"VL{VIDEOS_LIST}")
+    tab = first["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]
+    items = tab["content"]["sectionListRenderer"]["contents"][0]["itemSectionRenderer"]["contents"]
+    command = items[-1]["continuationItemViewModel"]["continuationCommand"]
+    second = innertube.browse(
+        WEB, continuation=command["innertubeCommand"]["continuationCommand"]["token"]
+    )
+    action = second["onResponseReceivedActions"][0]["appendContinuationItemsAction"]
+    appended = action["continuationItems"]
+    shorts = innertube.browse(WEB, browse_id=f"VL{SHORTS_LIST}")
+    shorts_tab = shorts["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]
+    shorts_section = shorts_tab["content"]["sectionListRenderer"]["contents"][0]
+    grid = shorts_section["itemSectionRenderer"]["contents"][0]["richGridRenderer"]
+    header = first["header"]["playlistHeaderRenderer"]
+    first_page = web_page(web_items([*items[:3], items[-1]]), header)
+    last_items = web_items([*appended[:2], appended[-1]])
+    second_page = {
+        "onResponseReceivedActions": [
+            {"appendContinuationItemsAction": {"continuationItems": last_items}}
+        ]
+    }
+    shorts_page = web_page(
+        [{"richGridRenderer": {"contents": web_items(grid["contents"][:2])}}],
+        shorts["header"]["playlistHeaderRenderer"],
+    )
+    return first_page, second_page, shorts_page
+
+
+def resolved(innertube: InnerTubeClient, url: str) -> dict[str, Any]:
+    """The ``endpoint`` of the ANDROID_VR ``navigation/resolve_url`` answer for ``url``."""
+    endpoint = innertube.resolve_url(ANDROID_VR, url)["endpoint"]
+    kept = {key: endpoint[key] for key in ("browseEndpoint", "urlEndpoint") if key in endpoint}
+    return {"endpoint": kept}
+
+
 def first_elements(xml: str, tag: str, count: int, *, head_end: str, tail: str) -> str:
     head = xml[: xml.index(head_end) + len(head_end)]
     elements = re.findall(rf"<{tag}\b.*?</{tag}>", xml, flags=re.DOTALL)[:count]
@@ -155,13 +320,31 @@ def main() -> None:
         "srv3_en_asr.xml",
         first_elements(srv3, "p", 16, head_end="<body>", tail="\n</body></timedtext>\n"),
     )
+    vr_first, vr_second = android_vr_pages(innertube)
+    web_first, web_second, web_shorts = web_pages(innertube)
+    browse_fixtures = {
+        "browse_android_vr_1.json": vr_first,
+        "browse_android_vr_2.json": vr_second,
+        "browse_web_1.json": web_first,
+        "browse_web_2.json": web_second,
+        "browse_web_shorts.json": web_shorts,
+        "resolve_handle.json": resolved(innertube, HANDLE_URL),
+        "resolve_unknown.json": resolved(innertube, UNKNOWN_HANDLE_URL),
+    }
+    for name, data in browse_fixtures.items():
+        write(name, json.dumps(data, ensure_ascii=False, indent=1) + "\n")
     write(
         "README.md",
         f"# YouTube fixtures\n\nRecorded {date.today().isoformat()} from video `{VIDEO_ID}` with\n"
         "`uv run python scripts/record_fixtures.py`. URL parameters "
         f"{', '.join(sorted(SECRET_PARAMS))} are replaced with `REDACTED`.\n"
         "`streams_android_vr.json` keeps only the stream fields utmax reads; its URLs are\n"
-        "placeholders that keep the itag and the client name.\n",
+        "placeholders that keep the itag and the client name.\n"
+        "`browse_*.json` hold the first videos of Rick Astley's long-form uploads\n"
+        f"(`{VIDEOS_LIST}`: ANDROID_VR pages 1 and 2, the WEB first and last pages) and\n"
+        f"of his Shorts (`{SHORTS_LIST}`, WEB), trimmed to the fields utmax reads;\n"
+        "`resolve_*.json` hold the ANDROID_VR `navigation/resolve_url` answers for\n"
+        "`@RickAstleyYT` and for a handle that does not exist.\n",
     )
 
 
