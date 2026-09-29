@@ -26,6 +26,8 @@ from utmax.client import Client
 from utmax.core.downloads import DEFAULT_CHUNK_SIZE
 from utmax.errors import (
     AgeRestricted,
+    CollectionNotFound,
+    CollectionUnavailable,
     DownloadCancelled,
     DownloadError,
     DownloadIncomplete,
@@ -36,6 +38,7 @@ from utmax.errors import (
     FormatNotAvailable,
     InvalidModelSpec,
     InvalidOption,
+    InvalidSource,
     InvalidVideoId,
     IpBlocked,
     MissingExtra,
@@ -65,6 +68,9 @@ from utmax.errors import (
     YouTubeRequestFailed,
 )
 from utmax.models import (
+    BulkReport,
+    BulkResult,
+    CollectionKind,
     Container,
     DownloadResult,
     Format,
@@ -77,14 +83,21 @@ from utmax.models import (
     Track,
     TrackList,
     Transcript,
+    VideoEntry,
     VideoInfo,
+    VideoList,
     Word,
 )
 from utmax.providers import Translator
 
 __all__ = [
     "AgeRestricted",
+    "BulkReport",
+    "BulkResult",
     "Client",
+    "CollectionKind",
+    "CollectionNotFound",
+    "CollectionUnavailable",
     "Container",
     "DownloadCancelled",
     "DownloadError",
@@ -99,6 +112,7 @@ __all__ = [
     "FormatNotAvailable",
     "InvalidModelSpec",
     "InvalidOption",
+    "InvalidSource",
     "InvalidVideoId",
     "IpBlocked",
     "Language",
@@ -128,7 +142,9 @@ __all__ = [
     "Translator",
     "UTMaxError",
     "UnsupportedFormat",
+    "VideoEntry",
     "VideoInfo",
+    "VideoList",
     "VideoUnavailable",
     "VideoUnplayable",
     "Word",
