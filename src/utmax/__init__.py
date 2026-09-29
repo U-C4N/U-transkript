@@ -11,6 +11,9 @@ Quick start::
     utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
     utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 + AAC + English subtitles
+
+    videos = utmax.list_videos("@RickAstleyYT", kind="videos", limit=20)
+    utmax.fetch_many(videos, out_dir="subs")  # one .srt per video
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from utmax._version import __version__
@@ -89,6 +92,7 @@ from utmax.models import (
     Word,
 )
 from utmax.providers import Translator
+from utmax.services.bulk import DEFAULT_DOWNLOAD_NAME, DEFAULT_TRANSCRIPT_NAME
 
 __all__ = [
     "AgeRestricted",
@@ -154,9 +158,13 @@ __all__ = [
     "__version__",
     "bilingual",
     "download",
+    "download_many",
     "fetch",
+    "fetch_many",
     "list_tracks",
+    "list_videos",
     "translate",
+    "translate_many",
     "translator",
     "video_info",
 ]
@@ -407,4 +415,221 @@ def download(
         ffmpeg=ffmpeg,
         progress=progress,
         cancel=cancel,
+    )
+
+
+def list_videos(
+    source: str, *, kind: CollectionKind = "all", limit: int | None = None
+) -> VideoList:
+    """The videos of a playlist or a channel, in YouTube's order.
+
+    Examples::
+
+        videos = utmax.list_videos("https://www.youtube.com/playlist?list=PL...")
+        shorts = utmax.list_videos("@RickAstleyYT", kind="shorts", limit=50)
+        report = utmax.fetch_many(videos, out_dir="subs")
+
+    Args:
+        source: a playlist URL or ID, a channel URL (``/@handle``, ``/channel/UC...``,
+            ``/c/name``, ``/user/name``; tabs such as ``/videos`` are ignored), an ``@handle``
+            or a channel ID.
+        kind: for channels, ``"all"`` uploads, long-form ``"videos"``, ``"shorts"`` or past
+            ``"live"`` streams; playlists are always listed whole.
+        limit: stop after this many videos; ``None`` lists everything (at most 1000 pages).
+
+    Each :class:`VideoEntry` has the video ID, title, duration (``None`` when YouTube does not
+    show one), channel and its 1-based position. Private and deleted videos are left out and a
+    video listed twice appears once. A channel without Shorts or live streams gives an empty
+    list for those kinds.
+
+    Raises:
+        InvalidSource: ``source`` names no playlist or channel (checked before any request).
+        InvalidOption: ``kind`` or ``limit`` is invalid, or ``kind`` was given for a playlist.
+        CollectionUnavailable: a Mix (``RD...``) or another playlist YouTube will not list.
+        CollectionNotFound: the playlist or channel does not exist or is private.
+        RequestBlocked, IpBlocked: YouTube is blocking or rate-limiting this IP address.
+        NetworkError: the network failed after retries.
+    """
+    return _client().list_videos(source, kind=kind, limit=limit)
+
+
+def fetch_many(
+    videos: Iterable[str | VideoEntry],
+    *,
+    out_dir: str | os.PathLike[str] | None = None,
+    format: FormatName = "srt",
+    languages: Sequence[str] | str | None = None,
+    include_manual: bool = True,
+    include_generated: bool = True,
+    concurrency: int = 4,
+    skip_existing: bool = True,
+    filename: str = DEFAULT_TRANSCRIPT_NAME,
+    progress: Callable[[BulkResult[Transcript]], None] | None = None,
+) -> BulkReport[Transcript]:
+    """Fetch the transcripts of many videos, optionally saving each one as a file.
+
+    Example::
+
+        report = utmax.fetch_many(utmax.list_videos("@RickAstleyYT", limit=20), out_dir="subs")
+        print(len(report.ok), "saved,", len(report.failed), "failed")
+
+    Args:
+        videos: video IDs, URLs and/or entries of a :func:`list_videos` result.
+        out_dir: the folder for the files (created when missing); ``None`` keeps the
+            transcripts in memory only (``result.value``).
+        format: ``"srt"``, ``"vtt"``, ``"json"``, ``"txt"`` or ``"pretty"`` (saved as ``.txt``).
+        languages: language codes in order of preference, chosen per video as in
+            :func:`fetch`; ``include_manual`` and ``include_generated`` work as there too.
+        concurrency: how many videos are fetched at the same time, 1 to 16.
+        skip_existing: skip a video, without any request, when ``out_dir`` already holds its
+            file: the name the template gives, with ``*`` for what only the request tells (a
+            file in another language than ``languages`` asks for does not count).
+        filename: the file-name template. Fields: ``{video_id}`` (required), ``{title}``,
+            ``{channel}``, ``{index}`` (the position in ``videos``, or in the listing for
+            :class:`VideoEntry` items), ``{language_code}`` and ``{ext}``. Format specs such
+            as ``{index:03d}`` work.
+        progress: called with each video's :class:`BulkResult` as soon as it is known, never
+            in parallel.
+
+    The :class:`BulkReport` holds one result per video, in the order given: ``"ok"``,
+    ``"skipped"``, ``"failed"`` (with its ``error``) or ``"not_attempted"``. A failure never
+    stops the other videos, except that when YouTube blocks the IP address the videos not
+    started yet are not attempted. ``report.raise_for_errors()`` raises the first failure.
+
+    Raises:
+        InvalidOption, UnsupportedFormat: bad arguments (before any request).
+        KeyboardInterrupt: Ctrl-C; videos not started yet are dropped.
+    """
+    return _client().fetch_many(
+        videos,
+        out_dir=out_dir,
+        format=format,
+        languages=languages,
+        include_manual=include_manual,
+        include_generated=include_generated,
+        concurrency=concurrency,
+        skip_existing=skip_existing,
+        filename=filename,
+        progress=progress,
+    )
+
+
+def translate_many(
+    videos: Iterable[str | VideoEntry],
+    to: str,
+    *,
+    model: str | Translator,
+    out_dir: str | os.PathLike[str] | None = None,
+    format: FormatName = "srt",
+    languages: Sequence[str] | str | None = None,
+    bilingual: bool = False,
+    instructions: str | None = None,
+    resegment: bool | None = None,
+    concurrency: int = 2,
+    skip_existing: bool = True,
+    filename: str = DEFAULT_TRANSCRIPT_NAME,
+    progress: Callable[[BulkResult[Transcript]], None] | None = None,
+    **options: Any,
+) -> BulkReport[Transcript]:
+    """Fetch the transcripts of many videos and translate them with one AI translator.
+
+    Example::
+
+        videos = utmax.list_videos("@RickAstleyYT", limit=20)
+        utmax.translate_many(videos, "tr", model="claude=claude-opus-5", out_dir="subs")
+
+    Args:
+        videos: video IDs, URLs and/or entries of a :func:`list_videos` result.
+        to: the target language code, such as ``"tr"``.
+        model: ``"provider=model-id"`` or a :class:`~utmax.providers.Translator`, as in
+            :func:`translate`.
+        out_dir, format, concurrency, skip_existing, filename, progress: as in
+            :func:`fetch_many`; ``{language_code}`` is the target language, or
+            ``"<source>+<target>"`` (such as ``"en+tr"``) with ``bilingual``.
+        languages: the source track, chosen per video as in :func:`fetch`.
+        bilingual: return (and save) bilingual transcripts, the original line on top.
+        instructions, resegment: as in :func:`translate`.
+        **options: passed to :func:`translator` when ``model`` is a string.
+
+    The same translator serves every video. Besides a block by YouTube, a rejected API key
+    stops the run: the videos not started yet are then ``"not_attempted"``.
+
+    Raises:
+        InvalidOption, InvalidModelSpec, UnsupportedFormat: bad arguments (before any request).
+        ProviderNotInstalled, ProviderAuthError: the translator cannot be created.
+        KeyboardInterrupt: Ctrl-C; videos not started yet are dropped.
+    """
+    return _client().translate_many(
+        videos,
+        to,
+        model=model,
+        out_dir=out_dir,
+        format=format,
+        languages=languages,
+        bilingual=bilingual,
+        instructions=instructions,
+        resegment=resegment,
+        concurrency=concurrency,
+        skip_existing=skip_existing,
+        filename=filename,
+        progress=progress,
+        **options,
+    )
+
+
+def download_many(
+    videos: Iterable[str | VideoEntry],
+    out_dir: str | os.PathLike[str],
+    *,
+    format: Container = "mp4",
+    quality: Quality = "compat",
+    subtitles: Sequence[str] | None = None,
+    subtitle_mode: SubtitleMode = "embed",
+    concurrency: int = 2,
+    skip_existing: bool = True,
+    filename: str = DEFAULT_DOWNLOAD_NAME,
+    ffmpeg: str | os.PathLike[str] | None = None,
+    progress: Callable[[BulkResult[DownloadResult]], None] | None = None,
+) -> BulkReport[DownloadResult]:
+    """Download many videos, or their audio, into one folder.
+
+    Example::
+
+        videos = utmax.list_videos("@RickAstleyYT", kind="videos")
+        utmax.download_many(videos, "rick", format="m4a")
+
+    Args:
+        videos: video IDs, URLs and/or entries of a :func:`list_videos` result.
+        out_dir: the folder for the files (created when missing).
+        format, quality, subtitles, subtitle_mode, ffmpeg: as in :func:`download`, for every
+            video; ``subtitles`` takes language codes only.
+        concurrency: how many videos are downloaded at the same time, 1 to 16 (each with four
+            connections).
+        skip_existing: skip a video, without any request, when ``out_dir`` already holds its
+            file; ``False`` downloads it again and replaces the file. Interrupted downloads
+            resume either way.
+        filename: the file-name template, as in :func:`fetch_many` but without
+            ``{language_code}``; the default is ``"{title} [{video_id}].{ext}"``.
+        progress: called with each video's :class:`BulkResult` as soon as it is known.
+
+    The :class:`BulkReport` works as for :func:`fetch_many`; each ``value`` is the video's
+    :class:`DownloadResult`.
+
+    Raises:
+        InvalidOption, UnsupportedFormat: bad arguments (before any request).
+        FFmpegNotFound: ``format="mp3"`` without a usable ffmpeg (before any request).
+        KeyboardInterrupt: Ctrl-C; running downloads stop and keep their ``.part`` files.
+    """
+    return _client().download_many(
+        videos,
+        out_dir,
+        format=format,
+        quality=quality,
+        subtitles=subtitles,
+        subtitle_mode=subtitle_mode,
+        concurrency=concurrency,
+        skip_existing=skip_existing,
+        filename=filename,
+        ffmpeg=ffmpeg,
+        progress=progress,
     )
