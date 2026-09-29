@@ -1,4 +1,5 @@
-"""InnerTube (YouTube's internal API): player requests with client fallback, and captions."""
+"""InnerTube (YouTube's internal API): player requests with client fallback, captions, and
+the ``browse`` and ``navigation/resolve_url`` requests behind playlists and channels."""
 
 from __future__ import annotations
 
@@ -85,11 +86,43 @@ class InnerTubeClient:
         response = self._transport.send(HttpRequest("POST", url, profile.request_headers(), body))
         return _json_object(response, video_id=video_id)
 
+    def browse(
+        self,
+        profile: ClientProfile,
+        *,
+        browse_id: str | None = None,
+        continuation: str | None = None,
+    ) -> dict[str, Any]:
+        """One raw ``browse`` answer of ``profile``: the first page of ``browse_id`` (``"VL"``
+        plus a playlist ID), or the page behind a ``continuation`` token."""
+        payload: dict[str, Any] = {"context": profile.context_payload()}
+        if browse_id is not None:
+            payload["browseId"] = browse_id
+        if continuation is not None:
+            payload["continuation"] = continuation
+        return self._with_block_retries(partial(self._post, profile, "browse", payload))
+
+    def resolve_url(self, profile: ClientProfile, url: str) -> dict[str, Any]:
+        """The raw ``navigation/resolve_url`` answer of ``profile`` for a YouTube ``url``, such as
+        a channel's ``https://www.youtube.com/@handle``."""
+        payload = {"context": profile.context_payload(), "url": url}
+        return self._with_block_retries(
+            partial(self._post, profile, "navigation/resolve_url", payload)
+        )
+
     def fetch_captions(self, base_url: str, *, video_id: str) -> HttpResponse:
         """Download a caption track as json3."""
         check_caption_url(base_url, video_id=video_id)
         url = caption_url(base_url, fmt="json3")
         return self._with_block_retries(partial(self._caption_response, url, video_id))
+
+    def _post(
+        self, profile: ClientProfile, endpoint: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        url = f"{API_BASE}/{endpoint}?prettyPrint=false"
+        body = json.dumps(payload).encode("utf-8")
+        response = self._transport.send(HttpRequest("POST", url, profile.request_headers(), body))
+        return _json_object(response)
 
     def _playable(
         self, profile: ClientProfile, video_id: str, api_key: str | None, *, purpose: Purpose
@@ -150,7 +183,7 @@ class InnerTubeClient:
                 )
 
 
-def _json_object(response: HttpResponse, *, video_id: str) -> dict[str, Any]:
+def _json_object(response: HttpResponse, *, video_id: str | None = None) -> dict[str, Any]:
     if response.status == 429:
         raise IpBlocked("YouTube rate-limited this IP address (HTTP 429).", video_id=video_id)
     if response.status != 200:
