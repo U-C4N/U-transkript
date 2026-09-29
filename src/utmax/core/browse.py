@@ -23,7 +23,7 @@ __all__ = ["BrowsePage", "alert_error", "parse_browse_page", "resolved_channel_i
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _CHANNEL_ID = re.compile(r"UC[A-Za-z0-9_-]{22}")
-_VIDEO_COUNT = re.compile(r"(\d[\d,]*) videos?")
+_VIDEO_COUNT = re.compile(r"(\d[\d,]{0,14}) videos?")  # int() refuses absurdly long numbers
 _CLOCK = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})")
 _LISTING_ROOTS = ("contents", "continuationContents", "onResponseReceivedActions")
 _TOKEN_PATHS: dict[str, tuple[str, ...]] = {

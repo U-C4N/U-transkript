@@ -182,6 +182,7 @@ def test_the_title_falls_back_to_the_playlist_metadata() -> None:
         ("", None),
         ("many videos", None),
         (", videos", None),
+        pytest.param("9" * 5000 + " videos", None, id="5000 digits"),
     ],
 )
 def test_video_counts(text: str, count: int | None) -> None:
