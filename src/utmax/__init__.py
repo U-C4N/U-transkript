@@ -500,7 +500,8 @@ def fetch_many(
             :class:`VideoEntry` items), ``{language_code}`` and ``{ext}``. Format specs such
             as ``{index:03d}`` work.
         progress: called with each video's :class:`BulkResult` as soon as it is known, never
-            in parallel.
+            in parallel. An exception it raises stops the run like Ctrl-C and propagates, with
+            no report.
 
     The :class:`BulkReport` holds one result per video, in the order given: ``"ok"``,
     ``"skipped"``, ``"failed"`` (with its ``error``) or ``"not_attempted"``. A failure never
@@ -562,8 +563,11 @@ def translate_many(
         instructions, resegment: as in :func:`translate`.
         **options: passed to :func:`translator` when ``model`` is a string.
 
-    The same translator serves every video. Besides a block by YouTube, a rejected API key
-    stops the run: the videos not started yet are then ``"not_attempted"``.
+    The same translator serves every video. ``concurrency`` counts videos; each video's cues
+    are translated in up to the translator's own ``concurrency`` batches at a time (set it with
+    :func:`translator`, for example ``utmax.translator(model, concurrency=2)``). Besides a
+    block by YouTube, a rejected API key stops the run: the videos not started yet are then
+    ``"not_attempted"``. Ctrl-C waits for the translations already running to finish.
 
     Raises:
         InvalidOption, InvalidModelSpec, UnsupportedFormat: bad arguments (before any request).
@@ -621,7 +625,8 @@ def download_many(
             resume either way.
         filename: the file-name template, as in :func:`fetch_many` but without
             ``{language_code}``; the default is ``"{title} [{video_id}].{ext}"``.
-        progress: called with each video's :class:`BulkResult` as soon as it is known.
+        progress: called with each video's :class:`BulkResult` as soon as it is known; an
+            exception it raises stops the run (running downloads keep their ``.part`` files).
 
     The :class:`BulkReport` works as for :func:`fetch_many`; each ``value`` is the video's
     :class:`DownloadResult`.
