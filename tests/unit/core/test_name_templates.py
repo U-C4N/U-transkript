@@ -1,0 +1,127 @@
+"""Tests for the file-name templates of bulk calls."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from fnmatch import fnmatchcase
+from pathlib import PurePath
+
+import pytest
+
+from tests.helpers.builders import VIDEO
+from utmax.core.filenames import (
+    MAX_BULK_NAME_BYTES,
+    NameTemplate,
+    glob_literal,
+    resolve_target,
+)
+from utmax.errors import InvalidOption
+from utmax.models import VideoInfo
+
+FIELDS = ("video_id", "title", "channel", "index", "language_code", "ext")
+TRANSCRIPT = NameTemplate.parse("{video_id}.{language_code}.{ext}", allowed=FIELDS)
+VIDEO_NAME = NameTemplate.parse("{title} [{video_id}].{ext}", allowed=FIELDS)
+
+
+def test_templates_remember_their_fields() -> None:
+    assert TRANSCRIPT.fields == ("video_id", "language_code", "ext")
+    numbered = NameTemplate.parse("{index:03d} - {title} [{video_id}].{ext}", allowed=FIELDS)
+    assert numbered.fields == ("index", "title", "video_id", "ext")
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("{title}.{ext}", "does not contain {video_id}"),
+        ("{video_id}.{language}.{ext}", "uses {language}"),
+        ("{video_id}.{title.upper}", "uses {title.upper}"),
+        ("{video_id}{}", "uses {}"),
+        ("{video_id", "is not a valid template"),
+        ("{video_id}}", "is not a valid template"),
+        ("subs/{video_id}.{ext}", "makes a path"),
+        ("{video_id}\\{ext}", "makes a path"),
+        ("{title:/>9} {video_id}", "makes a path"),
+        ("{video_id}{title:{index}}", "inside a format spec"),
+        ("{video_id}.{title:03d}", "cannot be filled in"),
+    ],
+)
+def test_bad_templates_are_refused(text: str, message: str) -> None:
+    with pytest.raises(InvalidOption, match="filename=") as caught:
+        NameTemplate.parse(text, allowed=FIELDS)
+    assert message in str(caught.value)
+
+
+def test_download_templates_have_no_language_field() -> None:
+    with pytest.raises(InvalidOption, match=r"uses \{language_code\}") as caught:
+        NameTemplate.parse("{video_id}.{language_code}.{ext}", allowed=("video_id", "ext"))
+    assert "{ext}, {video_id}" in caught.value.suggestion
+
+
+def test_render_makes_titles_channels_and_language_codes_safe() -> None:
+    template = NameTemplate.parse(
+        "{index:02d} {channel} - {title} [{video_id}].{language_code}.{ext}", allowed=FIELDS
+    )
+    name = template.render(
+        {
+            "video_id": "dQw4w9WgXcQ",
+            "title": 'Who: "Rick"?',
+            "channel": "AC/DC",
+            "index": 7,
+            "language_code": "en/../x",
+            "ext": "srt",
+        }
+    )
+    assert name == "07 AC_DC - Who_ _Rick__ [dQw4w9WgXcQ].en_.._x.srt"
+
+
+def test_an_empty_title_becomes_the_video_id() -> None:
+    values = {"video_id": "dQw4w9WgXcQ", "title": " ... ", "ext": "mp4"}
+    assert VIDEO_NAME.render(values) == "dQw4w9WgXcQ [dQw4w9WgXcQ].mp4"
+
+
+def test_long_names_shorten_the_title_and_keep_the_rest() -> None:
+    template = NameTemplate.parse("{channel} - {title} [{video_id}].{ext}", allowed=FIELDS)
+    wide = "\U00004e2d" * 100  # 300 UTF-8 bytes, cut to 60 characters (180 bytes) by safe_name
+    name = template.render(
+        {"video_id": "dQw4w9WgXcQ", "title": wide, "channel": wide, "ext": "mp4"}
+    )
+    assert len(name.encode("utf-8")) <= MAX_BULK_NAME_BYTES
+    assert name.endswith(" [dQw4w9WgXcQ].mp4")
+    assert name.startswith("\U00004e2d" * 60 + " - \U00004e2d")
+
+
+def test_patterns_escape_what_is_known_and_match_the_rest() -> None:
+    pattern = VIDEO_NAME.pattern({"video_id": "dQw4w9WgXcQ", "ext": "mp4", "title": "ignored"})
+    assert pattern == "* [[]dQw4w9WgXcQ].mp4"
+    assert fnmatchcase("Never Gonna [Live] [dQw4w9WgXcQ].mp4", pattern)
+    assert not fnmatchcase("Never Gonna [dQw4w9WgXcQ].mp4.137.part", pattern)
+    assert not fnmatchcase("Other [jNQXAC9IVRw].mp4", pattern)
+    assert TRANSCRIPT.pattern({"video_id": "dQw4w9WgXcQ", "ext": "srt"}) == "dQw4w9WgXcQ.*.srt"
+
+
+def test_patterns_take_extra_globs_as_they_are() -> None:
+    values = {"video_id": "dQw4w9WgXcQ", "ext": "srt", "language_code": "de"}
+    assert TRANSCRIPT.pattern(values) == "dQw4w9WgXcQ.de.srt"
+    assert TRANSCRIPT.pattern(values, {"language_code": "de-*"}) == "dQw4w9WgXcQ.de-*.srt"
+    numbered = NameTemplate.parse("{index:03d} {video_id}.{ext}", allowed=FIELDS)
+    assert numbered.pattern({"video_id": "a", "index": 7, "ext": "srt"}) == "007 a.srt"
+    fixed = NameTemplate.parse("[{video_id}] subtitles.txt", allowed=FIELDS)
+    assert fixed.pattern({"video_id": "a"}) == "[[]a] subtitles.txt"
+
+
+def test_glob_literals_match_only_themselves() -> None:
+    assert glob_literal("a*b?c[d]") == "a[*]b[?]c[[]d]"
+    assert fnmatchcase("a*b?c[d]", glob_literal("a*b?c[d]"))
+    assert not fnmatchcase("axbycd]", glob_literal("a*b?c[d]"))
+
+
+def test_folder_targets_name_files_with_a_callback() -> None:
+    folder = resolve_target("videos/", format="m4a", is_dir=False)
+
+    def name(video: VideoInfo, ext: str) -> str:
+        return f"{video.video_id}.{ext}"
+
+    assert folder.path_for(VIDEO, name=name) == PurePath("videos", "dQw4w9WgXcQ.m4a")
+    assert folder.path_for(replace(VIDEO, title="")) == PurePath("videos", "dQw4w9WgXcQ.m4a")
+    file = resolve_target("rick.mp4", format=None, is_dir=False)
+    assert file.path_for(VIDEO, name=name) == PurePath("rick.mp4")
