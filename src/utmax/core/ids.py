@@ -113,7 +113,8 @@ def parse_source(value: str) -> Source:
     ignored.
 
     Raises:
-        CollectionUnavailable: ``value`` is a Mix (``RD...``), which YouTube never lists.
+        CollectionUnavailable: ``value`` is a Mix or another playlist YouTube generates
+            (``RD...``, including YouTube Music's ``RDCLAK5uy_...``), which utmax does not list.
         InvalidSource: ``value`` names no playlist or channel. No request is ever made.
     """
     text = value.strip()
@@ -121,8 +122,8 @@ def parse_source(value: str) -> Source:
         return Source("channel", id=text)
     if _HANDLE.fullmatch(text):
         return Source("channel", url=f"https://www.youtube.com/{text}")
-    if _MIX_ID.fullmatch(text):
-        raise _mix(value)
+    if _MIX_ID.fullmatch(text) and not _VIDEO_ID.fullmatch(text):
+        raise _generated(value, text)
     if _PLAYLIST_ID.fullmatch(text):
         return Source("playlist", id=text)
     source = _source_from_url(text, value)
@@ -157,7 +158,7 @@ def _source_from_url(text: str, value: str) -> Source | None:
     playlist = parse_qs(parts.query).get("list", [""])[0].strip()
     if playlist:
         if playlist.startswith("RD"):
-            raise _mix(value)
+            raise _generated(value, playlist)
         return Source("playlist", id=playlist) if _LIST_ID.fullmatch(playlist) else None
     segments = [segment for segment in parts.path.split("/") if segment]
     if host in _SHORT_HOSTS or not segments:
@@ -193,7 +194,15 @@ def _split_url(text: str) -> SplitResult | None:
         return None
 
 
-def _mix(value: str) -> CollectionUnavailable:
+def _generated(value: str, list_id: str) -> CollectionUnavailable:
+    """The error for a playlist YouTube generates (``RD...``), which utmax does not list."""
+    if list_id.startswith("RDCLAK5uy_"):
+        return CollectionUnavailable(
+            f"{value!r} is a YouTube Music playlist; utmax cannot list those yet.",
+            source=value,
+            reason="YouTube Music playlists (RDCLAK5uy_...) are not supported yet.",
+            suggestion="List the artist's channel, or an album (OLAK5uy_...), instead.",
+        )
     return CollectionUnavailable(
         f"{value!r} is a Mix, a playlist YouTube makes for each viewer; Mixes cannot be listed.",
         source=value,

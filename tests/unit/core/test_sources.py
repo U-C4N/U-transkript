@@ -94,6 +94,20 @@ def test_mixes_are_refused_before_any_request(value: str) -> None:
 @pytest.mark.parametrize(
     "value",
     [
+        "RDCLAK5uy_kmPRjHDECIcuVwnKsx2Ng7fyNgFKWNJFs",
+        "https://music.youtube.com/playlist?list=RDCLAK5uy_kmPRjHDECIcuVwnKsx2Ng7fyNgFKWNJFs",
+    ],
+)
+def test_youtube_music_playlists_are_refused_as_not_supported_yet(value: str) -> None:
+    with pytest.raises(CollectionUnavailable, match="YouTube Music playlist") as caught:
+        parse_source(value)
+    assert "Mix" not in str(caught.value)
+    assert caught.value.reason == "YouTube Music playlists (RDCLAK5uy_...) are not supported yet."
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
         "",
         "   ",
         "@",
@@ -116,7 +130,13 @@ def test_anything_else_is_invalid(value: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "value", ["dQw4w9WgXcQ", "https://youtu.be/dQw4w9WgXcQ", "youtube.com/shorts/dQw4w9WgXcQ"]
+    "value",
+    [
+        "dQw4w9WgXcQ",
+        "https://youtu.be/dQw4w9WgXcQ",
+        "youtube.com/shorts/dQw4w9WgXcQ",
+        "RDabcdefghi",
+    ],
 )
 def test_single_videos_point_to_fetch_and_download(value: str) -> None:
     with pytest.raises(InvalidSource, match="single video") as caught:
