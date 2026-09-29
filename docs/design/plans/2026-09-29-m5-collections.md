@@ -26,7 +26,7 @@
 ## Review Focus
 
 1. **Links people paste** — channel tabs (`/@RickAstleyYT/shorts`, `/channel/UC…/videos`, `/c/name/featured`), `m.`/`music.` hosts, links without a scheme or starting with `//`, `youtu.be/…?list=…`, a watch link inside a playlist, Mix links (`list=RD…`), percent-encoded handles, a plain video link → the right playlist or channel, or a clear `InvalidSource`/`CollectionUnavailable`, always before any request. Pinned in Task 2 (`test_playlists`, `test_channels`, `test_mixes_are_refused_before_any_request`, `test_anything_else_is_invalid`, `test_single_videos_point_to_fetch_and_download`).
-2. **Listings that break or change shape** — ANDROID_VR answering an unreadable page, a server error, or failing on page two; WEB's older continuation shape; a continuation token that repeats or never ends; private videos and repeated videos → one complete, numbered listing from a single client, never half a list glued from two. Pinned in Task 4 (`test_unplayable_and_foreign_items_are_counted_but_skipped`, `test_older_web_pages_continue_through_a_continuation_item_renderer`), Task 5 (all Pager tests) and Task 6 (`test_web_takes_over_when_android_vr_fails`, `test_web_restarts_the_listing_when_android_vr_fails_midway`, `test_an_unreadable_first_page_falls_back_to_web`, `test_the_page_cap_stops_endless_listings`).
+2. **Listings that break or change shape** — ANDROID_VR answering an unreadable page, a server error, or failing on page two; WEB's older continuation shape; a continuation token that repeats or never ends; private videos and repeated videos → one complete, numbered listing from a single client, never half a list glued from two; a listing that still ends before YouTube's own count (WEB shows only 100 of a channel's Shorts, and a page without items or a continuation ends any listing) is returned as it is with a WARNING on `utmax.youtube`, never silently. Pinned in Task 4 (`test_unplayable_and_foreign_items_are_counted_but_skipped`, `test_older_web_pages_continue_through_a_continuation_item_renderer`), Task 5 (all Pager tests) and Task 6 (`test_web_takes_over_when_android_vr_fails`, `test_web_restarts_the_listing_when_android_vr_fails_midway`, `test_an_unreadable_first_page_falls_back_to_web`, `test_the_page_cap_stops_endless_listings`, `test_web_lists_at_most_100_shorts_and_the_listing_says_so`, `test_a_continuation_page_without_items_ends_the_listing_with_a_warning`, and four tests that pin when a listing stays silent).
 3. **Playlists and channels that cannot be listed** — an unknown handle, a mistyped channel ID, a channel without Shorts or live streams, a channel without uploads, a private or deleted playlist, a rate limit → `CollectionNotFound`, `CollectionUnavailable` with YouTube's reason, an empty list, or `IpBlocked` at once. Pinned in Task 6 (`test_missing_playlists_are_not_found`, `test_youtube_alerts_explain_unviewable_playlists`, `test_channels_without_shorts_list_nothing`, `test_channels_without_uploads_are_not_found`, `test_unknown_handles_are_not_found_without_browsing`, `test_rate_limits_stop_the_listing_at_once`).
 4. **Running a bulk job again into the same folder** — files from an earlier run (possibly in another language or for another target language), titles containing `[` or `*`, `{index}` templates, a video listed twice, a half-finished download → a video is skipped without any request only when its file really exists; everything else runs, and interrupted downloads resume. Pinned in Task 7 (`test_patterns_escape_what_is_known_and_match_the_rest`, `test_glob_literals_match_only_themselves`), Task 9 (`test_existing_files_are_skipped_without_a_request`, `test_the_requested_languages_decide_which_files_count`, `test_translate_many_skips_what_it_would_write`) and Task 10 (`test_existing_downloads_are_skipped_without_a_request`, `test_skip_existing_false_replaces_the_file_it_downloads_again`, `test_ctrl_c_stops_the_downloads`).
 5. **Long bulk runs that go wrong** — YouTube blocks the IP address half-way, an API key is rejected, one video is private, the user presses Ctrl-C, a progress callback raises → the other videos still finish (or are reported as not attempted after a block), nothing hangs, Ctrl-C propagates once the running videos stopped, and the report keeps the input order. Pinned in Task 8 (`test_a_block_stops_the_run`, `test_ctrl_c_or_a_progress_error_stops_the_run`, `test_ctrl_c_while_the_videos_are_queued_stops_the_run`, `test_items_that_need_no_work_are_decided_first`), Task 9 (`test_a_block_stops_fetch_many`, `test_a_rejected_api_key_stops_translate_many`) and Task 10 (`test_ctrl_c_stops_the_downloads`, `test_failures_are_reported_and_blocks_stop_the_run`).
@@ -38,8 +38,8 @@
 - `POST /youtubei/v1/browse?prettyPrint=false` with `browseId` = `"VL"` + a playlist ID needs no API key. ANDROID_VR answers `contents.singleColumnBrowseResultsRenderer` → `playlistVideoListRenderer` with 20 `playlistVideoRenderer` items a page (`videoId`, `title.runs`, `index`, `shortBylineText.runs[].navigationEndpoint.browseEndpoint.browseId`, `lengthSeconds` as a string, `isPlayable`), the next token in `continuations[].nextContinuationData.continuation`, and the following pages under `continuationContents.playlistVideoListContinuation`.
 - WEB answers `contents.twoColumnBrowseResultsRenderer` with 100 `lockupViewModel` items a page (`contentId`; the duration only as a thumbnail badge such as `"3:51"`; the title in `metadata.lockupMetadataViewModel.title.content`; the channel in a metadata part whose `commandRuns[].onTap.innertubeCommand.browseEndpoint.browseId` is the channel ID), a `continuationItemViewModel` (`continuationCommand.innertubeCommand.continuationCommand.token`) as the last item, and the following pages under `onResponseReceivedActions[].appendContinuationItemsAction.continuationItems`. Older WEB pages used `continuationItemRenderer.continuationEndpoint.continuationCommand.token`.
 - Headers: ANDROID_VR uses `header.playlistHeaderRenderer` for every list (`title.runs`, `numVideosText` such as `"139 videos"` or `"1 video"`, `ownerText.runs`). WEB uses the same renderer (with `title.simpleText`) for a channel's upload lists but `header.pageHeaderRenderer` for regular playlists (`pageTitle`, and the count as a metadata text `"10 videos"`); WEB also sends `metadata.playlistMetadataRenderer.title`.
-- WEB lists a channel's Shorts (`UUSH…`) as `richGridRenderer` → `richItemRenderer.content.shortsLockupViewModel` (`onTap.innertubeCommand.reelWatchEndpoint.videoId`, `overlayMetadata.primaryText.content`), without duration or channel; ANDROID_VR lists them as ordinary `playlistVideoRenderer` items with `lengthSeconds`.
-- A channel's upload lists are `UU` (all), `UULF` (long-form videos), `UUSH` (Shorts) and `UULV` (past live streams) followed by the channel ID without its `UC`. Complete ANDROID_VR listings of `@RickAstleyYT` on 2026-09-29 matched the header counts exactly: all 438 (5.8 s), videos 139, Shorts 297, live 2; the playlist `PL2MI040U_GXobmpXtTwBF7oHBGT5BETSD` 10 of 10.
+- WEB lists a channel's Shorts (`UUSH…`) as `richGridRenderer` → `richItemRenderer.content.shortsLockupViewModel` (`onTap.innertubeCommand.reelWatchEndpoint.videoId`, `overlayMetadata.primaryText.content`), without duration or channel, and only the first 100 of them with no continuation of any shape (no key of the answer has `continuation` in its name; `@RickAstleyYT` on 2026-09-29: 100 of the 297); ANDROID_VR lists them all as ordinary `playlistVideoRenderer` items with `lengthSeconds` (297 of 297).
+- A channel's upload lists are `UU` (all), `UULF` (long-form videos), `UUSH` (Shorts) and `UULV` (past live streams) followed by the channel ID without its `UC`. Complete ANDROID_VR listings of `@RickAstleyYT` on 2026-09-29 matched the header counts exactly: all 438 (5.8 s), videos 139, Shorts 297, live 2; the playlist `PL2MI040U_GXobmpXtTwBF7oHBGT5BETSD` 10 of 10. ANDROID_VR lists unplayable videos as items, and the header counts them. WEB lists 437 of those 438 uploads: it hides `DYqm1FUtYQc`, which ANDROID_VR lists as playable.
 - Failures: a nonexistent playlist answers HTTP 400 (`INVALID_ARGUMENT`) on both clients. A Mix (`RD…`) answers 400 on ANDROID_VR and 200 on WEB with nothing but `alerts[].alertRenderer.text` "This playlist type is unviewable.". The Shorts or live list of a channel that has none (`@jawed`) answers 404 (`NOT_FOUND`) on ANDROID_VR and 200 on WEB with only the alert "The playlist does not exist."; the channel's `UU` list works ("1 video"). 429 means rate limiting.
 - `POST /youtubei/v1/navigation/resolve_url?prettyPrint=false` with `url`: a known handle answers `endpoint.browseEndpoint.browseId` (`https://www.youtube.com/@RickAstleyYT` → `UCuAXFkgsw1L7xaCfnd5JJOw`) on both clients; an unknown handle answers 200 with only `endpoint.urlEndpoint` on ANDROID_VR and 404 on WEB.
 
@@ -54,10 +54,10 @@
 
 1. **Sources**: bare values are recognized first (a channel ID `UC` + 22 characters, an `@handle`, a Mix `RD…`, a playlist ID `PL|UU|FL|OLAK5uy_` + at least 10 characters), then URLs of `youtube.com` (also `www.`, `m.`, `music.`, `youtube-nocookie.com`) and `youtu.be`, with or without a scheme: `list=` wins (a watch link inside a playlist means the playlist), then `/@handle`, `/channel/UC…`, `/c/name` and `/user/name`. Channel tabs (`/videos`, `/shorts`, `/featured`) are ignored, because `kind` chooses the list. A video link raises `InvalidSource` that points to `fetch()` and `download()`. Mixes are refused before any request (spec §5).
 2. **`kind`** applies to channels; a playlist with a `kind` other than `"all"` is `InvalidOption`.
-3. **Client fallback**: ANDROID_VR lists the whole playlist; when any of its pages fails (not found, an alert, an HTTP error, an unreadable answer), WEB lists it again from the first page, because continuation tokens belong to one client. When both fail, YouTube's own reason (`CollectionUnavailable`) wins over "not found", which wins over the first failure. HTTP 429 raises `IpBlocked` at once and `NetworkError` propagates, as for player requests. Resolving a handle asks ANDROID_VR, then WEB.
+3. **Client fallback**: ANDROID_VR lists the whole playlist; when any of its pages fails (not found, an alert, an HTTP error, an unreadable answer), WEB lists it again from the first page, because continuation tokens belong to one client. When both fail, YouTube's own reason (`CollectionUnavailable`) wins over "not found", which wins over the first failure. HTTP 429 raises `IpBlocked` at once and `NetworkError` propagates, as for player requests. Resolving a handle asks ANDROID_VR, then WEB. A listing that ends by itself (neither at `limit` nor at the page cap) with fewer items than the header's video count is not a failure and does not start the other client: it is returned as it is, and a WARNING on `utmax.youtube` names the client and the playlist and says `listed N of the M videos YouTube counts; the list may be incomplete`. That is what a WEB fallback of a channel's Shorts does (100 of the 297), and what a continuation page without items or token does to any listing. A complete WEB listing of Shorts would need another request shape and can wait for a later milestone.
 4. **First pages without items**: alerts become `alert_error` (a message with "does not exist" → `CollectionNotFound`, anything else → `CollectionUnavailable` with the message as `reason`); a header that says 0 videos is an empty playlist; anything else is unreadable and goes to the next client.
 5. **Missing Shorts or live lists**: when a channel's `UULF`, `UUSH` or `UULV` list is not found, its `UU` list is checked (one page): if that exists the result is an empty `VideoList` with `video_count=0`, otherwise `CollectionNotFound`.
-6. **Stop rules** (`Pager`): `limit` videos; a page without a continuation; a page without items; a continuation token seen before; 1000 pages (a warning, and `truncated` is set). A video seen before is dropped.
+6. **Stop rules** (`Pager`): `limit` videos; a page without a continuation; a page without items; a continuation token seen before; 1000 pages (a warning, and `truncated` is set). A video seen before is dropped. `Pager.items` sums the list items of every page (unplayable and repeated ones too, as YouTube's count and ANDROID_VR do), and `Pager.ended_short(video_count)` says whether the listing ended by itself with fewer items than that count.
 7. **Entries**: `VideoEntry.index` is the 1-based position in the returned list (YouTube's own playlist index exists only on ANDROID_VR); `duration` is `None` when YouTube shows none (WEB Shorts, upcoming streams); an item that names no channel gets the playlist owner's (`BrowsePage.owner_name` and `owner_id` from the first page's header, applied to every page by `Pager`, because continuation pages have no header). `VideoList.video_count` holds YouTube's header number — the "count" of the spec's MCP tool — because a `Sequence` already has a `count()` method.
 8. **Bulk results**: exactly one `BulkResult` per input, in input order. An input without a video ID fails (`InvalidVideoId`) and a repeated video is `"skipped"` with `path=None`, both without work. `progress` receives every result once, in the order the results become known (those decided without work first), always from the calling thread. `concurrency` is 1 to 16.
 9. **Circuit breaker**: `RequestBlocked` (and so `IpBlocked`) stops every bulk call; `translate_many` also stops on `ProviderAuthError`. Running videos finish; videos not started yet become `"not_attempted"`.
@@ -1446,7 +1446,7 @@ git commit -m "feat: add the InnerTube browse and resolve_url requests" -m "Co-A
   - `parse_browse_page(data: Mapping[str, Any]) -> BrowsePage` for first and continuation pages of both clients.
   - `resolved_channel_id(data: Mapping[str, Any]) -> str | None`.
   - `alert_error(page: BrowsePage, *, source: str) -> CollectionNotFound | CollectionUnavailable`.
-- Produces (in `tests.helpers.browse`, for Tasks 5, 6 and 11): `CHANNEL_ID`, `VIDEOS_LIST`, `VR_PAGE_1`, `VR_PAGE_2`, `WEB_LAST_PAGE`, `browse_fixture(name)`, `alert_page(text)`, `error_body(code)`, `lockup(video_id, *, badge="3:51", title="A video", channel_id="")`, `web_page(*items, header=None)`, `vr_page(*video_ids, token=None, count="")`.
+- Produces (in `tests.helpers.browse`, for Tasks 5, 6 and 11): `CHANNEL_ID`, `VIDEOS_LIST`, `VR_PAGE_1`, `VR_PAGE_2`, `WEB_LAST_PAGE`, `browse_fixture(name)`, `alert_page(text)`, `error_body(code)`, `lockup(video_id, *, badge="3:51", title="A video", channel_id="")`, `web_page(*items, header=None)`, `shorts_page(*video_ids, count="")` (a WEB page of a channel's Shorts without a continuation, as many as the caller lists: the recorded answer is cut to two), `vr_page(*video_ids, token=None, count="")`.
 
 - [ ] **Step 1: Add the recorded answers**
 
@@ -2428,6 +2428,31 @@ def web_page(*items: dict[str, Any], header: dict[str, Any] | None = None) -> di
     return page
 
 
+def shorts_page(*video_ids: str, count: str = "") -> dict[str, Any]:
+    """A WEB page of a channel's Shorts: a ``richGridRenderer`` with one ``richItemRenderer``
+    per video and no continuation, as WEB answers (live on 2026-09-29: 100 items whatever the
+    header counts). With ``count`` set the page has a playlist header that says so."""
+    grid = [
+        {
+            "richItemRenderer": {
+                "content": {
+                    "shortsLockupViewModel": {
+                        "onTap": {"innertubeCommand": {"reelWatchEndpoint": {"videoId": video_id}}},
+                        "overlayMetadata": {"primaryText": {"content": f"Short {video_id}"}},
+                    }
+                }
+            }
+        }
+        for video_id in video_ids
+    ]
+    header = None
+    if count:
+        title = {"simpleText": "Short videos"}
+        numbers = {"runs": [{"text": count}]}
+        header = {"playlistHeaderRenderer": {"title": title, "numVideosText": numbers}}
+    return web_page({"richGridRenderer": {"contents": grid}}, header=header)
+
+
 def vr_page(*video_ids: str, token: str | None = None, count: str = "") -> dict[str, Any]:
     """An ANDROID_VR page of playable videos, with a playlist header when ``count`` is set."""
     videos = [
@@ -3358,7 +3383,7 @@ git commit -m "feat: read browse pages of both clients over recorded answers" -m
 - Consumes: `BrowsePage` and `parse_browse_page` (Task 4), and in the tests `CHANNEL_ID` and `browse_fixture` of `tests.helpers.browse` (Task 4); `VideoEntry` (Task 1).
 - Produces (in `utmax.core.browse`):
   - `MAX_PAGES = 1000`.
-  - `Pager(*, limit: int | None = None, max_pages: int = MAX_PAGES)` with `add(page: BrowsePage) -> str | None` (the continuation token to fetch next, or `None` when the listing is complete), `entries -> tuple[VideoEntry, ...]` (numbered 1, 2, 3 …, repeats dropped; a video that names no channel gets the playlist owner of the first page, `owner_name` and `owner_id`, because only a first page has a header) and `truncated: bool` (set when `max_pages` stopped the listing).
+  - `Pager(*, limit: int | None = None, max_pages: int = MAX_PAGES)` with `add(page: BrowsePage) -> str | None` (the continuation token to fetch next, or `None` when the listing is complete), `entries -> tuple[VideoEntry, ...]` (numbered 1, 2, 3 …, repeats dropped; a video that names no channel gets the playlist owner of the first page, `owner_name` and `owner_id`, because only a first page has a header), `truncated: bool` (set when `max_pages` stopped the listing), `items -> int` (the list items of all pages so far, skipped and repeated ones included) and `ended_short(video_count: int | None) -> bool` (true when the listing ended by itself, neither at `limit` nor at `max_pages`, with fewer items than the header's `video_count`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3370,6 +3395,8 @@ git commit -m "feat: read browse pages of both clients over recorded answers" -m
 from __future__ import annotations
 
 import json
+
+import pytest
 
 from tests.helpers.browse import CHANNEL_ID, browse_fixture
 from utmax.core.browse import MAX_PAGES, BrowsePage, Pager, parse_browse_page
@@ -3471,6 +3498,51 @@ def test_videos_keep_the_channel_they_name() -> None:
         ("Other", other),
         ("Owner", owner),
     ]
+
+
+def test_items_sum_every_list_item_of_every_page() -> None:
+    pager = Pager()
+    assert pager.items == 0
+    assert pager.add(page("a", token="t1", items=20)) == "t1"  # 19 items were skipped
+    assert pager.add(page("b", "a", token="t2")) == "t2"  # a repeated video is an item too
+    assert pager.add(page("c")) is None  # the last page counts as well
+    assert pager.items == 23
+    assert len(pager.entries) == 3
+
+
+@pytest.mark.parametrize(
+    ("count", "short"), [(None, False), (2, False), (3, False), (4, True), (139, True)]
+)
+def test_a_listing_that_ended_on_its_own_is_short_of_a_larger_count(
+    count: int | None, short: bool
+) -> None:
+    pager = Pager()
+    assert pager.add(page("a", "b", token="t1")) == "t1"
+    assert pager.add(page("c")) is None
+    assert pager.ended_short(count) is short
+
+
+@pytest.mark.parametrize(
+    "last",
+    [page("c"), page(token="t2"), page("c", token="t1")],
+    ids=["no continuation", "no items", "repeated token"],
+)
+def test_every_way_a_listing_ends_on_its_own_can_leave_it_short(last: BrowsePage) -> None:
+    pager = Pager()
+    assert pager.add(page("a", "b", token="t1")) == "t1"
+    assert pager.add(last) is None
+    assert pager.ended_short(139)
+
+
+def test_a_limit_or_the_page_cap_is_not_a_short_listing() -> None:
+    limited = Pager(limit=2)
+    assert limited.add(page("a", "b", token="t1")) is None
+    assert not limited.ended_short(139)
+    capped = Pager(max_pages=2)
+    assert capped.add(page("a", token="t1")) == "t1"
+    assert capped.add(page("b", token="t2")) is None
+    assert capped.truncated
+    assert not capped.ended_short(139)
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -3570,12 +3642,17 @@ class Pager:
     the first page has a header, so its owner is the channel of every video that names none.
     The listing ends at ``limit`` videos, at a page without a continuation or without items, at
     a continuation seen before, or after ``max_pages`` pages (``truncated`` is then true).
+    From outside, a listing that stopped early looks like a complete one: a page without items
+    or a continuation ends a listing as quietly as the real last page, and WEB ends a channel's
+    Shorts after 100 with no continuation at all. ``ended_short`` tells them apart by comparing
+    ``items`` with the number of videos YouTube says the playlist has.
     """
 
     def __init__(self, *, limit: int | None = None, max_pages: int = MAX_PAGES) -> None:
         self._limit = limit
         self._max_pages = max_pages
         self._pages = 0
+        self._items = 0
         self._tokens: set[str] = set()
         self._seen: set[str] = set()
         self._entries: list[VideoEntry] = []
@@ -3587,9 +3664,31 @@ class Pager:
         """The videos collected so far, numbered."""
         return tuple(self._entries)
 
+    @property
+    def items(self) -> int:
+        """The list items on all pages so far, unplayable and repeated ones included (the
+        video count of a playlist header counts them too)."""
+        return self._items
+
+    def ended_short(self, video_count: int | None) -> bool:
+        """Whether the finished listing holds fewer items than the ``video_count`` of the header.
+
+        Only a listing that ended on its own can be short: one that stopped at ``limit`` was
+        cut by the caller, and ``truncated`` has a report of its own. ANDROID_VR lists
+        unplayable videos as items, so its complete listings match the count. Without a count
+        (``None``) there is nothing to compare with.
+        """
+        return (
+            video_count is not None
+            and not self.truncated
+            and not self._full()
+            and self._items < video_count
+        )
+
     def add(self, page: BrowsePage) -> str | None:
         """Take the next page; return the continuation token to fetch, or ``None`` when done."""
         self._pages += 1
+        self._items += page.items
         if self._pages == 1:
             self._owner = (page.owner_name, page.owner_id)
         for video in page.videos:
@@ -3627,11 +3726,11 @@ class Pager:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/core/test_pager.py tests/unit/core/test_browse.py -q`
-Expected: 46 passed (9 new).
+Expected: 56 passed (19 new).
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 9 to 1223 passed).
+Run the four gates (the suite grows by 19 to 1233 passed).
 
 ```bash
 git add src/utmax/core/browse.py tests/unit/core/test_pager.py
@@ -3647,12 +3746,14 @@ git commit -m "feat: decide when a listing is complete" -m "Co-Authored-By: Clau
 - Test: `tests/unit/services/test_collections.py` (create)
 
 **Interfaces:**
-- Consumes: `COLLECTION_KINDS`, `parse_source`, `uploads_playlist_id` (Task 2); `InnerTubeClient.browse` and `resolve_url` (Task 3); `parse_browse_page`, `alert_error`, `resolved_channel_id` (Task 4); `Pager`, `MAX_PAGES` (Task 5); `ORDER["browse"]` and `ORDER["resolve"]` (both `(ANDROID_VR, WEB)`, M1); `CollectionKind`, `VideoList` and the errors of Task 1.
+- Consumes: `COLLECTION_KINDS`, `parse_source`, `uploads_playlist_id` (Task 2); `InnerTubeClient.browse` and `resolve_url` (Task 3); `parse_browse_page`, `alert_error`, `resolved_channel_id` (Task 4); `Pager` (with `items` and `ended_short`), `MAX_PAGES` (Task 5); `ORDER["browse"]` and `ORDER["resolve"]` (both `(ANDROID_VR, WEB)`, M1); `CollectionKind`, `VideoList` and the errors of Task 1.
 - Produces: `utmax.services.collections.CollectionService(innertube: InnerTubeClient, *, max_pages: int = MAX_PAGES)` with `list_videos(source: str, *, kind: CollectionKind = "all", limit: int | None = None) -> VideoList` (Decisions 2–7).
 
 - [ ] **Step 1: Write the failing tests**
 
 The tests script `FakeTransport` routes: replies of one route are served in order, and ANDROID_VR and WEB use the same URL, so the order of the replies is the order of the requests (the tests also check which client sent each one).
+
+The recorded Shorts answer is cut to two items, so `test_web_lists_shorts_from_the_rich_grid` cannot show WEB's cap; `test_web_lists_at_most_100_shorts_and_the_listing_says_so` builds the 100 Shorts WEB answers with `shorts_page` (Task 4's helpers) and asserts the warning that says the list is short. `test_a_continuation_page_without_items_ends_the_listing_with_a_warning` does the same for a valid answer without items or token, which ends any listing. The four tests after them pin when a listing stays silent: ANDROID_VR's count includes the hidden videos it lists, a limit is the caller's choice, a listing without a count has nothing to compare with, and the page cap has a warning of its own (one message, not two). Seventeen mutants of the warning logic (an item sum that counts videos, only the first or all but the last page, a missing guard for no count, for the limit or for the cap, `<=` and `>` for `<`, entries for items, a warning that is missing, at INFO level, with swapped numbers or without the client or the playlist) are all killed by these tests and the Pager tests.
 
 `tests/unit/services/test_collections.py`:
 
@@ -3676,6 +3777,7 @@ from tests.helpers.browse import (
     alert_page,
     browse_fixture,
     error_body,
+    shorts_page,
     vr_page,
 )
 from tests.helpers.fake_transport import FakeTransport, json_response, text_response
@@ -3724,6 +3826,15 @@ def first_token() -> str:
     tab = VR_1["contents"]["singleColumnBrowseResultsRenderer"]["tabs"][0]["tabRenderer"]
     renderer = tab["content"]["sectionListRenderer"]["contents"][0]["playlistVideoListRenderer"]
     return str(renderer["continuations"][0]["nextContinuationData"]["continuation"])
+
+
+def warned(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """The warnings a listing logged on utmax.youtube."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "utmax.youtube" and record.levelno >= logging.WARNING
+    ]
 
 
 def test_a_playlist_is_listed_page_by_page() -> None:
@@ -3949,6 +4060,92 @@ def test_the_page_cap_stops_endless_listings(caplog: pytest.LogCaptureFixture) -
     assert "stopped listing" in caplog.text
 
 
+def test_web_lists_at_most_100_shorts_and_the_listing_says_so(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Live on 2026-09-29: WEB answers a channel's Shorts with 100 items and no continuation of
+    # any shape, whatever the header counts; ANDROID_VR lists all 297.
+    first_hundred = [f"short{number:06d}" for number in range(100)]
+    transport = FakeTransport()
+    transport.add("POST", RESOLVE, json_response(browse_fixture("resolve_handle")))
+    web = json_response(shorts_page(*first_hundred, count="297 videos"))
+    transport.add("POST", BROWSE, json_response(error_body(400), status=503), web)
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(HANDLE, kind="shorts")
+    assert [entry.video_id for entry in videos] == first_hundred
+    assert (videos.video_count, videos.source_id) == (297, f"UUSH{CHANNEL_ID[2:]}")
+    assert [client for client, _ in sent(transport)] == ["ANDROID_VR", "ANDROID_VR", "WEB"]
+    assert warned(caplog) == [
+        f"InnerTube client WEB, playlist UUSH{CHANNEL_ID[2:]}: listed 100 of the 297 videos "
+        "YouTube counts; the list may be incomplete"
+    ]
+
+
+def test_a_continuation_page_without_items_ends_the_listing_with_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transport = FakeTransport()
+    nothing = json_response({"responseContext": {}})  # valid JSON: no items, no token
+    transport.add("POST", BROWSE, json_response(VR_1), nothing)
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(VIDEOS_LIST)
+    assert [entry.video_id for entry in videos] == VR_PAGE_1
+    assert [client for client, _ in sent(transport)] == ["ANDROID_VR", "ANDROID_VR"]
+    assert warned(caplog) == [
+        f"InnerTube client ANDROID_VR, playlist {VIDEOS_LIST}: listed 3 of the 139 videos "
+        "YouTube counts; the list may be incomplete"
+    ]
+
+
+def test_complete_listings_stay_silent_although_videos_are_hidden(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # ANDROID_VR lists a private video as an unplayable item and counts it: 3 items, "3 videos".
+    hidden = {"playlistVideoRenderer": {"videoId": "c" * 11, "isPlayable": False}}
+    second = vr_page("b" * 11)
+    second["continuationContents"]["playlistVideoListContinuation"]["contents"].append(hidden)
+    transport = FakeTransport()
+    first = vr_page("a" * 11, token="t1", count="3 videos")
+    transport.add("POST", BROWSE, json_response(first), json_response(second))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(PLAYLIST)
+    assert [entry.video_id for entry in videos] == ["a" * 11, "b" * 11]
+    assert videos.video_count == 3
+    assert warned(caplog) == []
+
+
+def test_a_limit_is_not_a_shortfall(caplog: pytest.LogCaptureFixture) -> None:
+    transport = FakeTransport()
+    transport.add("POST", BROWSE, json_response(VR_1))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(VIDEOS_LIST, limit=2)
+    assert [entry.video_id for entry in videos] == VR_PAGE_1[:2]
+    assert warned(caplog) == []
+
+
+def test_a_listing_without_a_video_count_stays_silent(caplog: pytest.LogCaptureFixture) -> None:
+    transport = FakeTransport()
+    pages = [vr_page("a" * 11, token="t1"), vr_page()]  # no header, so no count; then nothing
+    transport.add("POST", BROWSE, *(json_response(page) for page in pages))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport).list_videos(PLAYLIST)
+    assert (len(videos), videos.video_count) == (1, None)
+    assert warned(caplog) == []
+
+
+def test_the_page_cap_is_the_only_warning_of_a_capped_listing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    transport = FakeTransport()
+    pages = [vr_page("a" * 11, token="t1", count="30 videos"), vr_page("b" * 11, token="t2")]
+    transport.add("POST", BROWSE, *(json_response(page) for page in pages))
+    with caplog.at_level(logging.WARNING, logger="utmax.youtube"):
+        videos = service(transport, max_pages=2).list_videos(PLAYLIST)
+    assert len(videos) == 2
+    (message,) = warned(caplog)
+    assert message.startswith("stopped listing")
+
+
 @pytest.mark.parametrize(
     ("source", "options", "error"),
     [
@@ -4097,6 +4294,18 @@ class CollectionService:
                 playlist_id,
                 self._max_pages,
             )
+        elif pager.ended_short(first.video_count):
+            # WEB answers a channel's Shorts with 100 items and no continuation, and a page
+            # that holds nothing ends any listing, so a short list is not an error, but it
+            # must not pass unnoticed either.
+            log.warning(
+                "InnerTube client %s, playlist %s: listed %d of the %d videos YouTube counts; "
+                "the list may be incomplete",
+                profile.name,
+                playlist_id,
+                pager.items,
+                first.video_count,
+            )
         return VideoList(
             title=first.title,
             source_id=playlist_id,
@@ -4151,11 +4360,11 @@ def _most_telling(failures: list[YouTubeError]) -> YouTubeError:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/services/test_collections.py -q`
-Expected: 27 passed.
+Expected: 33 passed.
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 27 to 1250 passed).
+Run the four gates (the suite grows by 33 to 1266 passed).
 
 ```bash
 git add src/utmax/services/collections.py tests/unit/services/test_collections.py
@@ -4663,7 +4872,7 @@ Expected: the new file reports 30 passed; the existing file-name tests still pas
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 30 to 1280 passed).
+Run the four gates (the suite grows by 30 to 1296 passed).
 
 ```bash
 git add src/utmax/core/filenames.py tests/unit/core/test_name_templates.py
@@ -5095,7 +5304,7 @@ Expected: 17 passed.
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 17 to 1297 passed).
+Run the four gates (the suite grows by 17 to 1313 passed).
 
 ```bash
 git add src/utmax/services/bulk.py tests/unit/services/test_bulk_runner.py
@@ -5879,7 +6088,7 @@ Expected: the new file reports 25 passed; the runner and translation tests still
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 25 to 1322 passed).
+Run the four gates (the suite grows by 25 to 1338 passed).
 
 ```bash
 git add src/utmax/services/translation.py src/utmax/services/bulk.py tests/helpers/bulk.py tests/unit/services/test_bulk_transcripts.py
@@ -6683,7 +6892,7 @@ Expected: the new file reports 19 passed; the M4 download tests still pass.
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 19 to 1341 passed).
+Run the four gates (the suite grows by 19 to 1357 passed).
 
 ```bash
 git add tests/helpers/files.py tests/unit/services/test_download_audio.py src/utmax/services/download.py src/utmax/services/bulk.py tests/unit/services/test_bulk_downloads.py
@@ -7249,6 +7458,13 @@ def list_videos(
     video listed twice appears once. A channel without Shorts or live streams gives an empty
     list for those kinds.
 
+    utmax lists a playlist with the ANDROID_VR client, which lists all of it, and lists it once
+    more with the WEB client when ANDROID_VR fails. WEB shows at most 100 Shorts of a channel
+    and hides an occasional video, so a listing that fell back to WEB can hold fewer videos
+    than ``VideoList.video_count``. A listing that ends by itself (not at ``limit``) before that
+    count is returned as it is, and a warning on the ``utmax.youtube`` logger says so:
+    ``listed 100 of the 297 videos YouTube counts; the list may be incomplete``.
+
     Raises:
         InvalidSource: ``source`` names no playlist or channel (checked before any request).
         InvalidOption: ``kind`` or ``limit`` is invalid, or ``kind`` was given for a playlist.
@@ -7449,7 +7665,7 @@ Expected: the new file reports 15 passed; the existing facade and client tests s
 
 - [ ] **Step 6: Gates and commit**
 
-Run the four gates (the suite grows by 15 to 1356 passed, 15 deselected).
+Run the four gates (the suite grows by 15 to 1372 passed, 15 deselected).
 
 ```bash
 git add src/utmax/client.py src/utmax/__init__.py tests/unit/test_collections_api.py
@@ -7582,7 +7798,7 @@ uv sync --locked --all-extras
 uv build --out-dir <a scratch folder outside the repository>
 ```
 
-Expected: ruff, format and mypy clean; 1356 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
+Expected: ruff, format and mypy clean; 1372 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
 
 - [ ] **Step 4: Check the spec's acceptance list for M5**
 
