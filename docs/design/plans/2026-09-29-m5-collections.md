@@ -58,7 +58,7 @@
 4. **First pages without items**: alerts become `alert_error` (a message with "does not exist" → `CollectionNotFound`, anything else → `CollectionUnavailable` with the message as `reason`); a header that says 0 videos is an empty playlist; anything else is unreadable and goes to the next client.
 5. **Missing Shorts or live lists**: when a channel's `UULF`, `UUSH` or `UULV` list is not found, its `UU` list is checked (one page): if that exists the result is an empty `VideoList` with `video_count=0`, otherwise `CollectionNotFound`.
 6. **Stop rules** (`Pager`): `limit` videos; a page without a continuation; a page without items; a continuation token seen before; 1000 pages (a warning, and `truncated` is set). A video seen before is dropped.
-7. **Entries**: `VideoEntry.index` is the 1-based position in the returned list (YouTube's own playlist index exists only on ANDROID_VR); `duration` is `None` when YouTube shows none (WEB Shorts, upcoming streams); an item that names no channel gets the playlist owner's. `VideoList.video_count` holds YouTube's header number — the "count" of the spec's MCP tool — because a `Sequence` already has a `count()` method.
+7. **Entries**: `VideoEntry.index` is the 1-based position in the returned list (YouTube's own playlist index exists only on ANDROID_VR); `duration` is `None` when YouTube shows none (WEB Shorts, upcoming streams); an item that names no channel gets the playlist owner's (`BrowsePage.owner_name` and `owner_id` from the first page's header, applied to every page by `Pager`, because continuation pages have no header). `VideoList.video_count` holds YouTube's header number — the "count" of the spec's MCP tool — because a `Sequence` already has a `count()` method.
 8. **Bulk results**: exactly one `BulkResult` per input, in input order. An input without a video ID fails (`InvalidVideoId`) and a repeated video is `"skipped"` with `path=None`, both without work. `progress` receives every result once, in the order the results become known (those decided without work first), always from the calling thread. `concurrency` is 1 to 16.
 9. **Circuit breaker**: `RequestBlocked` (and so `IpBlocked`) stops every bulk call; `translate_many` also stops on `ProviderAuthError`. Running videos finish; videos not started yet become `"not_attempted"`.
 10. **Ctrl-C**, or an exception raised by `progress`: the run's stop event is set (running downloads use it as their `cancel` event, so their `.part` files stay), videos not started are dropped, the running ones are awaited, and the exception propagates; there is no report.
@@ -1442,7 +1442,7 @@ git commit -m "feat: add the InnerTube browse and resolve_url requests" -m "Co-A
 **Interfaces:**
 - Consumes: `VideoEntry`, `CollectionNotFound`, `CollectionUnavailable` (Task 1); `utmax.core.ytdata.items`, `mapping`, `text_of`; `InnerTubeClient.browse` and `resolve_url` (Task 3, used by the recorder only).
 - Produces (in `utmax.core.browse`):
-  - `BrowsePage(videos: tuple[VideoEntry, ...] = (), items: int = 0, continuation: str | None = None, title: str = "", video_count: int | None = None, alerts: tuple[str, ...] = ())` — `videos` holds the playable videos numbered 0; `items` counts every list item, skipped ones included.
+  - `BrowsePage(videos: tuple[VideoEntry, ...] = (), items: int = 0, continuation: str | None = None, title: str = "", video_count: int | None = None, alerts: tuple[str, ...] = (), owner_name: str = "", owner_id: str = "")` — `videos` holds the playable videos numbered 0; `items` counts every list item, skipped ones included; `owner_name` and `owner_id` name the playlist's channel when the page has a header (a first page): continuation pages have none, so `Pager` (Task 5) fills the first page's owner into the videos of later pages.
   - `parse_browse_page(data: Mapping[str, Any]) -> BrowsePage` for first and continuation pages of both clients.
   - `resolved_channel_id(data: Mapping[str, Any]) -> str | None`.
   - `alert_error(page: BrowsePage, *, source: str) -> CollectionNotFound | CollectionUnavailable`.
@@ -2531,6 +2531,16 @@ def test_web_shorts_take_their_channel_from_the_header() -> None:
     }
 
 
+def test_only_a_first_page_names_the_playlist_owner() -> None:
+    whole = browse_fixture("browse_web_shorts")
+    first = parse_browse_page(whole)
+    assert (first.owner_name, first.owner_id) == ("Rick Astley", CHANNEL_ID)
+    # Shorts never name a channel and continuation pages have no header: a listing fills in.
+    later = parse_browse_page({key: value for key, value in whole.items() if key != "header"})
+    assert (later.owner_name, later.owner_id) == ("", "")
+    assert {(video.channel, video.channel_id) for video in later.videos} == {("", "")}
+
+
 def test_unplayable_and_foreign_items_are_counted_but_skipped() -> None:
     hidden = {"playlistVideoRenderer": {"videoId": "aaaaaaaaaaa", "isPlayable": False}}
     broken = {"playlistVideoRenderer": {"videoId": "too-short"}}
@@ -2623,6 +2633,8 @@ def test_the_title_falls_back_to_the_playlist_metadata() -> None:
         ("No videos", 0),
         ("", None),
         ("many videos", None),
+        (", videos", None),
+        pytest.param("9" * 5000 + " videos", None, id="5000 digits"),
     ],
 )
 def test_video_counts(text: str, count: int | None) -> None:
@@ -2635,6 +2647,15 @@ def test_video_counts(text: str, count: int | None) -> None:
 )
 def test_durations_come_from_the_thumbnail_badge(badge: str, seconds: float | None) -> None:
     (video,) = parse_browse_page(web_page(lockup("aaaaaaaaaaa", badge=badge))).videos
+    assert video.duration == seconds
+
+
+@pytest.mark.parametrize(
+    ("length", "seconds"), [("231", 231.0), (231, 231.0), ("\xb2", None), ("2.5", None)]
+)
+def test_android_vr_lengths_are_whole_seconds(length: object, seconds: float | None) -> None:
+    item = {"playlistVideoRenderer": {"videoId": "aaaaaaaaaaa", "lengthSeconds": length}}
+    (video,) = parse_browse_page({"contents": [item]}).videos
     assert video.duration == seconds
 
 
@@ -2710,7 +2731,7 @@ __all__ = ["BrowsePage", "alert_error", "parse_browse_page", "resolved_channel_i
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _CHANNEL_ID = re.compile(r"UC[A-Za-z0-9_-]{22}")
-_VIDEO_COUNT = re.compile(r"([\d,]+) videos?")
+_VIDEO_COUNT = re.compile(r"(\d[\d,]{0,14}) videos?")  # int() refuses absurdly long numbers
 _CLOCK = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})")
 _LISTING_ROOTS = ("contents", "continuationContents", "onResponseReceivedActions")
 _TOKEN_PATHS: dict[str, tuple[str, ...]] = {
@@ -2731,7 +2752,9 @@ class BrowsePage:
 
     ``videos`` are the playable videos on the page, numbered 0 (a listing numbers them);
     ``items`` counts every list item, skipped ones included; ``continuation`` is the token of
-    the next page. ``title`` and ``video_count`` come from the playlist header of a first page.
+    the next page. ``title``, ``video_count`` and the playlist's owner (``owner_name`` and
+    ``owner_id``, the channel that owns it) come from the playlist header of a first page;
+    continuation pages have no header, so a listing takes the owner from its first page.
     ``alerts`` are YouTube's messages, such as "The playlist does not exist.".
     """
 
@@ -2741,6 +2764,8 @@ class BrowsePage:
     title: str = ""
     video_count: int | None = None
     alerts: tuple[str, ...] = ()
+    owner_name: str = ""
+    owner_id: str = ""
 
 
 def parse_browse_page(data: Mapping[str, Any]) -> BrowsePage:
@@ -2756,6 +2781,8 @@ def parse_browse_page(data: Mapping[str, Any]) -> BrowsePage:
         title=title,
         video_count=video_count,
         alerts=_alerts(data),
+        owner_name=owner.name,
+        owner_id=owner.channel_id,
     )
 
 
@@ -2968,7 +2995,8 @@ def _video_count(text: str) -> int | None:
 
 def _seconds(value: object) -> float | None:
     text = str(value) if isinstance(value, (str, int)) else ""
-    return float(text) if text.isdigit() else None
+    # isdecimal, not isdigit: float() rejects the superscript digits that isdigit accepts.
+    return float(text) if text.isdecimal() else None
 
 
 def _video_id(value: object) -> str | None:
@@ -2985,7 +3013,7 @@ def _dig(value: object, *keys: str) -> Any:
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/core/test_browse.py -q`
-Expected: 30 passed.
+Expected: 37 passed.
 
 - [ ] **Step 7: Teach the recorder to keep the browse answers**
 
@@ -3311,7 +3339,7 @@ of his Shorts (`UUSHuAXFkgsw1L7xaCfnd5JJOw`, WEB), trimmed to the fields utmax r
 
 - [ ] **Step 8: Gates and commit**
 
-Run the four gates (the suite grows by 30 to 1207 passed). `mypy` checks `src` only; the recorder was checked with `uv run mypy --strict scripts/record_fixtures.py` while this plan was written, and `ruff` covers it.
+Run the four gates (the suite grows by 37 to 1214 passed). `mypy` checks `src` only; the recorder was checked with `uv run mypy --strict scripts/record_fixtures.py` while this plan was written, and `ruff` covers it.
 
 ```bash
 git add tests/fixtures/youtube/browse_android_vr_1.json tests/fixtures/youtube/browse_android_vr_2.json tests/fixtures/youtube/browse_web_1.json tests/fixtures/youtube/browse_web_2.json tests/fixtures/youtube/browse_web_shorts.json tests/fixtures/youtube/resolve_handle.json tests/fixtures/youtube/resolve_unknown.json tests/fixtures/youtube/README.md tests/helpers/browse.py tests/unit/core/test_browse.py src/utmax/core/browse.py scripts/record_fixtures.py
@@ -3330,7 +3358,7 @@ git commit -m "feat: read browse pages of both clients over recorded answers" -m
 - Consumes: `BrowsePage` (Task 4); `VideoEntry` (Task 1).
 - Produces (in `utmax.core.browse`):
   - `MAX_PAGES = 1000`.
-  - `Pager(*, limit: int | None = None, max_pages: int = MAX_PAGES)` with `add(page: BrowsePage) -> str | None` (the continuation token to fetch next, or `None` when the listing is complete), `entries -> tuple[VideoEntry, ...]` (numbered 1, 2, 3 …, repeats dropped) and `truncated: bool` (set when `max_pages` stopped the listing).
+  - `Pager(*, limit: int | None = None, max_pages: int = MAX_PAGES)` with `add(page: BrowsePage) -> str | None` (the continuation token to fetch next, or `None` when the listing is complete), `entries -> tuple[VideoEntry, ...]` (numbered 1, 2, 3 …, repeats dropped; a video that names no channel gets the playlist owner of the first page, `owner_name` and `owner_id`, because only a first page has a header) and `truncated: bool` (set when `max_pages` stopped the listing).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3341,7 +3369,10 @@ git commit -m "feat: read browse pages of both clients over recorded answers" -m
 
 from __future__ import annotations
 
-from utmax.core.browse import MAX_PAGES, BrowsePage, Pager
+import json
+
+from tests.helpers.browse import CHANNEL_ID, browse_fixture
+from utmax.core.browse import MAX_PAGES, BrowsePage, Pager, parse_browse_page
 from utmax.models import VideoEntry
 
 
@@ -3408,6 +3439,38 @@ def test_the_page_cap_truncates_endless_listings() -> None:
     assert pager.truncated
     assert ids(pager) == [("a", 1), ("b", 2), ("c", 3)]
     assert MAX_PAGES == 1000
+
+
+def test_videos_that_name_no_channel_get_the_owner_of_the_first_page() -> None:
+    whole = browse_fixture("browse_web_shorts")
+    # The next page of Shorts: no header (as on every continuation page), other videos.
+    text = json.dumps({key: value for key, value in whole.items() if key != "header"})
+    text = text.replace("E_MGy41IYVw", "aaaaaaaaaaa").replace("ihRdK3x3cUY", "bbbbbbbbbbb")
+    pager = Pager()
+    pager.add(parse_browse_page(whole))
+    pager.add(parse_browse_page(json.loads(text)))
+    assert ids(pager) == [
+        ("E_MGy41IYVw", 1),
+        ("ihRdK3x3cUY", 2),
+        ("aaaaaaaaaaa", 3),
+        ("bbbbbbbbbbb", 4),
+    ]
+    assert {(entry.channel, entry.channel_id) for entry in pager.entries} == {
+        ("Rick Astley", CHANNEL_ID)
+    }
+
+
+def test_videos_keep_the_channel_they_name() -> None:
+    other, owner = "UC" + "x" * 22, "UC" + "o" * 22
+    named = VideoEntry("a", "A", 60.0, "Other", other, 0)
+    unnamed = VideoEntry("b", "B", None, "", "", 0)
+    pager = Pager()
+    pager.add(BrowsePage((named,), 1, "t1", owner_name="Owner", owner_id=owner))
+    pager.add(BrowsePage((unnamed,), 1))
+    assert [(entry.channel, entry.channel_id) for entry in pager.entries] == [
+        ("Other", other),
+        ("Owner", owner),
+    ]
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -3503,9 +3566,10 @@ _CHANNEL_ID = re.compile(r"UC[A-Za-z0-9_-]{22}")
 class Pager:
     """Collects the pages of one listing and says which page to fetch next (no I/O).
 
-    Videos are numbered 1, 2, 3 ... in listing order and a video seen before is dropped. The
-    listing ends at ``limit`` videos, at a page without a continuation or without items, at a
-    continuation seen before, or after ``max_pages`` pages (``truncated`` is then true).
+    Videos are numbered 1, 2, 3 ... in listing order and a video seen before is dropped. Only
+    the first page has a header, so its owner is the channel of every video that names none.
+    The listing ends at ``limit`` videos, at a page without a continuation or without items, at
+    a continuation seen before, or after ``max_pages`` pages (``truncated`` is then true).
     """
 
     def __init__(self, *, limit: int | None = None, max_pages: int = MAX_PAGES) -> None:
@@ -3515,6 +3579,7 @@ class Pager:
         self._tokens: set[str] = set()
         self._seen: set[str] = set()
         self._entries: list[VideoEntry] = []
+        self._owner = ("", "")
         self.truncated = False
 
     @property
@@ -3525,12 +3590,14 @@ class Pager:
     def add(self, page: BrowsePage) -> str | None:
         """Take the next page; return the continuation token to fetch, or ``None`` when done."""
         self._pages += 1
+        if self._pages == 1:
+            self._owner = (page.owner_name, page.owner_id)
         for video in page.videos:
             if self._full():
                 break
             if video.video_id not in self._seen:
                 self._seen.add(video.video_id)
-                self._entries.append(replace(video, index=len(self._entries) + 1))
+                self._entries.append(self._numbered(video))
         token = page.continuation
         if token is None or not page.items or self._full() or token in self._tokens:
             return None
@@ -3539,6 +3606,16 @@ class Pager:
             return None
         self._tokens.add(token)
         return token
+
+    def _numbered(self, video: VideoEntry) -> VideoEntry:
+        """``video`` at the next position; a channel it does not name is the owner's."""
+        name, channel_id = self._owner
+        return replace(
+            video,
+            channel=video.channel or name,
+            channel_id=video.channel_id or channel_id,
+            index=len(self._entries) + 1,
+        )
 
     def _full(self) -> bool:
         return self._limit is not None and len(self._entries) >= self._limit
@@ -3550,11 +3627,11 @@ class Pager:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/core/test_pager.py tests/unit/core/test_browse.py -q`
-Expected: 37 passed (7 new).
+Expected: 46 passed (9 new).
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 7 to 1214 passed).
+Run the four gates (the suite grows by 9 to 1223 passed).
 
 ```bash
 git add src/utmax/core/browse.py tests/unit/core/test_pager.py
@@ -4078,7 +4155,7 @@ Expected: 27 passed.
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 27 to 1241 passed).
+Run the four gates (the suite grows by 27 to 1250 passed).
 
 ```bash
 git add src/utmax/services/collections.py tests/unit/services/test_collections.py
@@ -4518,7 +4595,7 @@ Expected: the new file reports 20 passed; the existing file-name tests still pas
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 20 to 1261 passed).
+Run the four gates (the suite grows by 20 to 1270 passed).
 
 ```bash
 git add src/utmax/core/filenames.py tests/unit/core/test_name_templates.py
@@ -4911,7 +4988,7 @@ Expected: 16 passed.
 
 - [ ] **Step 5: Gates and commit**
 
-Run the four gates (the suite grows by 16 to 1277 passed).
+Run the four gates (the suite grows by 16 to 1286 passed).
 
 ```bash
 git add src/utmax/services/bulk.py tests/unit/services/test_bulk_runner.py
@@ -5695,7 +5772,7 @@ Expected: the new file reports 25 passed; the runner and translation tests still
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 25 to 1302 passed).
+Run the four gates (the suite grows by 25 to 1311 passed).
 
 ```bash
 git add src/utmax/services/translation.py src/utmax/services/bulk.py tests/helpers/bulk.py tests/unit/services/test_bulk_transcripts.py
@@ -6436,7 +6513,7 @@ Expected: the new file reports 18 passed; the M4 download tests still pass.
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 18 to 1320 passed).
+Run the four gates (the suite grows by 18 to 1329 passed).
 
 ```bash
 git add tests/helpers/files.py tests/unit/services/test_download_audio.py src/utmax/services/download.py src/utmax/services/bulk.py tests/unit/services/test_bulk_downloads.py
@@ -7145,7 +7222,7 @@ Expected: the new file reports 7 passed; the existing facade and client tests st
 
 - [ ] **Step 6: Gates and commit**
 
-Run the four gates (the suite grows by 7 to 1327 passed, 15 deselected).
+Run the four gates (the suite grows by 7 to 1336 passed, 15 deselected).
 
 ```bash
 git add src/utmax/client.py src/utmax/__init__.py tests/unit/test_collections_api.py
@@ -7274,7 +7351,7 @@ uv sync --locked --all-extras
 uv build --out-dir <a scratch folder outside the repository>
 ```
 
-Expected: ruff, format and mypy clean; 1327 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
+Expected: ruff, format and mypy clean; 1336 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
 
 - [ ] **Step 4: Check the spec's acceptance list for M5**
 
