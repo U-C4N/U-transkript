@@ -255,18 +255,19 @@ class NameTemplate:
     ) -> str:
         """A glob pattern that matches every name :meth:`render` can give when only ``values``
         are known: literal text and known values are escaped, a field in ``globs`` becomes that
-        glob as it is, and any other field (``title`` and ``channel`` always) becomes ``*``."""
+        glob as it is, and any other field becomes ``*``. ``title``, ``channel`` and ``index``
+        always do: titles change, and a new upload shifts every position in a channel listing,
+        while ``{video_id}`` keeps names unique."""
         formatter = Formatter()
         parts: list[str] = []
-        for literal, field, spec, conversion in formatter.parse(self.text):
+        for literal, field, spec, _ in formatter.parse(self.text):
             parts.append(glob_literal(literal))
             if field is None:
                 continue
             if globs is not None and field in globs:
                 parts.append(globs[field])
-            elif field in values and field not in ("title", "channel"):
-                value = formatter.convert_field(values[field], conversion)
-                parts.append(glob_literal(formatter.format_field(value, spec or "")))
+            elif field in values and field not in _ANY_IN_PATTERNS:
+                parts.append(glob_literal(formatter.format_field(values[field], spec or "")))
             else:
                 parts.append("*")
         return "".join(parts)
@@ -287,6 +288,7 @@ _SAFE_FIELDS: dict[str, tuple[int, int]] = {
     "channel": (MAX_NAME_CHARS, MAX_NAME_BYTES),
     "language_code": (35, 35),
 }
+_ANY_IN_PATTERNS = frozenset({"title", "channel", "index"})
 
 
 def _shorten(text: str, max_chars: int, max_bytes: int) -> str:

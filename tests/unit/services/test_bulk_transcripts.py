@@ -77,6 +77,7 @@ def test_existing_files_are_skipped_without_a_request(tmp_path: Path) -> None:
     ("existing", "filename"),
     [
         (f"Some_title_{IDS[0]}.en.srt", "{title}_{video_id}.{language_code}.{ext}"),
+        (f"07 {IDS[0]}.en.srt", "{index:02d} {video_id}.{language_code}.{ext}"),
         (f"01{IDS[0]}.en.srt", "{index:02d}{video_id}.{language_code}.{ext}"),
         (f"{IDS[0]}{IDS[1]}.en.srt", "{video_id}{title}.{language_code}.{ext}"),
         (f"{IDS[0]} [{IDS[0]}].en.srt", "{video_id} [{video_id}].{language_code}.{ext}"),

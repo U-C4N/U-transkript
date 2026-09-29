@@ -489,8 +489,10 @@ def fetch_many(
             :func:`fetch`; ``include_manual`` and ``include_generated`` work as there too.
         concurrency: how many videos are fetched at the same time, 1 to 16.
         skip_existing: skip a video, without any request, when ``out_dir`` already holds its
-            file: the name the template gives, with ``*`` for what only the request tells (a
-            file in another language than ``languages`` asks for does not count).
+            file: a name the template gives with its video ID, whatever the title, channel and
+            ``{index}`` (a new upload shifts every position in a channel listing) or, without
+            ``languages``, the language (a file in another language than ``languages`` asks
+            for does not count).
         filename: the file-name template. Fields: ``{video_id}`` (required), ``{title}``,
             ``{channel}``, ``{index}`` (the position in ``videos``, or in the listing for
             :class:`VideoEntry` items), ``{language_code}`` and ``{ext}``. Format specs such

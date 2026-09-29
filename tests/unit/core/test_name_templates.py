@@ -153,10 +153,16 @@ def test_patterns_take_extra_globs_as_they_are() -> None:
     values = {"video_id": "dQw4w9WgXcQ", "ext": "srt", "language_code": "de"}
     assert TRANSCRIPT.pattern(values) == "dQw4w9WgXcQ.de.srt"
     assert TRANSCRIPT.pattern(values, {"language_code": "de-*"}) == "dQw4w9WgXcQ.de-*.srt"
-    numbered = NameTemplate.parse("{index:03d} {video_id}.{ext}", allowed=FIELDS)
-    assert numbered.pattern({"video_id": "a", "index": 7, "ext": "srt"}) == "007 a.srt"
     fixed = NameTemplate.parse("[{video_id}] subtitles.txt", allowed=FIELDS)
     assert fixed.pattern({"video_id": "a"}) == "[[]a] subtitles.txt"
+
+
+def test_patterns_match_any_index() -> None:
+    # A new upload shifts the positions of a channel listing; the video ID keeps names unique.
+    numbered = NameTemplate.parse("{index:03d} {video_id}.{ext}", allowed=FIELDS)
+    pattern = numbered.pattern({"video_id": "dQw4w9WgXcQ", "index": 7, "ext": "srt"})
+    assert pattern == "* dQw4w9WgXcQ.srt"
+    assert fnmatchcase("012 dQw4w9WgXcQ.srt", pattern)
 
 
 def test_glob_literals_match_only_themselves() -> None:

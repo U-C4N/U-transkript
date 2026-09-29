@@ -383,11 +383,7 @@ class _Files:
 
     def pattern(self, item: BulkItem, language_glob: str | None = None) -> str:
         """A glob for the names ``item`` can get, before anything about its video is known."""
-        values: dict[str, str | int] = {
-            "video_id": item.video_id,
-            "index": item.index,
-            "ext": self.ext,
-        }
+        values: dict[str, str | int] = {"video_id": item.video_id, "ext": self.ext}
         globs = None if language_glob is None else {"language_code": language_glob}
         return self.template.pattern(values, globs)
 
