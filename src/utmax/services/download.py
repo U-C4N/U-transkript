@@ -22,7 +22,7 @@ from utmax.adapters.files import (
 )
 from utmax.adapters.innertube import InnerTubeClient
 from utmax.core.downloads import DEFAULT_CHUNK_SIZE, MIN_CHUNK_SIZE
-from utmax.core.filenames import part_name, resolve_target, sidecar_name
+from utmax.core.filenames import Target, part_name, resolve_target, sidecar_name
 from utmax.core.ids import parse_video_id
 from utmax.core.media.moov import Flavor
 from utmax.core.media.mux import plan_mux
@@ -39,6 +39,7 @@ from utmax.models import (
     SubtitleMode,
     TrackList,
     Transcript,
+    VideoInfo,
 )
 from utmax.services.transcripts import TranscriptService
 
@@ -53,7 +54,11 @@ _SUBTITLE_MODES = ("embed", "sidecar", "both")
 
 @dataclass(frozen=True, slots=True)
 class DownloadOptions:
-    """Everything :func:`utmax.download` accepts besides the video and the path."""
+    """Everything :func:`utmax.download` accepts besides the video and the path.
+
+    ``name`` names the file when ``path`` is a folder, from the video and the file extension
+    (``download_many`` fills in its file-name template this way).
+    """
 
     format: Container | None = None
     quality: Quality = "compat"
@@ -67,6 +72,7 @@ class DownloadOptions:
     ffmpeg: str | os.PathLike[str] | None = None
     progress: Callable[[Progress], None] | None = None
     cancel: threading.Event | None = None
+    name: Callable[[VideoInfo, str], str] | None = None
 
     def check(self) -> None:
         """Reject option values that can never work, before anything is requested."""
@@ -131,32 +137,20 @@ class DownloadService:
                 error.video_id = video_id
             raise
 
+    def check(self, path: str | os.PathLike[str], options: DownloadOptions) -> None:
+        """Raise what :meth:`download` would raise for ``path`` and ``options`` before its first
+        request: bad options, no usable ffmpeg for ``.mp3``, an existing file."""
+        self._prepare(path, _listed(options), video_id=None)
+
     def _download(
         self, video_id: str, path: str | os.PathLike[str], options: DownloadOptions
     ) -> DownloadResult:
-        if options.subtitles is not None and not isinstance(options.subtitles, (str, Transcript)):
-            options = replace(options, subtitles=tuple(options.subtitles))
-        options.check()
-        target = resolve_target(path, format=options.format, is_dir=Path(path).is_dir())
+        options = _listed(options)
+        target, ffmpeg = self._prepare(path, options, video_id=video_id)
         container = target.container
-        if container == "mov" and options.quality == "max":
-            raise InvalidOption(
-                'quality="max" needs .mp4: QuickTime .mov files cannot hold AV1 video.',
-                suggestion='Save max quality as .mp4, or use quality="compat" for .mov.',
-                video_id=video_id,
-            )
         audio_only = container in ("m4a", "mp3")
-        if audio_only and options.default_subtitle is not None:
-            raise InvalidOption(
-                f".{container} files cannot embed subtitles, so default_subtitle has no effect.",
-                suggestion="Leave default_subtitle out for audio files.",
-                video_id=video_id,
-            )
-        ffmpeg = self._ffmpeg(options.ffmpeg) if container == "mp3" else None
-        if target.file is not None:
-            _check_free(Path(target.file), options.overwrite, video_id)
         player = self._innertube.player(video_id, purpose="streams")
-        final = Path(target.path_for(player.video))
+        final = Path(target.path_for(player.video, name=options.name))
         if target.file is None:
             _check_free(final, options.overwrite, video_id)
         subtitles = self._subtitles(player, options.subtitles, audio_only=audio_only)
@@ -216,6 +210,30 @@ class DownloadService:
             size_bytes=size,
             resumed=resumed,
         )
+
+    def _prepare(
+        self, path: str | os.PathLike[str], options: DownloadOptions, *, video_id: str | None
+    ) -> tuple[Target, FFmpeg | None]:
+        """Every check that needs no request; the target and, for ``.mp3``, ffmpeg."""
+        options.check()
+        target = resolve_target(path, format=options.format, is_dir=Path(path).is_dir())
+        container = target.container
+        if container == "mov" and options.quality == "max":
+            raise InvalidOption(
+                'quality="max" needs .mp4: QuickTime .mov files cannot hold AV1 video.',
+                suggestion='Save max quality as .mp4, or use quality="compat" for .mov.',
+                video_id=video_id,
+            )
+        if container in ("m4a", "mp3") and options.default_subtitle is not None:
+            raise InvalidOption(
+                f".{container} files cannot embed subtitles, so default_subtitle has no effect.",
+                suggestion="Leave default_subtitle out for audio files.",
+                video_id=video_id,
+            )
+        ffmpeg = self._ffmpeg(options.ffmpeg) if container == "mp3" else None
+        if target.file is not None:
+            _check_free(Path(target.file), options.overwrite, video_id)
+        return target, ffmpeg
 
     def _ffmpeg(self, explicit: str | os.PathLike[str] | None) -> FFmpeg:
         tool = self._make_ffmpeg(self._locate(explicit))
@@ -296,7 +314,14 @@ def _discard(leftover: Path) -> None:
         log.warning("could not delete %s: %s", leftover.name, error)
 
 
-def _check_free(path: Path, overwrite: bool, video_id: str) -> None:
+def _listed(options: DownloadOptions) -> DownloadOptions:
+    """``options`` with ``subtitles`` as a tuple (callers may pass any iterable)."""
+    if options.subtitles is None or isinstance(options.subtitles, (str, Transcript)):
+        return options
+    return replace(options, subtitles=tuple(options.subtitles))
+
+
+def _check_free(path: Path, overwrite: bool, video_id: str | None) -> None:
     if path.exists() and not overwrite:
         raise OutputExists(f"{path} already exists.", video_id=video_id)
 

@@ -10,6 +10,7 @@ import pytest
 
 from tests.helpers.builders import make_transcript
 from tests.helpers.downloads import FakeFFmpegRuns, FakeYouTube, read_movie
+from tests.helpers.files import folder_names
 from tests.helpers.youtube import VIDEO_ID
 from utmax.adapters import ffmpeg as ffmpeg_module
 from utmax.errors import (
@@ -43,7 +44,7 @@ def test_m4a_downloads_remux_the_aac_stream(tmp_path: Path) -> None:
     assert movie.major_brand == "M4A "
     assert [track.handler for track in movie.tracks] == ["soun"]
     assert len(movie.tracks[0].samples) == 172
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["rick.m4a"]
+    assert folder_names(tmp_path) == ["rick.m4a"]
     assert youtube.api.urls("GET") == []
 
 
@@ -150,7 +151,7 @@ def test_mp3_downloads_convert_the_audio_with_ffmpeg(tmp_path: Path) -> None:
     assert result.path.read_bytes().startswith(b"ID3")
     conversion = next(call for call in runs.calls if "-i" in call)
     assert conversion[conversion.index("-i") + 1] == str(tmp_path / "song.mp3.140.part")
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["song.mp3"]
+    assert folder_names(tmp_path) == ["song.mp3"]
     phases = [progress.phase for progress in seen]
     assert "converting" in phases
     assert phases == sorted(phases, key=["downloading", "converting", "finished"].index)
@@ -237,7 +238,7 @@ def test_cancel_during_mux_keeps_the_parts_for_a_resume(tmp_path: Path) -> None:
     result = youtube.service().download(VIDEO_ID, tmp_path / "rick.m4a", DownloadOptions())
     assert result.resumed is True
     assert len(youtube.media.requests) == media_requests
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["rick.m4a"]
+    assert folder_names(tmp_path) == ["rick.m4a"]
 
 
 def test_failed_downloads_keep_their_parts(tmp_path: Path) -> None:

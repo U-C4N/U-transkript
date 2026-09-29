@@ -8,7 +8,7 @@ import os
 import threading
 from collections.abc import Callable, Iterable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -18,13 +18,26 @@ from utmax.core.filenames import NameTemplate, glob_literal
 from utmax.core.formats import format_for_path
 from utmax.core.ids import parse_video_id
 from utmax.errors import InvalidOption, InvalidVideoId, ProviderAuthError, RequestBlocked
-from utmax.models import BulkReport, BulkResult, FormatName, Transcript, VideoEntry, VideoInfo
-from utmax.services.download import DownloadService
+from utmax.models import (
+    BulkReport,
+    BulkResult,
+    Container,
+    DownloadResult,
+    FormatName,
+    Quality,
+    SubtitleMode,
+    Transcript,
+    VideoEntry,
+    VideoInfo,
+)
+from utmax.services.download import DownloadOptions, DownloadService
 from utmax.services.transcripts import TranscriptService
 from utmax.services.translation import check_language_code, resolve_translator, translate_transcript
 
 __all__ = [
+    "DEFAULT_DOWNLOAD_NAME",
     "DEFAULT_TRANSCRIPT_NAME",
+    "DOWNLOAD_FIELDS",
     "MAX_CONCURRENCY",
     "TRANSCRIPT_FIELDS",
     "BulkItem",
@@ -38,7 +51,9 @@ log = logging.getLogger("utmax.bulk")
 
 MAX_CONCURRENCY = 16
 TRANSCRIPT_FIELDS = ("video_id", "title", "channel", "index", "language_code", "ext")
+DOWNLOAD_FIELDS = ("video_id", "title", "channel", "index", "ext")
 DEFAULT_TRANSCRIPT_NAME = "{video_id}.{language_code}.{ext}"
+DEFAULT_DOWNLOAD_NAME = "{title} [{video_id}].{ext}"
 _POLL_SECONDS = 0.1
 T = TypeVar("T")
 
@@ -277,6 +292,58 @@ class BulkService:
             existing=existing,
             progress=progress,
             breaker=(RequestBlocked, ProviderAuthError),
+        )
+
+    def download_many(
+        self,
+        videos: Iterable[str | VideoEntry],
+        out_dir: str | os.PathLike[str],
+        *,
+        format: Container = "mp4",
+        quality: Quality = "compat",
+        subtitles: Sequence[str] | None = None,
+        subtitle_mode: SubtitleMode = "embed",
+        concurrency: int = 2,
+        skip_existing: bool = True,
+        filename: str = DEFAULT_DOWNLOAD_NAME,
+        ffmpeg: str | os.PathLike[str] | None = None,
+        progress: Callable[[BulkResult[DownloadResult]], None] | None = None,
+    ) -> BulkReport[DownloadResult]:
+        """Download every video into ``out_dir``; see :func:`utmax.download_many`."""
+        check_concurrency(concurrency)
+        if subtitles is not None and not isinstance(subtitles, str):
+            subtitles = tuple(subtitles)
+            if not all(isinstance(code, str) for code in subtitles):
+                raise InvalidOption(
+                    "download_many takes subtitle language codes, such as subtitles=['en']; "
+                    "a Transcript belongs to a single video."
+                )
+        stop = threading.Event()
+        options = DownloadOptions(
+            format=format,
+            quality=quality,
+            subtitles=subtitles,
+            subtitle_mode=subtitle_mode,
+            overwrite=True,
+            ffmpeg=ffmpeg,
+            cancel=stop,
+        )
+        template = NameTemplate.parse(filename, allowed=DOWNLOAD_FIELDS)
+        self._downloads.check(os.path.join(os.fspath(out_dir), ""), options)
+        items = bulk_items(videos)
+        folder = _folder(out_dir)
+        files = _Files(folder, template, format)
+
+        def work(item: BulkItem) -> tuple[DownloadResult, Path | None]:
+            def name(video: VideoInfo, ext: str) -> str:
+                return files.name(item, video)
+
+            result = self._downloads.download(item.video_id, folder, replace(options, name=name))
+            return result, result.path
+
+        existing = files.finder(lambda item: [files.pattern(item)]) if skip_existing else None
+        return run_bulk(
+            items, work, concurrency=concurrency, existing=existing, progress=progress, stop=stop
         )
 
 
