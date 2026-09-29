@@ -28,7 +28,7 @@
 1. **Links people paste** — channel tabs (`/@RickAstleyYT/shorts`, `/channel/UC…/videos`, `/c/name/featured`), `m.`/`music.` hosts, links without a scheme or starting with `//`, `youtu.be/…?list=…`, a watch link inside a playlist, Mix links (`list=RD…`), percent-encoded handles, a plain video link → the right playlist or channel, or a clear `InvalidSource`/`CollectionUnavailable`, always before any request. Pinned in Task 2 (`test_playlists`, `test_channels`, `test_mixes_are_refused_before_any_request`, `test_anything_else_is_invalid`, `test_single_videos_point_to_fetch_and_download`).
 2. **Listings that break or change shape** — ANDROID_VR answering an unreadable page, a server error, or failing on page two; WEB's older continuation shape; a continuation token that repeats or never ends; private videos and repeated videos → one complete, numbered listing from a single client, never half a list glued from two. Pinned in Task 4 (`test_unplayable_and_foreign_items_are_counted_but_skipped`, `test_older_web_pages_continue_through_a_continuation_item_renderer`), Task 5 (all Pager tests) and Task 6 (`test_web_takes_over_when_android_vr_fails`, `test_web_restarts_the_listing_when_android_vr_fails_midway`, `test_an_unreadable_first_page_falls_back_to_web`, `test_the_page_cap_stops_endless_listings`).
 3. **Playlists and channels that cannot be listed** — an unknown handle, a mistyped channel ID, a channel without Shorts or live streams, a channel without uploads, a private or deleted playlist, a rate limit → `CollectionNotFound`, `CollectionUnavailable` with YouTube's reason, an empty list, or `IpBlocked` at once. Pinned in Task 6 (`test_missing_playlists_are_not_found`, `test_youtube_alerts_explain_unviewable_playlists`, `test_channels_without_shorts_list_nothing`, `test_channels_without_uploads_are_not_found`, `test_unknown_handles_are_not_found_without_browsing`, `test_rate_limits_stop_the_listing_at_once`).
-4. **Running a bulk job again into the same folder** — files from an earlier run (possibly in another language or for another target language), titles containing `[` or `*`, `{index}` templates, a video listed twice, a half-finished download → a video is skipped without any request only when its file really exists; everything else runs, and interrupted downloads resume. Pinned in Task 7 (`test_patterns_escape_what_is_known_and_match_the_rest`, `test_glob_literals_match_only_themselves`), Task 9 (`test_existing_files_are_skipped_without_a_request`, `test_the_requested_languages_decide_which_files_count`, `test_translate_many_skips_what_it_would_write`) and Task 10 (`test_existing_downloads_are_skipped_without_a_request`).
+4. **Running a bulk job again into the same folder** — files from an earlier run (possibly in another language or for another target language), titles containing `[` or `*`, `{index}` templates, a video listed twice, a half-finished download → a video is skipped without any request only when its file really exists; everything else runs, and interrupted downloads resume. Pinned in Task 7 (`test_patterns_escape_what_is_known_and_match_the_rest`, `test_glob_literals_match_only_themselves`), Task 9 (`test_existing_files_are_skipped_without_a_request`, `test_the_requested_languages_decide_which_files_count`, `test_translate_many_skips_what_it_would_write`) and Task 10 (`test_existing_downloads_are_skipped_without_a_request`, `test_skip_existing_false_replaces_the_file_it_downloads_again`, `test_ctrl_c_stops_the_downloads`).
 5. **Long bulk runs that go wrong** — YouTube blocks the IP address half-way, an API key is rejected, one video is private, the user presses Ctrl-C, a progress callback raises → the other videos still finish (or are reported as not attempted after a block), nothing hangs, Ctrl-C propagates once the running videos stopped, and the report keeps the input order. Pinned in Task 8 (`test_a_block_stops_the_run`, `test_ctrl_c_or_a_progress_error_stops_the_run`, `test_ctrl_c_while_the_videos_are_queued_stops_the_run`, `test_items_that_need_no_work_are_decided_first`), Task 9 (`test_a_block_stops_fetch_many`, `test_a_rejected_api_key_stops_translate_many`) and Task 10 (`test_ctrl_c_stops_the_downloads`, `test_failures_are_reported_and_blocks_stop_the_run`).
 
 ## Verified facts this plan relies on
@@ -6030,6 +6030,8 @@ Expected: all pass, as before.
 
 - [ ] **Step 2: Write the failing tests**
 
+The Ctrl-C test synchronizes through events, not through timing: every video after the first waits for the run's stop before it downloads (`WaitsForTheStop`), so a third video can never start however late the calling thread is, and that wait also shows that the stop is the downloads' own `cancel` event. It passed 200 of 200 rounds in a row, 120 of 120 with 64 busy processes on 32 CPUs, and with the calling thread delayed by up to one second.
+
 `tests/unit/services/test_bulk_downloads.py`:
 
 ```python
@@ -6037,6 +6039,8 @@ Expected: all pass, as before.
 
 from __future__ import annotations
 
+import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -6047,8 +6051,35 @@ from tests.helpers.bulk import IDS, TITLES, ManyVideos
 from tests.helpers.downloads import FakeFFmpegRuns, codec_of, read_movie
 from tests.helpers.files import folder_names
 from utmax.adapters.ffmpeg import FFmpeg
+from utmax.adapters.innertube import InnerTubeClient
 from utmax.errors import FFmpegNotFound, InvalidOption, IpBlocked, VideoUnavailable
 from utmax.models import BulkResult, DownloadResult, VideoEntry
+from utmax.services.bulk import BulkService
+from utmax.services.download import DownloadOptions, DownloadService
+from utmax.services.transcripts import TranscriptService
+
+
+class WaitsForTheStop(DownloadService):
+    """A DownloadService whose videos after the first wait for the run's stop before they start.
+
+    Only the first video can finish before Ctrl-C, and a third one can never start, however
+    late the calling thread reaches the stop. ``waiting`` is set once the second video is about
+    to wait, and ``waited`` records what each wait saw: True only when the run's stop event is
+    the download's own ``cancel`` event.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.waiting = threading.Event()
+        self.waited: list[bool] = []
+
+    def download(
+        self, video: str, path: str | os.PathLike[str], options: DownloadOptions
+    ) -> DownloadResult:
+        if video != IDS[0]:
+            self.waiting.set()
+            self.waited.append(options.cancel is not None and options.cancel.wait(5))
+        return super().download(video, path, options)
 
 
 def value(result: BulkResult[DownloadResult]) -> DownloadResult:
@@ -6089,6 +6120,15 @@ def test_existing_downloads_are_skipped_without_a_request(tmp_path: Path) -> Non
     again = youtube.bulk().download_many(IDS[:1], tmp_path, skip_existing=False)
     assert again[0].path == tmp_path / f"{TITLES[IDS[0]]} [{IDS[0]}].mp4"
     assert old.read_bytes() == b"old"
+
+
+def test_skip_existing_false_replaces_the_file_it_downloads_again(tmp_path: Path) -> None:
+    file = tmp_path / f"{TITLES[IDS[0]]} [{IDS[0]}].mp4"
+    file.write_bytes(b"old")
+    report = ManyVideos().bulk().download_many(IDS[:1], tmp_path, skip_existing=False)
+    assert [(result.status, result.path) for result in report] == [("ok", file)]
+    tracks = read_movie(file).tracks
+    assert [codec_of(track) for track in tracks] == [b"avc1", b"mp4a", b"tx3g"]
 
 
 def test_templates_number_listing_entries(tmp_path: Path) -> None:
@@ -6180,20 +6220,43 @@ def test_failures_are_reported_and_blocks_stop_the_run(tmp_path: Path) -> None:
 
 
 def test_ctrl_c_stops_the_downloads(tmp_path: Path) -> None:
+    youtube = ManyVideos()
+    innertube = InnerTubeClient(youtube)
+    transcripts = TranscriptService(innertube)
+    downloads = WaitsForTheStop(innertube, transcripts, youtube.stream)
+
     def interrupt(result: BulkResult[DownloadResult]) -> None:
+        # Ctrl-C arrives once the second video is running, whatever the speed of the threads.
+        assert downloads.waiting.wait(5)
         raise KeyboardInterrupt
 
-    youtube = ManyVideos()
     with pytest.raises(KeyboardInterrupt):
-        youtube.bulk().download_many(IDS, tmp_path, concurrency=1, progress=interrupt)
+        BulkService(transcripts, downloads).download_many(
+            IDS, tmp_path, concurrency=1, progress=interrupt
+        )
+    # The stop reached the running download as its cancel event, and no third video started.
+    assert downloads.waited == [True]
     assert IDS[2] not in youtube.players
-    assert len(list(tmp_path.glob("*.mp4"))) <= 2
+    finished = f"{TITLES[IDS[0]]} [{IDS[0]}].mp4"
+    interrupted = f"{TITLES[IDS[1]]} [{IDS[1]}].mp4"
+    names = folder_names(tmp_path)
+    assert [name for name in names if name.endswith(".mp4")] == [finished]
+    parts = [name for name in names if name.startswith(f"{interrupted}.")]
+    assert any(name.endswith(".part") for name in parts)
+    assert any(name.endswith(".part.json") for name in parts)
+    assert len(names) == 1 + len(parts)
+    # A half-finished download is not a finished file: a rerun completes it.
+    rerun = ManyVideos()
+    report = rerun.bulk().download_many(IDS[:2], tmp_path)
+    assert [result.status for result in report] == ["skipped", "ok"]
+    assert rerun.players == [IDS[1]]
+    assert folder_names(tmp_path) == sorted([finished, interrupted])
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/unit/services/test_bulk_downloads.py -q`
-Expected: 17 failed, 1 passed — `AttributeError: 'BulkService' object has no attribute 'download_many'` (`test_folder_checks_ignore_only_windows_ghost_names` already passes: it checks the helper of Step 1).
+Expected: 18 failed, 1 passed — `AttributeError: 'BulkService' object has no attribute 'download_many'` (`test_folder_checks_ignore_only_windows_ghost_names` already passes: it checks the helper of Step 1).
 
 - [ ] **Step 4: Let a download take its checks and its file name from outside**
 
@@ -6616,11 +6679,11 @@ class _Files:
 - [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/unit/services/test_bulk_downloads.py tests/unit/services/test_download_video.py tests/unit/services/test_download_audio.py tests/unit/test_download_api.py -q`
-Expected: the new file reports 18 passed; the M4 download tests still pass.
+Expected: the new file reports 19 passed; the M4 download tests still pass.
 
 - [ ] **Step 7: Gates and commit**
 
-Run the four gates (the suite grows by 18 to 1340 passed).
+Run the four gates (the suite grows by 19 to 1341 passed).
 
 ```bash
 git add tests/helpers/files.py tests/unit/services/test_download_audio.py src/utmax/services/download.py src/utmax/services/bulk.py tests/unit/services/test_bulk_downloads.py
@@ -7329,7 +7392,7 @@ Expected: the new file reports 7 passed; the existing facade and client tests st
 
 - [ ] **Step 6: Gates and commit**
 
-Run the four gates (the suite grows by 7 to 1347 passed, 15 deselected).
+Run the four gates (the suite grows by 7 to 1348 passed, 15 deselected).
 
 ```bash
 git add src/utmax/client.py src/utmax/__init__.py tests/unit/test_collections_api.py
@@ -7458,7 +7521,7 @@ uv sync --locked --all-extras
 uv build --out-dir <a scratch folder outside the repository>
 ```
 
-Expected: ruff, format and mypy clean; 1347 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
+Expected: ruff, format and mypy clean; 1348 passed, 23 deselected (the 8 new live tests are deselected by default) with total coverage ≥ 90 % (99.6 % when this plan was verified) and core coverage ≥ 95 % (99 %); the run without extras passes with the provider tests skipped; the wheel contains only `utmax/` and the dist-info. Record every count in the report.
 
 - [ ] **Step 4: Check the spec's acceptance list for M5**
 
