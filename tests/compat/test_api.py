@@ -7,8 +7,10 @@ script the watch page first make the player requests fail; the request counts ar
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -41,6 +43,7 @@ from utmax.compat._errors import (
 )
 from utmax.compat._transcripts import FetchedTranscript, FetchedTranscriptSnippet
 from utmax.compat.proxies import GenericProxyConfig, WebshareProxyConfig
+from utmax.transport import HttpRequest, HttpResponse
 
 WATCH_HTML = '<script>ytcfg.set({"INNERTUBE_API_KEY": "AIzaTestKey_123-abc"});</script>'
 CONSENT_HTML = (
@@ -76,6 +79,36 @@ def failing_players(transport: FakeTransport) -> FakeTransport:
 
 def caption_languages(transport: FakeTransport) -> list[str]:
     return [url.split("lang=")[1].split("&")[0] for url in transport.urls("GET") if "lang=" in url]
+
+
+class MeetingTransport(FakeTransport):
+    """Holds every request until ``threads`` of them are in flight, then answers each with the
+    video it names.
+
+    The threads of a test are thus inside the player request together, and again inside the
+    caption download, and every answer belongs to the video its request asked for. A call that
+    keeps its video on the shared instance instead of on its own stack would hand one thread
+    another's video, and the answers would show it.
+    """
+
+    def __init__(self, threads: int) -> None:
+        super().__init__()
+        self._meeting = threading.Barrier(threads, timeout=5)
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        with self._lock:
+            self.requests.append(request)
+        if request.method == "POST" and "/youtubei/v1/player" in request.url:
+            video_id = json.loads(request.body or b"{}")["videoId"]
+            reply = json_response(player_payload(video_id=video_id))
+        elif request.method == "GET" and "/api/timedtext" in request.url:
+            video_id = parse_qs(urlsplit(request.url).query)["v"][0]
+            cue = f'<text start="0" dur="1.5">{video_id}</text>'
+            reply = xml_response(f"<transcript>{cue}</transcript>")
+        else:
+            raise AssertionError(f"unexpected request: {request.method} {request.url}")
+        self._meeting.wait()
+        return reply
 
 
 def test_fetch() -> None:
@@ -430,21 +463,26 @@ def test_without_an_http_client_utmax_sends_the_requests(monkeypatch: pytest.Mon
 
 
 def test_one_instance_serves_many_threads() -> None:
-    transport = FakeTransport()
-    transport.add(
-        "POST", "/youtubei/v1/player", json_response(player_payload(video_id=VIDEO)), repeat=True
-    )
-    transport.add("GET", "/api/timedtext", xml_response(TRANSCRIPT_XML), repeat=True)
-    ytt_api = api(transport)
-    results: list[FetchedTranscript] = []
+    video_ids = [f"vid_{index:07d}" for index in range(8)]
+    ytt_api = api(MeetingTransport(threads=len(video_ids)))
+    results: dict[str, FetchedTranscript] = {}
 
-    def work() -> None:
-        results.append(ytt_api.fetch(VIDEO))
+    def work(video_id: str) -> None:
+        results[video_id] = ytt_api.fetch(video_id)
 
-    threads = [threading.Thread(target=work) for _ in range(8)]
+    threads = [threading.Thread(target=work, args=(video_id,)) for video_id in video_ids]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
 
-    assert results == [reference()] * 8
+    assert results == {
+        video_id: FetchedTranscript(
+            snippets=[FetchedTranscriptSnippet(text=video_id, start=0.0, duration=1.5)],
+            video_id=video_id,
+            language="English",
+            language_code="en",
+            is_generated=False,
+        )
+        for video_id in video_ids
+    }
