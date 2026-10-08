@@ -152,6 +152,53 @@ def test_a_download_folder_that_cannot_be_created_is_a_tool_error(tmp_path: Path
     result = call(server, {"video": VIDEO, "format": "m4a"})
 
     assert result.is_error is True
+    text = result.content[0].text
+    assert text.startswith("Error executing tool download: ")
+    assert "file.txt" in text
+
+
+def test_a_download_folder_that_cannot_be_searched_is_a_tool_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_is_dir = Path.is_dir
+
+    def is_dir(self: Path, *args: Any, **kwargs: Any) -> bool:
+        if self == tmp_path:
+            raise PermissionError("the download folder cannot be searched")
+        return real_is_dir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "is_dir", is_dir)
+    youtube = ManyVideos()
+    server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
+
+    result = call(server, {"video": VIDEO, "format": "m4a"})
+
+    assert result.is_error is True
+    assert "the download folder cannot be searched" in result.content[0].text
+    assert youtube.players == []
+
+
+def test_a_file_that_vanishes_before_it_is_measured_is_a_tool_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    existing = tmp_path / f"{NAME}.m4a"
+    existing.write_bytes(b"audio")
+    real_stat = Path.stat
+
+    def stat(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == existing:
+            raise FileNotFoundError("the file vanished")
+        return real_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    youtube = ManyVideos()
+    server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
+
+    result = call(server, {"video": VIDEO, "format": "m4a"})
+
+    assert result.is_error is True
+    assert "the file vanished" in result.content[0].text
+    assert youtube.players == []
 
 
 def test_progress_that_cannot_be_reported_does_not_stop_the_download(tmp_path: Path) -> None:

@@ -33,7 +33,6 @@ from utmax.mcp.config import Config
 from utmax.models import (
     CollectionKind,
     Container,
-    DownloadResult,
     FormatName,
     Progress,
     Quality,
@@ -385,23 +384,13 @@ async def download_file(
 ) -> DownloadOut:
     """Download ``video`` into ``directory`` on a worker thread, unless it is already there.
 
-    ``report`` receives the download's progress on the event loop. When the caller is
-    cancelled, the download stops and keeps its partial files, so the next call resumes it.
+    The worker also looks for the file, so a folder that cannot be searched is a tool error
+    like any other file system error. ``report`` receives the download's progress on the event
+    loop. When the caller is cancelled, the download stops and keeps its partial files, so the
+    next call resumes it.
     """
     with tool_errors():
         video_id = parse_video_id(video)
-    existing = _existing_download(directory, video_id, format)
-    if existing is not None:
-        return DownloadOut(
-            path=str(existing),
-            size_bytes=existing.stat().st_size,
-            video_id=video_id,
-            title=existing.name.removesuffix(f" [{video_id}].{format}"),
-            container=format,
-            embedded_subtitles=[],
-            sidecars=[],
-            skipped=True,
-        )
     token = anyio.lowlevel.current_token()
     cancel = threading.Event()
 
@@ -413,9 +402,21 @@ async def download_file(
         except Exception:  # progress is best effort; it must never stop a download
             log.debug("could not report download progress", exc_info=True)
 
-    def work() -> DownloadResult:
+    def work() -> DownloadOut:
+        existing = _existing_download(directory, video_id, format)
+        if existing is not None:
+            return DownloadOut(
+                path=str(existing),
+                size_bytes=existing.stat().st_size,
+                video_id=video_id,
+                title=existing.name.removesuffix(f" [{video_id}].{format}"),
+                container=format,
+                embedded_subtitles=[],
+                sidecars=[],
+                skipped=True,
+            )
         directory.mkdir(parents=True, exist_ok=True)
-        return client.download(
+        result = client.download(
             video_id,
             directory,
             format=format,
@@ -425,23 +426,23 @@ async def download_file(
             progress=forward,
             cancel=cancel,
         )
+        return DownloadOut(
+            path=str(result.path),
+            size_bytes=result.size_bytes,
+            video_id=result.video.video_id,
+            title=result.video.title,
+            container=result.container,
+            embedded_subtitles=list(result.embedded_subtitles),
+            sidecars=[str(path) for path in result.sidecars],
+            skipped=False,
+        )
 
     try:
         with tool_errors():
-            result = await anyio.to_thread.run_sync(work, abandon_on_cancel=True)
+            return await anyio.to_thread.run_sync(work, abandon_on_cancel=True)
     except anyio.get_cancelled_exc_class():
         cancel.set()
         raise
-    return DownloadOut(
-        path=str(result.path),
-        size_bytes=result.size_bytes,
-        video_id=result.video.video_id,
-        title=result.video.title,
-        container=result.container,
-        embedded_subtitles=list(result.embedded_subtitles),
-        sidecars=[str(path) for path in result.sidecars],
-        skipped=False,
-    )
 
 
 @contextmanager
