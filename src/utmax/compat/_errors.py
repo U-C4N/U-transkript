@@ -10,10 +10,13 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
-from typing import Self
+from typing import TYPE_CHECKING, Self
 
 from utmax.compat._settings import WATCH_URL
 from utmax.compat.proxies import GenericProxyConfig, ProxyConfig, WebshareProxyConfig
+
+if TYPE_CHECKING:
+    from utmax.compat._transcripts import TranscriptList
 
 __all__ = [
     "WATCH_URL",
@@ -270,7 +273,7 @@ class NoTranscriptFound(CouldNotRetrieveTranscript):
         self,
         video_id: str,
         requested_language_codes: Iterable[str],
-        transcript_data: object,
+        transcript_data: TranscriptList,
     ) -> None:
         self._requested_language_codes = requested_language_codes
         self._transcript_data = transcript_data
