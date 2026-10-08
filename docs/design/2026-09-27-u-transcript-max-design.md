@@ -34,7 +34,7 @@ architecture; green quality gates; a minimal, beautiful README with an ASCII arc
 | AI providers | Claude · OpenAI + compatible via `base_url` (Ollama, LM Studio, Groq, DeepSeek…) · Gemini · OpenRouter |
 | AI rules | Official SDKs, lazily imported; model always `"provider=model-id"`; **no default model**; every format works for translations |
 | Compat | `from utmax.compat import YouTubeTranscriptApi` drop-in, plus opt-in `utmax.compat.install()` for transitive users (LangChain…) |
-| MCP | Official `mcp` SDK (extra), stdio; tools: list/get transcript, translate, list playlist/channel videos, download |
+| MCP | Official `mcp` SDK (extra), stdio; tools: list tracks, get transcript (in parts), list playlist/channel videos, download; no AI provider and no API key: the assistant translates (decided 2026-10-08) |
 | Architecture | Layered: interfaces → services → pure core (no I/O) + adapters (all I/O) |
 | README | Minimal, English, **ASCII** architecture diagram (same on GitHub and PyPI), legal/ToS note |
 | Repo & release | Repo stays `U-C4N/U-transkript`, branch `v4` · first release **0.1.0** · MIT `Copyright (c) 2024-2026 U-C4N` |
@@ -66,9 +66,12 @@ architecture; green quality gates; a minimal, beautiful README with an ASCII arc
   unviewable (WEB alert "This playlist type is unviewable."); YouTube Music's `RDCLAK5uy_…` playlists list on WEB,
   but ANDROID_VR pages them endlessly (verified 2026-09-29).
 - **youtube-transcript-api 1.2.4** (2026-01-29) public surface read from source (see §4.6); legacy static methods
-  were removed in 1.2.0.
-- **SDKs**: `mcp` 2.2.0 (`from mcp.server import MCPServer`; FastMCP renamed; stdio re-wraps UTF-8; sync tools run
-  in threads); `anthropic` 1.8.0 (`output_config={"format":{"type":"json_schema",…}}` GA; no `fallbacks`);
+  were removed in 1.2.0 (0.6.3 had them with `cookies`, 1.1.1 behind `DeprecationWarning`s). Side by side on
+  2026-10-08, utmax.compat and 1.2.4 gave identical snippets, formatter output and list texts on two live videos.
+- **SDKs**: `mcp` 2.2.0 and 2.3.0 (`from mcp.server import MCPServer`; FastMCP renamed; stdio re-wraps UTF-8 and
+  diverts stray fd-1 writes to stderr; sync tools run in threads; a pydantic return model gives structured output;
+  `ToolError` → an `is_error` result; MCP sampling is not documented for Claude Code or Claude Desktop);
+  `anthropic` 1.8.0 (`output_config={"format":{"type":"json_schema",…}}` GA; no `fallbacks`);
   `openai` 3.19.2; `google-genai` 2.25.0 (**retries off by default**). PyPI names `u-transcript-max`, `utmax`: free.
 - **ffmpeg** 9.0 with `libmp3lame` present locally. cp1254 console crashes on `♪` → the library never prints.
 
@@ -124,13 +127,13 @@ src/utmax/
                 providers/  base.py claude.py openai.py openrouter.py gemini.py
   compat/       __init__.py _api.py _transcripts.py _errors.py _settings.py formatters.py proxies.py _bridge.py
   mcp/          __init__.py __main__.py config.py server.py
-tests/  conftest.py  helpers/ (fake_transport, fmp4_factory, hollow_source)  fixtures/{youtube,media,translate}
+tests/  conftest.py  helpers/ (fake_transport, fmp4_factory, hollow_source)  fixtures/{youtube,media,translate,compat}
         unit/{core,media,services,adapters}  compat/  mcp/  live/  test_architecture.py
 ```
 
 **pyproject**: `hatchling>=1.32`; `requires-python=">=3.11"`; `license="MIT"`; `dependencies=[]`; extras
 `claude=anthropic>=1.8,<2` · `openai=openai>=3.19,<4` · `gemini=google-genai>=2.25,<3` · `openrouter=openai>=3.19,<4`
-· `ai` (all three SDKs) · `mcp=mcp>=2.2,<3`; script `utmax-mcp="utmax.mcp:main"`; PEP 735 `dev` group (pytest,
+· `ai` (all three SDKs) · `mcp=mcp>=2.2,<3 anyio>=4.11,<5`; script `utmax-mcp="utmax.mcp:main"`; PEP 735 `dev` group (pytest,
 pytest-cov, ruff, mypy); pytest `-m 'not live'`, markers `live`, `ffmpeg`; mypy strict; coverage branch, fail_under 90.
 
 ## 4. Public API
@@ -246,30 +249,49 @@ model-id (first `=` only) else `InvalidModelSpec`; `base_url` with non-`openai` 
   / find_generated_transcript`; `Transcript.fetch / translate / is_translatable`; `FetchedTranscript` (+`snippets`,
   `to_raw_data()`); formatters `JSON/Text/SRT/WebVTT/PrettyPrint` + `FormatterLoader`; proxies `GenericProxyConfig`,
   `WebshareProxyConfig`; all 19 exceptions + 0.6 aliases `TooManyRequests`, `NoTranscriptAvailable`, `CookiesInvalid`.
-- Legacy classmethods `get_transcript`, `get_transcripts`, `list_transcripts` (DeprecationWarning, dict output;
-  `cookies` accepted and ignored with a warning).
-- Fidelity: default `("en",)`, exact-code matching, last-duplicate-wins, legacy XML captions via ANDROID (populated
-  `translation_languages`), `exp=xpe` → `PoTokenRequired`. Supersets: URLs accepted, thread-safe, formatters accept
-  0.6 `list[dict]`. `http_client` = any `requests.Session`-like object (enables SOCKS/custom certs without us
-  depending on requests). `proxy_config` → urllib proxy + `block_retries` + `Connection: close`.
+- Legacy classmethods `get_transcript`, `get_transcripts`, `list_transcripts` with 0.6.3's signatures
+  (1.1.1's `DeprecationWarning` texts, `stacklevel=2`; dict output; `proxies` a `ProxyConfig` or requests-style
+  dict; `cookies` accepted and ignored with a `UserWarning`).
+- Messages: every exception message and class attribute is 1.2.4's word for word, its GitHub, README and Webshare
+  links included (user's choice, 2026-10-08); `utmax/compat/__init__.py` carries upstream's MIT notice.
+- Fidelity: default `("en",)`, exact-code matching, last-duplicate-wins, legacy XML captions (utmax's keyless
+  captions clients, ANDROID first, so `translation_languages` are populated; `fetch_captions(..., fmt=None)`),
+  upstream's parser regexes and timestamp rounding, `exp=xpe` → `PoTokenRequired`. Supersets: URLs accepted,
+  thread-safe, formatters accept 0.6 `list[dict]`, snippets also read like 0.6's dicts (`snippet["text"]`, `get`,
+  `keys`, `items`, `dict(snippet)`). Input that cannot be a video ID → `VideoUnavailable` without a request (a URL
+  without a video → `InvalidVideoId`). Errors are upstream's classes with the utmax error as `__cause__`.
+- Transports: `http_client` = any `requests.Session`-like object (enables SOCKS/HTTPS proxies and custom certs
+  without us depending on requests); the constructor sets its `Accept-Language`, `proxies` and `Connection: close`
+  as upstream does. Without one, utmax's urllib stack takes the configuration's `https` (else `http`) proxy, which
+  must be `http://` (else `InvalidProxyConfig` naming `http_client`); `retries_when_blocked` → `block_retries` (per
+  client profile).
 - `utmax.compat.install()` (opt-in): registers the compat modules as `youtube_transcript_api.*` in `sys.modules`
-  so libraries importing it (LangChain loaders…) run on utmax; must be called before they import it.
+  so libraries importing it (LangChain loaders…) run on utmax; call it before they import it (it also replaces a
+  real installation for imports that follow).
+- Parity: `scripts/compat_manifest.py` records 1.2.4's surface from the wheel into
+  `tests/fixtures/compat/youtube_transcript_api-1.2.4.json`; a test compares `utmax.compat` with it.
 
 ### 4.7 MCP tools (`utmax-mcp`, stdio, `MCPServer`)
 
 | Tool | Arguments | Returns (structured) |
 |---|---|---|
-| `list_tracks` | `video` | video info + tracks (code, name, manual/auto, translatable) |
-| `get_transcript` | `video, languages=None, format="txt", source="any"` | ids, language, is_generated, format, content |
-| `translate_transcript` | `video, to, model=None, languages=None, format="txt", bilingual=False, instructions=None` | above + translated_from, translator |
-| `list_videos` | `source, kind="all", limit=50 (1..5000)` | title, source_id, kind, count, videos[] |
-| `download` | `video, format="mp4", quality="compat", subtitles=None, subtitle_mode="embed"` | path, size, ids, embedded_subtitles, sidecars, skipped |
+| `list_tracks` | `video` | video (id, title, channel, channel_id, duration_seconds, url) + tracks (code, name, is_generated, is_translatable) |
+| `get_transcript` | `video, languages=None, format="txt", source="any", offset=0, max_chars=None` | video_id, title, language_code, language, is_generated, format, content, total_chars, offset, next_offset |
+| `list_videos` | `source, kind=None (the link's tab, else all), limit=50 (1..5000)` | title, source_id, kind, count, videos[] |
+| `download` | `video, format="mp4", quality="compat", subtitles=None, subtitle_mode="embed"` | path, size_bytes, video_id, title, container, embedded_subtitles, sidecars, skipped |
 
-Env: `UTMAX_MODEL` (used when `model` is absent; else `ToolError` explaining setup), `UTMAX_BASE_URL` (openai only),
-`UTMAX_DOWNLOAD_DIR` (default `~/Downloads/utmax`), `UTMAX_PROXY`, `UTMAX_FFMPEG`, provider keys. The model never
-chooses paths (generated + sanitized inside the download dir; existing complete file → `skipped=true`). `download`
-runs in a worker thread and forwards progress; `UTMaxError` → `ToolError("<message> Suggestion: <suggestion>")`;
-nothing but the SDK writes to stdout.
+The server calls no AI provider and needs no API key (user's decision, 2026-10-08): its instructions tell the
+assistant to translate the text lines of an srt or vtt transcript itself; AI translation with keys stays in the
+library. Long transcripts are read in parts: `max_chars` cuts after the last line or word end in the window and
+`next_offset` (null at the end) continues; the last eight transcripts are kept, so a part costs no request.
+Env: `UTMAX_DOWNLOAD_DIR` (default `~/Downloads/utmax`; `~` and variables expanded, made absolute), `UTMAX_PROXY`,
+`UTMAX_FFMPEG` (read by utmax). The model never chooses paths: utmax names the file `"{title} [{id}].{ext}"` (or
+`"{id}.{ext}"`), an existing one returns `skipped=true` without a request, and a subtitle file an earlier download
+left is replaced. `download` runs in a worker thread with one progress bar per call (the download fills the first
+half, muxing the second, an MP3 conversion waits at half); cancelling the call stops the download, which resumes on
+the next call. `UTMaxError` and `OSError` → `ToolError("<message> Suggestion: <suggestion>")`; tool descriptions are
+cleaned of docstring indentation; nothing but the SDK writes to stdout; `utmax-mcp` switches stderr to UTF-8 and logs
+at INFO there, and without the SDK it exits with the install command.
 
 ## 5. Key rules
 
@@ -436,9 +458,11 @@ Compat maps same-named errors 1:1 (upstream constructors); `NetworkError` → `Y
    exception classes mapped). Engine with a deterministic fake translator (retry → split → mismatch, order, context, `source`).
 7. Compat: `scripts/compat_manifest.py` AST-extracts upstream 1.2.4 surface → manifest parity test via `inspect`;
    ported upstream behavior tests (byte-exact formatters, legacy classmethods, `__str__`); `install()` test.
-8. MCP: in-memory `Client(build_server(fake_client), raise_exceptions=True)` under anyio — schemas, outputs,
-   `ToolError`, env vars, path confinement, no stdout writes.
-9. Architecture test (core purity) + zero third-party imports on `import utmax`.
+8. MCP: in-memory `mcp.Client(build_server(client, config), raise_exceptions=True)` under `anyio.run` — schemas,
+   outputs, paging, `ToolError`s, env vars, path confinement, progress, cancellation, no stdout writes; one stdio
+   round trip through `python -m utmax.mcp`; the SDK's tests are not collected without the extra.
+9. Architecture test (core purity; adapters and services never import compat or mcp) + zero third-party imports on
+   `import utmax`, `import utmax.compat` and `import utmax.mcp`.
 10. Live (`@pytest.mark.live`, nightly `live.yml`): manual English 2nd segment `♪ We're no strangers to love ♪`,
     `["tr","en"]` → manual en without tlang, `["de"]` → `de-DE`, 6 tracks, `merge_sentences` monotonic, playlist
     count = header, `@RickAstleyYT` → `UCuAXFkgsw1L7xaCfnd5JJOw`, m4a download, small mp4 (160+140) + ffprobe;
@@ -454,7 +478,7 @@ Compat maps same-named errors 1:1 (upstream constructors); `NetworkError` → `Y
 | M4 | Downloads | streams selection, `ParallelDownloader`, download service (m4a remux, mp4/mov + subtitles embed/sidecar, mp3 via ffmpeg), `download()` | Resume after simulated crash; 403 refresh; cancel → resumable; `FFmpegNotFound`; Windows rename retry; live m4a + mp4 |
 | M5 | Collections | `parse_source`, resolve, browse parsers (VR + WEB), `list_videos`, `fetch_many/translate_many/download_many` | Both continuation styles; skip-existing; circuit breaker; live playlist + channel kinds |
 | M6 | Compat | manifest script, full `utmax.compat`, session transport, error bridge, `install()` | 100 % manifest parity; ported upstream tests pass |
-| M7 | MCP server | config, 5 tools, progress, entry points | In-memory tests; manual run in Claude Code/Desktop with a config snippet |
+| M7 | MCP server | config, 4 tools (no AI provider), paging, progress, entry points | In-memory and stdio tests; manual run in Claude Code/Desktop with a config snippet |
 | M8 | Docs & release 0.1.0 | Minimal README (ASCII diagram, install/extras, quickstart, features, MCP setup, compat one-liner, legal/ToS note), CHANGELOG, CONTRIBUTING, `live.yml`, `release.yml` (approval-gated Trusted Publishing) | All gates green; `uv build` + `twine check`; release job waits for approval; publish only when the user says so |
 
 ## 10. Risks
@@ -484,7 +508,7 @@ only), 10-bit/HDR AV1, VP9/WebM sources, REST API, CLI.
   formats + bilingual; download `.mp4` (default, embedded English track toggles in VLC/QuickTime), `.mov`,
   `.m4a`, `.mp3` (ffmpeg); `quality="max"` 4K AV1; interrupt and resume a download; `fetch_many` on a small
   playlist; a youtube-transcript-api script switched by one import; `utmax.compat.install()` with a LangChain-style
-  import; `utmax-mcp` registered in Claude Code, all 5 tools called; Windows cp1254 console shows no crash.
+  import; `utmax-mcp` registered in Claude Code, all 4 tools called; Windows cp1254 console shows no crash.
 - Packaging: `uv build` + `twine check`; `pip install dist/*.whl` in a clean venv → `import utmax` pulls no
   third-party modules.
 
