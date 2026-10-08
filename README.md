@@ -27,13 +27,13 @@ AI translation calls the provider's official SDK with your own API key: add the 
 ```python
 import utmax
 
-transcript = utmax.fetch("https://youtu.be/dQw4w9WgXcQ")   # the spoken language, manual first
-transcript.save("rick.srt")                                # also .vtt, .json and .txt
+transcript = utmax.fetch("https://youtu.be/dQw4w9WgXcQ")  # the spoken language, manual first
+transcript.save("rick.srt")  # also .vtt, .json and .txt
 
 turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5-5")  # needs [claude]
 utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
-utmax.download("dQw4w9WgXcQ", "rick.mp4")   # H.264 up to 1080p with English subtitles
+utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 up to 1080p with English subtitles
 videos = utmax.list_videos("@RickAstleyYT", kind="videos", limit=20)
 ```
 
