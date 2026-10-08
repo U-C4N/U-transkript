@@ -319,7 +319,8 @@ unsupported); ERROR + "unavailable" → `VideoUnavailable`; else `VideoUnplayabl
 `PoTokenRequired`; `fmt=json3`, skip whitespace-only events, word time `tStartMs+tOffsetMs`, `html.unescape`, asr
 newlines → spaces; XML fallback (reject DOCTYPE/ENTITY; srv3 then legacy). Selection: per requested language, manual
 exact code → manual same base language → auto exact code → auto same base language; no languages → spoken language
-(first asr track) manual→auto, then first
+(the original audio's language when YouTube marks it — videos with dubbed audio name it "<language> original" and tag
+its streams `acont=original`, and list an asr track per dub — else the first asr track) manual→auto, then first
 manual, then first auto; `NoTranscriptFound` lists available tracks. **Never tlang implicitly**; explicit tlang is
 best-effort (429 → `IpBlocked` "use AI translation or a proxy").
 
@@ -356,7 +357,9 @@ video+audio, 4 connections, single GET under 2 chunks; `<target>.<itag>.part` + 
 (`video_id, itag, content_length, last_modified, chunk_size, completed[]`, atomic, throttled). Workers use own `r+b`
 handles, 256 KiB reads, short-read retry. Resume: fresh player response, match by itag + size + lmt, else restart.
 403/expiry: single-flight URL refresh (proactive when <300 s left), max 3 → `StreamForbidden` (IP-bound URLs,
-`force_ipv4`, no rotating proxies). 416 → re-plan once → `DownloadIncomplete`. Cancel via Event/KeyboardInterrupt →
+`force_ipv4`, no rotating proxies), or `PoTokenRequired` when the stream's first byte still comes (without a
+proof-of-origin token YouTube serves only the first ~1 MiB of some videos' ANDROID/IOS streams; seen 2026-10-08 when
+ANDROID_VR asked for a bot check). 416 → re-plan once → `DownloadIncomplete`. Cancel via Event/KeyboardInterrupt →
 state flushed, `DownloadCancelled`, resumable. Progress aggregated, serialized, ≤4/s. Output `.tmp` → fsync →
 `os.replace` with Windows retries; parts deleted only after a successful mux (~2× disk peak, documented).
 Filenames: Windows reserved names, `<>:"/\|?*`, control chars, trailing dots/spaces, 150-char titles.
