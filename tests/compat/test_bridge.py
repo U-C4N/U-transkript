@@ -45,12 +45,28 @@ BOT_CHECK = player_payload(
 )
 
 
+# How requests and its relatives word a failed request: the error repeats the URL, or its path
+# and query. Placeholders: {url} is the request's URL, {path} its path and query, {query} its query.
+SESSION_FAILURES = (
+    "HTTPSConnectionPool(host='www.youtube.com', port=443): Max retries exceeded with url: "
+    "{path} (Caused by NewConnectionError('connection reset by peer'))",
+    "connection reset by peer for url: {url}",
+    "connection reset by peer for url '{url}'",
+    "connection reset by peer (url: {path})",
+    "connection reset by peer, params {query}",
+)
+
+
 class BrokenSession:
-    def __init__(self) -> None:
+    """Fails with ``text``, filled in with the URL, path and query of the request."""
+
+    def __init__(self, text: str) -> None:
         self.headers: dict[str, str] = {}
+        self._text = text
 
     def request(self, method: str, url: str, **options: Any) -> None:
-        raise ConnectionError("connection reset by peer")
+        path = url.removeprefix("https://www.youtube.com")
+        raise ConnectionError(self._text.format(url=url, path=path, query=url.partition("?")[2]))
 
 
 def test_session_transport_sends_every_request_through_the_session() -> None:
@@ -82,11 +98,34 @@ def test_session_transport_sends_every_request_through_the_session() -> None:
 
 
 def test_session_failures_become_network_errors_without_the_query() -> None:
-    with pytest.raises(errors.NetworkError, match="connection reset by peer") as caught:
-        SessionTransport(BrokenSession()).send(HttpRequest("GET", f"{CAPTION_URL}&sig=secret"))
+    signed = f"{CAPTION_URL}&ip=203.0.113.7&expire=1760000000&sig=secret"
+    unsigned = "https://www.youtube.com/api/timedtext"
 
-    assert "secret" not in str(caught.value)
-    assert isinstance(caught.value.__cause__, ConnectionError)
+    for text in SESSION_FAILURES:
+        with pytest.raises(errors.NetworkError, match="connection reset by peer") as caught:
+            SessionTransport(BrokenSession(text)).send(HttpRequest("GET", signed))
+        mapped = compat_error(caught.value, VIDEO)
+
+        assert isinstance(caught.value.__cause__, ConnectionError)
+        assert "sig=secret" in str(caught.value.__cause__)
+        assert isinstance(mapped, YouTubeRequestFailed)
+        for message in (str(caught.value), mapped.reason, str(mapped)):
+            assert "secret" not in message
+            assert "203.0.113.7" not in message
+
+    with pytest.raises(errors.NetworkError) as plain:
+        SessionTransport(BrokenSession(SESSION_FAILURES[0])).send(HttpRequest("GET", unsigned))
+    # Other URLs in the text (a redirect's, say) lose their query up to a quote, a closing
+    # parenthesis, whitespace or the end, whatever the request's own URL is.
+    redirects = (
+        "moved to 'https://a.test/x?v=1&sig=1' (https://b.test/y?v=2&sig=2) and "
+        "https://c.test/z?v=3&sig=3 then https://d.test/w?v=4&sig=4"
+    )
+
+    assert str(plain.value) == f"Could not complete GET {unsigned}: {plain.value.__cause__}"
+    assert _bridge._without_query(redirects, unsigned) == (
+        "moved to 'https://a.test/x' (https://b.test/y) and https://c.test/z then https://d.test/w"
+    )
 
 
 def test_make_transport_uses_the_http_client_as_given() -> None:

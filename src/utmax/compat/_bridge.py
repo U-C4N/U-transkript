@@ -3,6 +3,7 @@ turned into the exceptions of youtube-transcript-api."""
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from utmax import errors
@@ -50,6 +51,8 @@ _SIMPLE_ERRORS: tuple[tuple[type[errors.UTMaxError], type[CouldNotRetrieveTransc
     (errors.InvalidVideoId, InvalidVideoId),
 )
 _DECODED_HEADERS = frozenset({"content-encoding", "content-length", "transfer-encoding"})
+_QUERY_RUN = re.compile(r"\?[^\s)'\"]+")
+"""A ``?`` and what follows it up to whitespace, a closing parenthesis or a quote."""
 
 
 class SessionTransport:
@@ -75,8 +78,9 @@ class SessionTransport:
                 timeout=self._timeout,
             )
         except Exception as error:  # the session's own exception types are unknown here
+            reason = _without_query(str(error), request.url)
             raise errors.NetworkError(
-                f"Could not complete {request.method} {redact(request.url)}: {error}"
+                f"Could not complete {request.method} {redact(request.url)}: {reason}"
             ) from error
         headers = {
             str(name): str(value)
@@ -89,6 +93,19 @@ class SessionTransport:
             headers=headers,
             body=bytes(response.content),
         )
+
+
+def _without_query(text: str, url: str) -> str:
+    """``text`` without the query string of ``url`` and without any other ``?...`` run.
+
+    A session's own error text repeats the request (``Max retries exceeded with url:
+    /api/timedtext?...&sig=...``), and the query of a caption URL holds the client's IP address,
+    an expiry time and a signature, none of which belongs in a message (spec section 7).
+    """
+    query = url.partition("?")[2].partition("#")[0]
+    if query:
+        text = text.replace(f"?{query}", "").replace(query, "")
+    return _QUERY_RUN.sub("", text)
 
 
 def make_transport(http_client: Any, proxy_config: ProxyConfig | None) -> Transport:
