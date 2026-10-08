@@ -73,13 +73,33 @@ def test_get_transcript__exception_if_language_unavailable__deprecated() -> None
 
 
 def test_get_transcript__with_proxy__deprecated(youtube: list[str | None]) -> None:
-    proxies = {"http": "http://localhost:8080", "https": "http://localhost:8080"}
+    # Every YouTube URL is HTTPS, so the "https" entry is the proxy that must reach the transport.
+    proxies = {"http": "http://localhost:8080", "https": "http://localhost:8443"}
 
     with pytest.deprecated_call():
         transcript = YouTubeTranscriptApi.get_transcript(VIDEO, proxies=proxies)
 
     assert transcript == RAW_DATA
-    assert youtube == ["http://localhost:8080"]
+    assert youtube == ["http://localhost:8443"]
+
+
+@pytest.mark.parametrize(
+    ("proxies", "proxy"),
+    [
+        pytest.param({"https": "http://localhost:8443"}, "http://localhost:8443", id="https only"),
+        pytest.param({"http": "http://localhost:8080"}, "http://localhost:8080", id="http only"),
+        pytest.param({}, None, id="empty"),
+    ],
+)
+def test_get_transcript__with_proxies_of_one_scheme_or_none__deprecated(
+    youtube: list[str | None], proxies: dict[str, str], proxy: str | None
+) -> None:
+    """One URL serves both schemes, as in GenericProxyConfig; an empty dict means no proxy."""
+    with pytest.deprecated_call():
+        transcript = YouTubeTranscriptApi.get_transcript(VIDEO, proxies=proxies)
+
+    assert transcript == RAW_DATA
+    assert youtube == [proxy]
 
 
 def test_get_transcript__with_proxy_config__deprecated(youtube: list[str | None]) -> None:
@@ -141,6 +161,10 @@ def test_get_transcripts__deprecated(monkeypatch: pytest.MonkeyPatch) -> None:
         ("video_id_1", languages, None, None, False),
         ("video_id_2", languages, None, None, False),
     ]
+    assert data == {
+        "video_id_1": [{"text": "video_id_1", "start": 0.0, "duration": 1.0}],
+        "video_id_2": [{"text": "video_id_2", "start": 0.0, "duration": 1.0}],
+    }
     assert list(data) == ["video_id_1", "video_id_2"]
     assert failed == []
 
@@ -166,7 +190,7 @@ def test_get_transcripts__continue_on_error__deprecated(monkeypatch: pytest.Monk
         ("video_id_1", ("en",), None, None, False),
         ("video_id_2", ("en",), None, None, False),
     ]
-    assert list(data) == ["video_id_2"]
+    assert data == {"video_id_2": [{"text": "video_id_2", "start": 0.0, "duration": 1.0}]}
     assert failed == ["video_id_1"]
 
 
