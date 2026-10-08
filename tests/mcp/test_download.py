@@ -3,6 +3,7 @@ existing file is not downloaded again, and a cancelled call stops the download."
 
 from __future__ import annotations
 
+import itertools
 import threading
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,24 @@ def call(
             return await client.call_tool("download", arguments, progress_callback=on_progress)
 
     return anyio.run(main)
+
+
+def assert_rising(updates: list[Update]) -> None:
+    """MCP clients expect the progress of a call to grow with every notification."""
+    progress = [value for value, _, _ in updates]
+    assert all(before < after for before, after in itertools.pairwise(progress)), updates
+
+
+class ScriptedClient:
+    """Reports the progress it is given as utmax does (every phase counts from zero), then stops."""
+
+    def __init__(self, updates: list[tuple[str, int, int | None]]) -> None:
+        self.updates = updates
+
+    def download(self, video: str, path: Path, **options: Any) -> Any:
+        for phase, done, total in self.updates:
+            options["progress"](Progress(video, phase, done, total))
+        raise DownloadCancelled("Stopped.")
 
 
 class SlowClient:
@@ -76,6 +95,103 @@ def test_audio_lands_in_the_download_folder_with_progress(tmp_path: Path) -> Non
     assert updates
     assert updates[-1][2] == "finished"
     assert all(total is None or progress <= total for progress, total, _ in updates)
+
+
+@pytest.mark.parametrize("container", ["m4a", "mp4", "mov"])
+def test_progress_only_rises_from_the_first_byte_to_the_finished_file(
+    tmp_path: Path, container: str
+) -> None:
+    server = build_server(Client(transport=ManyVideos()), Config(download_dir=tmp_path))
+    updates: list[Update] = []
+
+    result = call(server, {"video": VIDEO, "format": container}, updates)
+
+    assert result.is_error is False, result.content
+    messages = [message for _, _, message in updates]
+    assert "muxing" in messages
+    assert messages[-1] == "finished"
+    assert_rising(updates)
+    assert all(total is None or progress <= total for progress, total, _ in updates)
+
+
+@pytest.mark.parametrize(
+    ("given", "sent"),
+    [
+        pytest.param(
+            [
+                ("downloading", 0, 56005),
+                ("downloading", 56005, 56005),
+                ("muxing", 1318, 53602),
+                ("finished", 53602, 53602),
+            ],
+            [
+                ("downloading", 0, 56005),
+                ("downloading", 56005, 56005),
+                ("muxing", 57323, 109607),
+                ("finished", 109607, 109607),
+            ],
+            id="muxing is counted on top of the downloaded bytes",
+        ),
+        pytest.param(
+            [
+                ("downloading", 0, 900),
+                ("downloading", 900, 900),
+                ("converting", 0, None),
+                ("finished", 700, 700),
+            ],
+            [
+                ("downloading", 0, 900),
+                ("downloading", 900, 900),
+                ("converting", 901, None),
+                ("finished", 1600, 1600),
+            ],
+            id="a conversion that cannot count still moves the progress on",
+        ),
+        pytest.param(
+            [
+                ("downloading", 100, 100),
+                ("muxing", 0, 90),
+                ("muxing", 0, 90),
+                ("muxing", 90, 90),
+                ("finished", 90, 90),
+            ],
+            [
+                ("downloading", 100, 100),
+                ("muxing", 101, 190),
+                ("muxing", 190, 190),
+                ("finished", 191, 191),
+            ],
+            id="every phase is announced even when it adds no bytes",
+        ),
+        pytest.param(
+            [
+                ("downloading", 10, 100),
+                ("downloading", 10, 100),
+                ("downloading", 5, 100),
+                ("downloading", 20, 100),
+            ],
+            [("downloading", 10, 100), ("downloading", 20, 100)],
+            id="a repeat or a step back is left out",
+        ),
+    ],
+)
+def test_progress_is_counted_on_through_the_phases_of_a_download(
+    tmp_path: Path,
+    given: list[tuple[str, int, int | None]],
+    sent: list[tuple[str, int, int | None]],
+) -> None:
+    seen: list[Progress] = []
+
+    async def report(update: Progress) -> None:
+        seen.append(update)
+
+    async def main() -> Any:
+        return await download_file(ScriptedClient(given), tmp_path, VIDEO, report=report)
+
+    with pytest.raises(ToolError):
+        anyio.run(main)
+
+    assert [(u.phase, u.bytes_done, u.bytes_total) for u in seen] == sent
 
 
 def test_videos_embed_or_add_the_requested_subtitles(tmp_path: Path) -> None:

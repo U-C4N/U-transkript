@@ -12,6 +12,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Coroutine, Hashable, Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeVar
@@ -35,6 +36,7 @@ from utmax.models import (
     Container,
     FormatName,
     Progress,
+    ProgressPhase,
     Quality,
     SubtitleMode,
     Transcript,
@@ -386,19 +388,24 @@ async def download_file(
 
     The worker also looks for the file, so a folder that cannot be searched is a tool error
     like any other file system error. ``report`` receives the download's progress on the event
-    loop. When the caller is cancelled, the download stops and keeps its partial files, so the
-    next call resumes it.
+    loop, counted as one number that only rises: the bytes of muxing, converting and finishing
+    come on top of the downloaded ones (see ``_Counter``). When the caller is cancelled, the
+    download stops and keeps its partial files, so the next call resumes it.
     """
     with tool_errors():
         video_id = parse_video_id(video)
     token = anyio.lowlevel.current_token()
     cancel = threading.Event()
+    counter = _Counter()
 
     def forward(update: Progress) -> None:
         if report is None:
             return
+        counted = counter.count(update)
+        if counted is None:
+            return
         try:
-            anyio.from_thread.run(report, update, token=token)
+            anyio.from_thread.run(report, counted, token=token)
         except Exception:  # progress is best effort; it must never stop a download
             log.debug("could not report download progress", exc_info=True)
 
@@ -518,6 +525,40 @@ def _progress_message(update: Progress) -> str:
     if update.bytes_total is None:
         return f"downloading: {done} MB"
     return f"downloading: {done} of {update.bytes_total / 1_000_000:.1f} MB"
+
+
+class _Counter:
+    """Counts the progress of one download as a number that only rises.
+
+    utmax counts from zero again in every phase (downloading, then muxing or converting, then
+    finished), but the progress of an MCP call must grow with every notification, or a client's
+    progress bar jumps back. So the bytes of the later phases are counted on top of the
+    downloaded ones, and an update that would not move the count on is left out, except the
+    first one of a phase: that one is sent one byte further, so the client still learns of the
+    phase (converting, for one, has nothing to count).
+    """
+
+    def __init__(self) -> None:
+        self._downloaded = 0
+        self._sent: int | None = None
+        self._phase: ProgressPhase | None = None
+
+    def count(self, update: Progress) -> Progress | None:
+        """``update`` as counted for the whole download, or ``None`` when it adds nothing."""
+        if update.phase == "downloading":
+            self._downloaded = max(self._downloaded, update.bytes_done)
+            offset = 0
+        else:
+            offset = self._downloaded
+        done = offset + update.bytes_done
+        total = None if update.bytes_total is None else offset + update.bytes_total
+        if self._sent is not None and done <= self._sent:
+            if update.phase == self._phase:
+                return None
+            done = self._sent + 1
+            total = None if total is None else max(total, done)
+        self._sent, self._phase = done, update.phase
+        return replace(update, bytes_done=done, bytes_total=total)
 
 
 _MEMORY_SIZE = 8
