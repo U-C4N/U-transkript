@@ -177,6 +177,31 @@ def test_the_output_is_byte_exact(transcript: FetchedTranscript) -> None:
     )
 
 
+def test_a_cue_before_a_pause_ends_at_its_own_end() -> None:
+    # A cue ends where the next one starts only when the two overlap. The shared transcript has
+    # no pause, so this one has: the first cue must not stretch across it.
+    paused = FetchedTranscript(
+        snippets=[
+            FetchedTranscriptSnippet(text="before the pause", start=0.0, duration=1.0),
+            FetchedTranscriptSnippet(text="after the pause", start=5.0, duration=1.0),
+        ],
+        language="English",
+        language_code="en",
+        is_generated=False,
+        video_id="12345",
+    )
+
+    assert SRTFormatter().format_transcript(paused) == (
+        "1\n00:00:00,000 --> 00:00:01,000\nbefore the pause\n\n"
+        "2\n00:00:05,000 --> 00:00:06,000\nafter the pause\n"
+    )
+    assert WebVTTFormatter().format_transcript(paused) == (
+        "WEBVTT\n\n"
+        "00:00:00.000 --> 00:00:01.000\nbefore the pause\n\n"
+        "00:00:05.000 --> 00:00:06.000\nafter the pause\n"
+    )
+
+
 @pytest.mark.parametrize(
     ("seconds", "srt"),
     [
