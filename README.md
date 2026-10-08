@@ -48,13 +48,13 @@ from utmax.compat import YouTubeTranscriptApi
 `utmax-mcp` gives an AI assistant four tools: `list_tracks`, `get_transcript`, `list_videos`
 and `download`. It needs no API key: ask for a translation and the assistant translates the
 transcript itself. The commands below start it with `uvx` from
-[uv](https://docs.astral.sh/uv/getting-started/installation/), which installs it from PyPI on
-first use.
+[uv](https://docs.astral.sh/uv/getting-started/installation/), which installs it from PyPI;
+`@latest` makes it move to each new release the next time the client starts the server.
 
 ### Claude Code
 
 ```bash
-claude mcp add --scope user utmax -- uvx --from "u-transcript-max[mcp]" utmax-mcp
+claude mcp add --scope user utmax -- uvx --from "u-transcript-max[mcp]@latest" utmax-mcp
 ```
 
 `claude mcp get utmax` should say `Connected`; inside Claude Code, `/mcp` lists the server.
@@ -62,7 +62,7 @@ claude mcp add --scope user utmax -- uvx --from "u-transcript-max[mcp]" utmax-mc
 ### Codex
 
 ```bash
-codex mcp add utmax -- uvx --from "u-transcript-max[mcp]" utmax-mcp
+codex mcp add utmax -- uvx --from "u-transcript-max[mcp]@latest" utmax-mcp
 ```
 
 A long download can outlast Codex's default tool timeout, and the first start installs the
@@ -72,7 +72,7 @@ file):
 ```toml
 [mcp_servers.utmax]
 command = "uvx"
-args = ["--from", "u-transcript-max[mcp]", "utmax-mcp"]
+args = ["--from", "u-transcript-max[mcp]@latest", "utmax-mcp"]
 startup_timeout_sec = 60
 tool_timeout_sec = 1800
 ```
@@ -87,7 +87,7 @@ restart Claude Desktop:
   "mcpServers": {
     "utmax": {
       "command": "uvx",
-      "args": ["--from", "u-transcript-max[mcp]", "utmax-mcp"]
+      "args": ["--from", "u-transcript-max[mcp]@latest", "utmax-mcp"]
     }
   }
 }
