@@ -40,3 +40,95 @@ before they import it.
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
+from __future__ import annotations
+
+import sys
+
+from utmax.compat import _api, _errors, _settings, _transcripts, formatters, proxies
+from utmax.compat._api import YouTubeTranscriptApi
+from utmax.compat._errors import (
+    AgeRestricted,
+    CookieError,
+    CookieInvalid,
+    CookiePathInvalid,
+    CookiesInvalid,
+    CouldNotRetrieveTranscript,
+    FailedToCreateConsentCookie,
+    InvalidVideoId,
+    IpBlocked,
+    NoTranscriptAvailable,
+    NoTranscriptFound,
+    NotTranslatable,
+    PoTokenRequired,
+    RequestBlocked,
+    TooManyRequests,
+    TranscriptsDisabled,
+    TranslationLanguageNotAvailable,
+    VideoUnavailable,
+    VideoUnplayable,
+    YouTubeDataUnparsable,
+    YouTubeRequestFailed,
+    YouTubeTranscriptApiException,
+)
+from utmax.compat._transcripts import (
+    FetchedTranscript,
+    FetchedTranscriptSnippet,
+    Transcript,
+    TranscriptList,
+)
+
+__all__ = [
+    "AgeRestricted",
+    "CookieError",
+    "CookieInvalid",
+    "CookiePathInvalid",
+    "CookiesInvalid",
+    "CouldNotRetrieveTranscript",
+    "FailedToCreateConsentCookie",
+    "FetchedTranscript",
+    "FetchedTranscriptSnippet",
+    "InvalidVideoId",
+    "IpBlocked",
+    "NoTranscriptAvailable",
+    "NoTranscriptFound",
+    "NotTranslatable",
+    "PoTokenRequired",
+    "RequestBlocked",
+    "TooManyRequests",
+    "Transcript",
+    "TranscriptList",
+    "TranscriptsDisabled",
+    "TranslationLanguageNotAvailable",
+    "VideoUnavailable",
+    "VideoUnplayable",
+    "YouTubeDataUnparsable",
+    "YouTubeRequestFailed",
+    "YouTubeTranscriptApi",
+    "YouTubeTranscriptApiException",
+    "install",
+]
+
+_MODULE = "youtube_transcript_api"
+
+
+def install() -> None:
+    """Make ``import youtube_transcript_api`` load utmax.compat.
+
+    For libraries that import youtube-transcript-api themselves (such as LangChain's YouTube
+    loader): call it once, before they import it. It registers ``youtube_transcript_api`` and
+    its modules in ``sys.modules``, replacing a real installation for every import that
+    follows; modules that imported it earlier keep what they have. Calling it again changes
+    nothing.
+    """
+    package = sys.modules[__name__]
+    modules = {
+        _MODULE: package,
+        f"{_MODULE}._api": _api,
+        f"{_MODULE}._errors": _errors,
+        f"{_MODULE}._settings": _settings,
+        f"{_MODULE}._transcripts": _transcripts,
+        f"{_MODULE}.formatters": formatters,
+        f"{_MODULE}.proxies": proxies,
+    }
+    sys.modules.update(modules)
