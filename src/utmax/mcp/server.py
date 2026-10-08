@@ -397,9 +397,11 @@ async def download_file(
     token = anyio.lowlevel.current_token()
     cancel = threading.Event()
     counter = _Counter()
+    failed = False
 
     def forward(update: Progress) -> None:
-        if report is None:
+        nonlocal failed
+        if report is None or cancel.is_set():  # nobody is listening any more
             return
         counted = counter.count(update)
         if counted is None:
@@ -407,7 +409,11 @@ async def download_file(
         try:
             anyio.from_thread.run(report, counted, token=token)
         except Exception:  # progress is best effort; it must never stop a download
-            log.debug("could not report download progress", exc_info=True)
+            # The first failure of a download is a warning, so that progress which never gets
+            # through (an anyio older than 4.11, say) shows in the log; the rest is debugging.
+            level = logging.DEBUG if failed else logging.WARNING
+            failed = True
+            log.log(level, "could not report download progress", exc_info=True)
 
     def work() -> DownloadOut:
         existing = _existing_download(directory, video_id, format)

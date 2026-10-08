@@ -4,6 +4,7 @@ existing file is not downloaded again, and a cancelled call stops the download."
 from __future__ import annotations
 
 import itertools
+import logging
 import threading
 from pathlib import Path
 from typing import Any
@@ -348,7 +349,9 @@ def test_a_file_that_vanishes_before_it_is_measured_is_a_tool_error(
     assert youtube.players == []
 
 
-def test_progress_that_cannot_be_reported_does_not_stop_the_download(tmp_path: Path) -> None:
+def test_progress_that_cannot_be_reported_does_not_stop_the_download(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     async def broken(update: Progress) -> None:
         raise RuntimeError("the client went away")
 
@@ -357,10 +360,49 @@ def test_progress_that_cannot_be_reported_does_not_stop_the_download(tmp_path: P
             Client(transport=ManyVideos()), tmp_path, VIDEO, format="m4a", report=broken
         )
 
-    result = anyio.run(main)
+    with caplog.at_level(logging.DEBUG, logger="utmax.mcp"):
+        result = anyio.run(main)
 
     assert result.skipped is False
     assert Path(result.path).exists()
+    failures = [r for r in caplog.records if "report download progress" in r.getMessage()]
+    assert len(failures) > 1
+    assert failures[0].levelno == logging.WARNING
+    assert failures[0].exc_info is not None
+    assert failures[0].exc_info[0] is RuntimeError
+    assert {record.levelno for record in failures[1:]} == {logging.DEBUG}
+
+
+def test_progress_after_the_call_was_cancelled_is_not_reported(tmp_path: Path) -> None:
+    class LateClient:
+        def __init__(self) -> None:
+            self.started = threading.Event()
+            self.finished = threading.Event()
+
+        def download(self, video: str, path: Path, **options: Any) -> Any:
+            self.started.set()
+            options["cancel"].wait(10)
+            options["progress"](Progress(video, "downloading", 5, None))
+            self.finished.set()
+            raise DownloadCancelled("Stopped.")
+
+    client = LateClient()
+    reported: list[Progress] = []
+
+    async def report(update: Progress) -> None:
+        reported.append(update)
+
+    async def main() -> None:
+        async with anyio.create_task_group() as group:
+            group.start_soon(lambda: download_file(client, tmp_path, VIDEO, report=report))
+            await anyio.to_thread.run_sync(client.started.wait)
+            group.cancel_scope.cancel()
+        await anyio.to_thread.run_sync(client.finished.wait, 10)
+
+    anyio.run(main)
+
+    assert client.finished.is_set()
+    assert reported == []
 
 
 def test_cancelling_the_call_stops_the_download(tmp_path: Path) -> None:
