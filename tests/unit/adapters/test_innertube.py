@@ -152,6 +152,14 @@ def test_fetch_captions_requests_json3() -> None:
     ]
 
 
+def test_fetch_captions_can_ask_for_legacy_xml() -> None:
+    transport = FakeTransport()
+    transport.add("GET", "/api/timedtext", text_response("<transcript/>", content_type="text/xml"))
+    response = InnerTubeClient(transport).fetch_captions(CAPTION_URL, video_id=VIDEO_ID, fmt=None)
+    assert response.text == "<transcript/>"
+    assert transport.urls() == [f"https://www.youtube.com/api/timedtext?v={VIDEO_ID}&lang=en"]
+
+
 @pytest.mark.parametrize(
     ("url", "error"),
     [

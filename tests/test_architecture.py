@@ -1,4 +1,5 @@
-"""Architecture rules: the core stays pure and ``import utmax`` needs only the standard library."""
+"""Architecture rules: the core stays pure, layers depend inward, and importing ``utmax`` or
+``utmax.compat`` needs only the standard library."""
 
 from __future__ import annotations
 
@@ -7,6 +8,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 import utmax
 
@@ -63,8 +66,9 @@ def test_core_never_imports_io_modules_or_outer_layers() -> None:
 
 
 LAYER_RULES = {
-    PACKAGE / "adapters": ("utmax.client", "utmax.services"),
-    PACKAGE / "services": ("utmax.client",),
+    PACKAGE / "adapters": ("utmax.client", "utmax.compat", "utmax.mcp", "utmax.services"),
+    PACKAGE / "services": ("utmax.client", "utmax.compat", "utmax.mcp"),
+    PACKAGE / "compat": ("utmax.mcp",),
 }
 
 
@@ -79,10 +83,11 @@ def test_outer_layers_only_depend_inward() -> None:
     assert offenders == []
 
 
-def test_import_utmax_loads_only_the_standard_library() -> None:
+@pytest.mark.parametrize("module", ["utmax", "utmax.compat"])
+def test_importing_loads_only_the_standard_library(module: str) -> None:
     probe = (
         "import sys\n"
-        "import utmax\n"
+        f"import {module}\n"
         "names = {name.partition('.')[0] for name in sys.modules}\n"
         "extra = sorted(n for n in names if not n.startswith('_') and n != 'utmax'"
         " and n not in sys.stdlib_module_names)\n"

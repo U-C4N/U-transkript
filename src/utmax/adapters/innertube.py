@@ -110,10 +110,12 @@ class InnerTubeClient:
             partial(self._post, profile, "navigation/resolve_url", payload)
         )
 
-    def fetch_captions(self, base_url: str, *, video_id: str) -> HttpResponse:
-        """Download a caption track as json3."""
+    def fetch_captions(
+        self, base_url: str, *, video_id: str, fmt: str | None = "json3"
+    ) -> HttpResponse:
+        """Download a caption track as ``fmt``; ``None`` asks for YouTube's legacy XML."""
         check_caption_url(base_url, video_id=video_id)
-        url = caption_url(base_url, fmt="json3")
+        url = caption_url(base_url, fmt=fmt)
         return self._with_block_retries(partial(self._caption_response, url, video_id))
 
     def _post(

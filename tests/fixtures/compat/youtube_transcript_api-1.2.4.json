@@ -1,0 +1,1475 @@
+{
+  "package": "youtube_transcript_api",
+  "version": "1.2.4",
+  "source": "youtube_transcript_api-1.2.4-py3-none-any.whl",
+  "sha256": "03878759356da5caf5edac77431780b91448fb3d8c21d4496015bdc8a7bc43ff",
+  "modules": {
+    "__init__": {
+      "all": [
+        "YouTubeTranscriptApi",
+        "TranscriptList",
+        "Transcript",
+        "FetchedTranscript",
+        "FetchedTranscriptSnippet",
+        "YouTubeTranscriptApiException",
+        "CookieError",
+        "CookiePathInvalid",
+        "CookieInvalid",
+        "TranscriptsDisabled",
+        "NoTranscriptFound",
+        "CouldNotRetrieveTranscript",
+        "VideoUnavailable",
+        "VideoUnplayable",
+        "IpBlocked",
+        "RequestBlocked",
+        "NotTranslatable",
+        "TranslationLanguageNotAvailable",
+        "FailedToCreateConsentCookie",
+        "YouTubeRequestFailed",
+        "InvalidVideoId",
+        "AgeRestricted",
+        "YouTubeDataUnparsable",
+        "PoTokenRequired"
+      ],
+      "names": {
+        "YouTubeTranscriptApi": {
+          "kind": "import",
+          "from": "_api",
+          "name": "YouTubeTranscriptApi"
+        },
+        "TranscriptList": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "TranscriptList"
+        },
+        "Transcript": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "Transcript"
+        },
+        "FetchedTranscript": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "FetchedTranscript"
+        },
+        "FetchedTranscriptSnippet": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "FetchedTranscriptSnippet"
+        },
+        "YouTubeTranscriptApiException": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "YouTubeTranscriptApiException"
+        },
+        "CookieError": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "CookieError"
+        },
+        "CookiePathInvalid": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "CookiePathInvalid"
+        },
+        "CookieInvalid": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "CookieInvalid"
+        },
+        "TranscriptsDisabled": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "TranscriptsDisabled"
+        },
+        "NoTranscriptFound": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "NoTranscriptFound"
+        },
+        "CouldNotRetrieveTranscript": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "CouldNotRetrieveTranscript"
+        },
+        "VideoUnavailable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "VideoUnavailable"
+        },
+        "VideoUnplayable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "VideoUnplayable"
+        },
+        "IpBlocked": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "IpBlocked"
+        },
+        "RequestBlocked": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "RequestBlocked"
+        },
+        "NotTranslatable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "NotTranslatable"
+        },
+        "TranslationLanguageNotAvailable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "TranslationLanguageNotAvailable"
+        },
+        "FailedToCreateConsentCookie": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "FailedToCreateConsentCookie"
+        },
+        "YouTubeRequestFailed": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "YouTubeRequestFailed"
+        },
+        "InvalidVideoId": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "InvalidVideoId"
+        },
+        "AgeRestricted": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "AgeRestricted"
+        },
+        "YouTubeDataUnparsable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "YouTubeDataUnparsable"
+        },
+        "PoTokenRequired": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "PoTokenRequired"
+        }
+      }
+    },
+    "_api": {
+      "all": null,
+      "names": {
+        "ProxyConfig": {
+          "kind": "import",
+          "from": "proxies",
+          "name": "ProxyConfig"
+        },
+        "TranscriptListFetcher": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "TranscriptListFetcher"
+        },
+        "FetchedTranscript": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "FetchedTranscript"
+        },
+        "TranscriptList": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "TranscriptList"
+        },
+        "YouTubeTranscriptApi": {
+          "kind": "class",
+          "bases": [],
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "proxy_config",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": null
+                  }
+                },
+                {
+                  "name": "http_client",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": null
+                  }
+                }
+              ]
+            },
+            "fetch": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "languages",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": [
+                      "en"
+                    ]
+                  }
+                },
+                {
+                  "name": "preserve_formatting",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": false
+                  }
+                }
+              ]
+            },
+            "list": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "_errors": {
+      "all": null,
+      "names": {
+        "WATCH_URL": {
+          "kind": "import",
+          "from": "_settings",
+          "name": "WATCH_URL"
+        },
+        "ProxyConfig": {
+          "kind": "import",
+          "from": "proxies",
+          "name": "ProxyConfig"
+        },
+        "GenericProxyConfig": {
+          "kind": "import",
+          "from": "proxies",
+          "name": "GenericProxyConfig"
+        },
+        "WebshareProxyConfig": {
+          "kind": "import",
+          "from": "proxies",
+          "name": "WebshareProxyConfig"
+        },
+        "YouTubeTranscriptApiException": {
+          "kind": "class",
+          "bases": [
+            "Exception"
+          ]
+        },
+        "CookieError": {
+          "kind": "class",
+          "bases": [
+            "YouTubeTranscriptApiException"
+          ]
+        },
+        "CookiePathInvalid": {
+          "kind": "class",
+          "bases": [
+            "CookieError"
+          ],
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "cookie_path",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "CookieInvalid": {
+          "kind": "class",
+          "bases": [
+            "CookieError"
+          ],
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "cookie_path",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "CouldNotRetrieveTranscript": {
+          "kind": "class",
+          "bases": [
+            "YouTubeTranscriptApiException"
+          ],
+          "attributes": {
+            "ERROR_MESSAGE": {
+              "value": "\nCould not retrieve a transcript for the video {video_url}!"
+            },
+            "CAUSE_MESSAGE_INTRO": {
+              "value": " This is most likely caused by:\n\n{cause}"
+            },
+            "CAUSE_MESSAGE": {
+              "value": ""
+            },
+            "GITHUB_REFERRAL": {
+              "value": "\n\nIf you are sure that the described cause is not responsible for this error and that a transcript should be retrievable, please create an issue at https://github.com/jdepoix/youtube-transcript-api/issues. Please add which version of youtube_transcript_api you are using and provide the information needed to replicate the error. Also make sure that there are no open issues which already describe your problem!"
+            }
+          },
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "cause": {
+              "kind": "property"
+            },
+            "__str__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "YouTubeDataUnparsable": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "The data required to fetch the transcript is not parsable. This should not happen, please open an issue (make sure to include the video ID)!"
+            }
+          }
+        },
+        "YouTubeRequestFailed": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "Request to YouTube failed: {reason}"
+            }
+          },
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "http_error",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "cause": {
+              "kind": "property"
+            }
+          }
+        },
+        "VideoUnplayable": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "The video is unplayable for the following reason: {reason}"
+            },
+            "SUBREASON_MESSAGE": {
+              "value": "\n\nAdditional Details:\n{sub_reasons}"
+            }
+          },
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "reason",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "sub_reasons",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "cause": {
+              "kind": "property"
+            }
+          }
+        },
+        "VideoUnavailable": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "The video is no longer available"
+            }
+          }
+        },
+        "InvalidVideoId": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "You provided an invalid video id. Make sure you are using the video id and NOT the url!\n\nDo NOT run: `YouTubeTranscriptApi().fetch(\"https://www.youtube.com/watch?v=1234\")`\nInstead run: `YouTubeTranscriptApi().fetch(\"1234\")`"
+            }
+          }
+        },
+        "RequestBlocked": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "BASE_CAUSE_MESSAGE": {
+              "value": "YouTube is blocking requests from your IP. This usually is due to one of the following reasons:\n- You have done too many requests and your IP has been blocked by YouTube\n- You are doing requests from an IP belonging to a cloud provider (like AWS, Google Cloud Platform, Azure, etc.). Unfortunately, most IPs from cloud providers are blocked by YouTube.\n\n"
+            },
+            "CAUSE_MESSAGE": {
+              "value": "YouTube is blocking requests from your IP. This usually is due to one of the following reasons:\n- You have done too many requests and your IP has been blocked by YouTube\n- You are doing requests from an IP belonging to a cloud provider (like AWS, Google Cloud Platform, Azure, etc.). Unfortunately, most IPs from cloud providers are blocked by YouTube.\n\nThere are two things you can do to work around this:\n1. Use proxies to hide your IP address, as explained in the \"Working around IP bans\" section of the README (https://github.com/jdepoix/youtube-transcript-api?tab=readme-ov-file#working-around-ip-bans-requestblocked-or-ipblocked-exception).\n2. (NOT RECOMMENDED) If you authenticate your requests using cookies, you will be able to continue doing requests for a while. However, YouTube will eventually permanently ban the account that you have used to authenticate with! So only do this if you don't mind your account being banned!"
+            },
+            "WITH_GENERIC_PROXY_CAUSE_MESSAGE": {
+              "value": "YouTube is blocking your requests, despite you using proxies. Keep in mind that a proxy is just a way to hide your real IP behind the IP of that proxy, but there is no guarantee that the IP of that proxy won't be blocked as well.\n\nThe only truly reliable way to prevent IP blocks is rotating through a large pool of residential IPs, by using a provider like Webshare (https://www.webshare.io/?referral_code=w0xno53eb50g), which provides you with a pool of >30M residential IPs (make sure to purchase \"Residential\" proxies, NOT \"Proxy Server\" or \"Static Residential\"!).\n\nYou will find more information on how to easily integrate Webshare here: https://github.com/jdepoix/youtube-transcript-api?tab=readme-ov-file#using-webshare"
+            },
+            "WITH_WEBSHARE_PROXY_CAUSE_MESSAGE": {
+              "value": "YouTube is blocking your requests, despite you using Webshare proxies. Please make sure that you have purchased \"Residential\" proxies and NOT \"Proxy Server\" or \"Static Residential\", as those won't work as reliably! The free tier also uses \"Proxy Server\" and will NOT work!\n\nThe only reliable option is using \"Residential\" proxies (not \"Static Residential\"), as this allows you to rotate through a pool of over 30M IPs, which means you will always find an IP that hasn't been blocked by YouTube yet!\n\nYou can support the development of this open source project by making your Webshare purchases through this affiliate link: https://www.webshare.io/?referral_code=w0xno53eb50g \n\nThank you for your support! <3"
+            }
+          },
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "with_proxy_config": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "proxy_config",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "cause": {
+              "kind": "property"
+            }
+          }
+        },
+        "IpBlocked": {
+          "kind": "class",
+          "bases": [
+            "RequestBlocked"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "YouTube is blocking requests from your IP. This usually is due to one of the following reasons:\n- You have done too many requests and your IP has been blocked by YouTube\n- You are doing requests from an IP belonging to a cloud provider (like AWS, Google Cloud Platform, Azure, etc.). Unfortunately, most IPs from cloud providers are blocked by YouTube.\n\nWays to work around this are explained in the \"Working around IP bans\" section of the README (https://github.com/jdepoix/youtube-transcript-api?tab=readme-ov-file#working-around-ip-bans-requestblocked-or-ipblocked-exception).\n"
+            }
+          }
+        },
+        "TranscriptsDisabled": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "Subtitles are disabled for this video"
+            }
+          }
+        },
+        "AgeRestricted": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "This video is age-restricted. Therefore, you are unable to retrieve transcripts for it without authenticating yourself.\n\nUnfortunately, Cookie Authentication is temporarily unsupported in youtube-transcript-api, as recent changes in YouTube's API broke the previous implementation. I will do my best to re-implement it as soon as possible."
+            }
+          }
+        },
+        "NotTranslatable": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "The requested language is not translatable"
+            }
+          }
+        },
+        "TranslationLanguageNotAvailable": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "The requested translation language is not available"
+            }
+          }
+        },
+        "FailedToCreateConsentCookie": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "Failed to automatically give consent to saving cookies"
+            }
+          }
+        },
+        "NoTranscriptFound": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "No transcripts were found for any of the requested language codes: {requested_language_codes}\n\n{transcript_data}"
+            }
+          },
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "requested_language_codes",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcript_data",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "cause": {
+              "kind": "property"
+            }
+          }
+        },
+        "PoTokenRequired": {
+          "kind": "class",
+          "bases": [
+            "CouldNotRetrieveTranscript"
+          ],
+          "attributes": {
+            "CAUSE_MESSAGE": {
+              "value": "The requested video cannot be retrieved without a PO Token. If this happens, please open a GitHub issue!"
+            }
+          }
+        }
+      }
+    },
+    "_settings": {
+      "all": null,
+      "names": {
+        "WATCH_URL": {
+          "kind": "constant",
+          "value": "https://www.youtube.com/watch?v={video_id}"
+        },
+        "INNERTUBE_API_URL": {
+          "kind": "constant",
+          "value": "https://www.youtube.com/youtubei/v1/player?key={api_key}"
+        },
+        "INNERTUBE_CONTEXT": {
+          "kind": "constant",
+          "value": {
+            "client": {
+              "clientName": "ANDROID",
+              "clientVersion": "20.10.38"
+            }
+          }
+        }
+      }
+    },
+    "_transcripts": {
+      "all": null,
+      "names": {
+        "ProxyConfig": {
+          "kind": "import",
+          "from": "proxies",
+          "name": "ProxyConfig"
+        },
+        "WATCH_URL": {
+          "kind": "import",
+          "from": "_settings",
+          "name": "WATCH_URL"
+        },
+        "INNERTUBE_CONTEXT": {
+          "kind": "import",
+          "from": "_settings",
+          "name": "INNERTUBE_CONTEXT"
+        },
+        "INNERTUBE_API_URL": {
+          "kind": "import",
+          "from": "_settings",
+          "name": "INNERTUBE_API_URL"
+        },
+        "VideoUnavailable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "VideoUnavailable"
+        },
+        "YouTubeRequestFailed": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "YouTubeRequestFailed"
+        },
+        "NoTranscriptFound": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "NoTranscriptFound"
+        },
+        "TranscriptsDisabled": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "TranscriptsDisabled"
+        },
+        "NotTranslatable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "NotTranslatable"
+        },
+        "TranslationLanguageNotAvailable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "TranslationLanguageNotAvailable"
+        },
+        "FailedToCreateConsentCookie": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "FailedToCreateConsentCookie"
+        },
+        "InvalidVideoId": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "InvalidVideoId"
+        },
+        "IpBlocked": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "IpBlocked"
+        },
+        "RequestBlocked": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "RequestBlocked"
+        },
+        "AgeRestricted": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "AgeRestricted"
+        },
+        "VideoUnplayable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "VideoUnplayable"
+        },
+        "YouTubeDataUnparsable": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "YouTubeDataUnparsable"
+        },
+        "PoTokenRequired": {
+          "kind": "import",
+          "from": "_errors",
+          "name": "PoTokenRequired"
+        },
+        "FetchedTranscriptSnippet": {
+          "kind": "class",
+          "bases": [],
+          "dataclass_fields": [
+            "text",
+            "start",
+            "duration"
+          ]
+        },
+        "FetchedTranscript": {
+          "kind": "class",
+          "bases": [],
+          "dataclass_fields": [
+            "snippets",
+            "video_id",
+            "language",
+            "language_code",
+            "is_generated"
+          ],
+          "methods": {
+            "__iter__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "__getitem__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "index",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "__len__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "to_raw_data": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "Transcript": {
+          "kind": "class",
+          "bases": [],
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "http_client",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "url",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "language",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "language_code",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "is_generated",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "translation_languages",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "fetch": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "preserve_formatting",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": false
+                  }
+                }
+              ]
+            },
+            "__str__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "is_translatable": {
+              "kind": "property"
+            },
+            "translate": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "language_code",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "TranscriptList": {
+          "kind": "class",
+          "bases": [],
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "manually_created_transcripts",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "generated_transcripts",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "translation_languages",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "build": {
+              "kind": "staticmethod",
+              "parameters": [
+                {
+                  "name": "http_client",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "captions_json",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "__iter__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "find_transcript": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "language_codes",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "find_generated_transcript": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "language_codes",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "find_manually_created_transcript": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "language_codes",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "__str__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "TranscriptListFetcher": {
+          "kind": "class",
+          "bases": [],
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "http_client",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "proxy_config",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "fetch": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "video_id",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "formatters": {
+      "all": null,
+      "names": {
+        "FetchedTranscript": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "FetchedTranscript"
+        },
+        "FetchedTranscriptSnippet": {
+          "kind": "import",
+          "from": "_transcripts",
+          "name": "FetchedTranscriptSnippet"
+        },
+        "Formatter": {
+          "kind": "class",
+          "bases": [],
+          "methods": {
+            "format_transcript": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcript",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            },
+            "format_transcripts": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcripts",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "PrettyPrintFormatter": {
+          "kind": "class",
+          "bases": [
+            "Formatter"
+          ],
+          "methods": {
+            "format_transcript": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcript",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            },
+            "format_transcripts": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcripts",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "JSONFormatter": {
+          "kind": "class",
+          "bases": [
+            "Formatter"
+          ],
+          "methods": {
+            "format_transcript": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcript",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            },
+            "format_transcripts": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcripts",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "TextFormatter": {
+          "kind": "class",
+          "bases": [
+            "Formatter"
+          ],
+          "methods": {
+            "format_transcript": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcript",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            },
+            "format_transcripts": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "transcripts",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "kwargs",
+                  "kind": "var_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "SRTFormatter": {
+          "kind": "class",
+          "bases": [
+            "_TextBasedFormatter"
+          ]
+        },
+        "WebVTTFormatter": {
+          "kind": "class",
+          "bases": [
+            "_TextBasedFormatter"
+          ]
+        },
+        "FormatterLoader": {
+          "kind": "class",
+          "bases": [],
+          "attributes": {
+            "TYPES": {
+              "dict": {
+                "json": {
+                  "ref": "JSONFormatter"
+                },
+                "pretty": {
+                  "ref": "PrettyPrintFormatter"
+                },
+                "text": {
+                  "ref": "TextFormatter"
+                },
+                "webvtt": {
+                  "ref": "WebVTTFormatter"
+                },
+                "srt": {
+                  "ref": "SRTFormatter"
+                }
+              }
+            }
+          },
+          "methods": {
+            "load": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "formatter_type",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": "pretty"
+                  }
+                }
+              ]
+            }
+          },
+          "classes": {
+            "UnknownFormatterType": {
+              "kind": "class",
+              "bases": [
+                "Exception"
+              ],
+              "methods": {
+                "__init__": {
+                  "kind": "method",
+                  "parameters": [
+                    {
+                      "name": "self",
+                      "kind": "positional_or_keyword"
+                    },
+                    {
+                      "name": "formatter_type",
+                      "kind": "positional_or_keyword"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "proxies": {
+      "all": null,
+      "names": {
+        "InvalidProxyConfig": {
+          "kind": "class",
+          "bases": [
+            "Exception"
+          ]
+        },
+        "RequestsProxyConfigDict": {
+          "kind": "class",
+          "bases": [
+            "TypedDict"
+          ],
+          "typeddict_keys": [
+            "http",
+            "https"
+          ]
+        },
+        "ProxyConfig": {
+          "kind": "class",
+          "bases": [
+            "ABC"
+          ],
+          "methods": {
+            "to_requests_dict": {
+              "kind": "method",
+              "abstract": true,
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            },
+            "prevent_keeping_connections_alive": {
+              "kind": "property"
+            },
+            "retries_when_blocked": {
+              "kind": "property"
+            }
+          }
+        },
+        "GenericProxyConfig": {
+          "kind": "class",
+          "bases": [
+            "ProxyConfig"
+          ],
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "http_url",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": null
+                  }
+                },
+                {
+                  "name": "https_url",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": null
+                  }
+                }
+              ]
+            },
+            "to_requests_dict": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                }
+              ]
+            }
+          }
+        },
+        "WebshareProxyConfig": {
+          "kind": "class",
+          "bases": [
+            "GenericProxyConfig"
+          ],
+          "attributes": {
+            "DEFAULT_DOMAIN_NAME": {
+              "value": "p.webshare.io"
+            },
+            "DEFAULT_PORT": {
+              "value": 80
+            }
+          },
+          "methods": {
+            "__init__": {
+              "kind": "method",
+              "parameters": [
+                {
+                  "name": "self",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "proxy_username",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "proxy_password",
+                  "kind": "positional_or_keyword"
+                },
+                {
+                  "name": "filter_ip_locations",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": null
+                  }
+                },
+                {
+                  "name": "retries_when_blocked",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": 10
+                  }
+                },
+                {
+                  "name": "domain_name",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": "p.webshare.io"
+                  }
+                },
+                {
+                  "name": "proxy_port",
+                  "kind": "positional_or_keyword",
+                  "default": {
+                    "value": 80
+                  }
+                }
+              ]
+            },
+            "url": {
+              "kind": "property"
+            },
+            "http_url": {
+              "kind": "property"
+            },
+            "https_url": {
+              "kind": "property"
+            },
+            "prevent_keeping_connections_alive": {
+              "kind": "property"
+            },
+            "retries_when_blocked": {
+              "kind": "property"
+            }
+          }
+        }
+      }
+    }
+  }
+}
