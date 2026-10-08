@@ -7,7 +7,9 @@ Every tool returns structured output. A utmax error becomes a tool error that re
 from __future__ import annotations
 
 import glob
+import io
 import logging
+import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Coroutine, Hashable, Iterator
@@ -54,6 +56,7 @@ __all__ = [
     "VideosOut",
     "build_server",
     "download_file",
+    "run",
 ]
 
 log = logging.getLogger("utmax.mcp")
@@ -492,6 +495,23 @@ def transcript_out(
         offset=offset,
         next_offset=next_offset,
     )
+
+
+def run() -> None:
+    """Serve the tools over stdio (the ``utmax-mcp`` command); logs go to stderr."""
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
+    logging.basicConfig(
+        level=logging.INFO,
+        stream=sys.stderr,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    config = Config.from_env()
+    try:
+        client = Client(proxy=config.proxy)
+    except UTMaxError as error:
+        raise SystemExit(f"utmax-mcp: {error} Suggestion: {error.suggestion}") from error
+    build_server(client, config).run("stdio")
 
 
 def _page(text: str, offset: int, max_chars: int | None) -> tuple[str, int | None]:

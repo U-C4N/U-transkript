@@ -35,6 +35,9 @@ openrouter = ["openai>=3.19,<4"]
 ai = ["anthropic>=1.8,<2", "google-genai>=2.25,<3", "openai>=3.19,<4"]
 mcp = ["mcp>=2.2,<3", "anyio>=4.11,<5"]
 
+[project.scripts]
+utmax-mcp = "utmax.mcp:main"
+
 [project.urls]
 Homepage = "https://github.com/U-C4N/U-transkript"
 Issues = "https://github.com/U-C4N/U-transkript/issues"

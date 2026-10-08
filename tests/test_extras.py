@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from importlib.metadata import metadata
+from importlib.metadata import entry_points, metadata
 
 EXPECTED_REQUIREMENTS = {
     "anthropic<2,>=1.8; extra == 'ai'",
@@ -25,3 +25,12 @@ def test_the_extras_are_declared() -> None:
 def test_every_requirement_belongs_to_an_extra() -> None:
     requirements = metadata("u-transcript-max").get_all("Requires-Dist") or []
     assert set(requirements) == EXPECTED_REQUIREMENTS
+
+
+def test_the_mcp_server_is_the_only_command() -> None:
+    commands = {
+        point.name: point.value
+        for point in entry_points(group="console_scripts")
+        if point.dist is not None and point.dist.name == "u-transcript-max"
+    }
+    assert commands == {"utmax-mcp": "utmax.mcp:main"}
