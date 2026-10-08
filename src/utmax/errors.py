@@ -197,7 +197,8 @@ class IpBlocked(RequestBlocked):
 
 
 class PoTokenRequired(YouTubeError):
-    """YouTube requires a proof-of-origin token that utmax cannot produce."""
+    """YouTube requires a proof-of-origin token that utmax cannot produce (for captions, or
+    for the streams of some videos)."""
 
     suggestion = (
         "YouTube changed how captions are served; please report it at "

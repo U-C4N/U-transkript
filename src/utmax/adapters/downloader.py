@@ -34,7 +34,13 @@ from utmax.core.downloads import (
 )
 from utmax.core.retry import backoff_delay, is_transient_status
 from utmax.core.streams import Stream
-from utmax.errors import DownloadCancelled, DownloadIncomplete, NetworkError, StreamForbidden
+from utmax.errors import (
+    DownloadCancelled,
+    DownloadIncomplete,
+    NetworkError,
+    PoTokenRequired,
+    StreamForbidden,
+)
 from utmax.models import Progress, ProgressPhase
 from utmax.transport import HttpRequest, HttpStream
 
@@ -173,6 +179,8 @@ class Downloader:
         Raises:
             DownloadCancelled: ``cancel`` was set; the parts stay for a resume.
             StreamForbidden: YouTube kept answering 403 after ``max_refreshes`` fresh URLs.
+            PoTokenRequired: ... while still serving the stream's first byte: it wants a
+                proof-of-origin token for this video.
             DownloadIncomplete: a stream kept failing, changed on YouTube's side or answered
                 an unexpected status.
             NetworkError: the connection kept failing.
@@ -350,13 +358,7 @@ class Downloader:
             if self._fresh_streams is None or self._refreshes >= self._max_refreshes:
                 if not required:
                     return
-                itag = target.stream.format.itag
-                raise StreamForbidden(
-                    f"YouTube refused stream {itag} of video {self._video_id} (HTTP 403) "
-                    f"after {self._refreshes} fresh URLs.",
-                    itag=itag,
-                    video_id=self._video_id,
-                )
+                raise self._forbidden(target)
             self._refreshes += 1
             log.info(
                 "getting fresh stream URLs for %s (%d/%d)",
@@ -369,6 +371,40 @@ class Downloader:
                 for each in self._targets:
                     each.stream = self._match(each, fresh)
                 self._generation += 1
+
+    def _forbidden(self, target: _Target) -> PoTokenRequired | StreamForbidden:
+        """Why YouTube keeps refusing a stream: without a proof-of-origin token it serves only
+        the first megabyte of some videos' streams, so a stream whose first byte still comes
+        needs that token; otherwise its URLs do not work from here."""
+        stream = target.stream
+        itag = stream.format.itag
+        if self._serves_first_byte(stream):
+            return PoTokenRequired(
+                f"YouTube serves only the start of stream {itag} of video {self._video_id} and "
+                "refuses the rest (HTTP 403): it wants a proof-of-origin (PO) token for this "
+                "video, which utmax cannot create.",
+                suggestion=(
+                    "YouTube asks for this token for some videos only, and not always: try "
+                    "again later. The video's subtitles can still be fetched."
+                ),
+                video_id=self._video_id,
+            )
+        return StreamForbidden(
+            f"YouTube refused stream {itag} of video {self._video_id} (HTTP 403) "
+            f"after {self._refreshes} fresh URLs.",
+            itag=itag,
+            video_id=self._video_id,
+        )
+
+    def _serves_first_byte(self, stream: Stream) -> bool:
+        try:
+            body = self._opener(self._request(stream, "bytes=0-0"))
+        except NetworkError:
+            return False
+        try:
+            return body.status == 206
+        finally:
+            body.close()
 
     def _match(self, target: _Target, fresh: Sequence[Stream]) -> Stream:
         """The fresh stream with the same itag, size and version as ``target``'s."""

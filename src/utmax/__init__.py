@@ -396,6 +396,8 @@ def download(
         FormatNotAvailable: no stream fits the type and quality (live streams, for example).
         StreamForbidden, DownloadIncomplete, NetworkError: the download failed; call again to
             resume.
+        PoTokenRequired: YouTube serves only the start of this video's streams without a
+            proof-of-origin token, which utmax cannot create.
         DownloadCancelled: ``cancel`` was set.
         MuxError, FFmpegFailed: the file could not be assembled.
         VideoUnavailable, VideoUnplayable, AgeRestricted, RequestBlocked: YouTube refused.

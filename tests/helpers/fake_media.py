@@ -100,6 +100,8 @@ class FakeMedia:
         self.requests: list[HttpRequest] = []
         self.bodies: list[FakeBody] = []
         self.expired: set[str] = set()
+        # name -> bytes served without a proof-of-origin token; requests past them answer 403
+        self.start_only: dict[str, int] = {}
         self._streams: dict[str, bytes] = {}
         self._faults: dict[str, deque[Fault]] = {}
         self._lock = threading.Lock()
@@ -129,7 +131,7 @@ class FakeMedia:
             fault = faults.popleft() if faults else Fault()
         if fault.error is not None:
             raise fault.error
-        body = self._answer(request, self._streams.get(name), fault)
+        body = self._answer(request, self._streams.get(name), fault, self.start_only.get(name))
         with self._lock:
             self.bodies.append(body)
         return body
@@ -141,7 +143,9 @@ class FakeMedia:
         body.close()
         return HttpResponse(status=body.status, url=request.url, headers=body.headers, body=data)
 
-    def _answer(self, request: HttpRequest, data: bytes | None, fault: Fault) -> FakeBody:
+    def _answer(
+        self, request: HttpRequest, data: bytes | None, fault: Fault, limit: int | None
+    ) -> FakeBody:
         if data is None:
             return FakeBody(404, {}, b"")
         if request.url in self.expired:
@@ -150,10 +154,14 @@ class FakeMedia:
             return FakeBody(fault.status, {}, b"")
         header = request.headers.get("Range")
         if header is None or fault.ignore_range:
+            if limit is not None and len(data) > limit:
+                return FakeBody(403, {}, b"")
             return FakeBody(200, {"Content-Length": str(len(data))}, data)
         first, _, last = header.removeprefix("bytes=").partition("-")
         start = int(first)
         end = min(int(last) + 1 if last else len(data), len(data))
+        if limit is not None and end > limit:
+            return FakeBody(403, {}, b"")
         if start >= len(data):
             return FakeBody(416, {"Content-Range": f"bytes */{len(data)}"}, b"")
         body = data[start:end]

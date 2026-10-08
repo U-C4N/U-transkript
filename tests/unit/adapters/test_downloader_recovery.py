@@ -19,6 +19,7 @@ from utmax.errors import (
     DownloadIncomplete,
     IpBlocked,
     NetworkError,
+    PoTokenRequired,
     StreamForbidden,
 )
 from utmax.models import Progress
@@ -138,6 +139,41 @@ def test_forbidden_streams_give_up_after_three_refreshes(tmp_path: Path) -> None
         downloader(media, refresh=refresh).run([job], video_id="v")
     assert caught.value.itag == 137
     assert len(calls) == 3
+
+
+def test_streams_served_only_at_the_start_need_a_po_token(tmp_path: Path) -> None:
+    """Without a proof-of-origin token YouTube serves only the first megabyte of some videos'
+    streams and answers 403 after it (ZcDFZzsp3_Y over ANDROID and IOS, 2026-10-08)."""
+    media, _, job = served(tmp_path, size=8000)
+    media.start_only["video"] = 1500
+    calls: list[int] = []
+
+    def refresh() -> list[Stream]:
+        calls.append(1)
+        return [media_stream(137, f"{job.stream.url}?v={len(calls)}", 8000)]
+
+    with pytest.raises(PoTokenRequired, match=r"proof-of-origin \(PO\) token") as caught:
+        downloader(media, refresh=refresh, connections=1).run([job], video_id="v")
+    error = caught.value
+    assert "stream 137 of video v" in str(error)
+    assert error.video_id == "v"
+    assert "subtitles can still be fetched" in error.suggestion
+    assert len(calls) == 3
+    assert media.ranges("video")[-1] == "bytes=0-0"
+    assert all(body.closed for body in media.bodies)
+
+
+def test_a_failed_first_byte_check_keeps_the_403_error(tmp_path: Path) -> None:
+    media, _, job = served(tmp_path, size=8000)
+    media.expired.add(job.stream.url)
+
+    def opener(request: HttpRequest) -> FakeBody:
+        if request.headers.get("Range") == "bytes=0-0":
+            raise NetworkError("Could not complete GET https://media.test: connection reset")
+        return media.stream(request)
+
+    with pytest.raises(StreamForbidden, match="after 0 fresh URLs"):
+        Downloader(opener, chunk_size=CHUNK, sleep=lambda _: None).run([job], video_id="v")
     assert completed(job) == []
 
 
