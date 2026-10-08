@@ -113,6 +113,9 @@ def test_progress_only_rises_from_the_first_byte_to_the_finished_file(
     assert messages[-1] == "finished"
     assert_rising(updates)
     assert all(total is None or progress <= total for progress, total, _ in updates)
+    filled = [progress / total for progress, total, _ in updates if total]
+    assert filled == sorted(filled)  # one bar for the whole call: it never empties again
+    assert filled[-1] == 1
 
 
 @pytest.mark.parametrize(
@@ -126,12 +129,12 @@ def test_progress_only_rises_from_the_first_byte_to_the_finished_file(
                 ("finished", 53602, 53602),
             ],
             [
-                ("downloading", 0, 56005),
-                ("downloading", 56005, 56005),
-                ("muxing", 57323, 109607),
-                ("finished", 109607, 109607),
+                (0, 112010, "downloading: 0.0 of 0.1 MB"),
+                (56005, 112010, "downloading: 0.1 of 0.1 MB"),
+                (57382, 112010, "muxing"),
+                (112010, 112010, "finished"),
             ],
-            id="muxing is counted on top of the downloaded bytes",
+            id="the download fills the first half and muxing the second",
         ),
         pytest.param(
             [
@@ -141,12 +144,12 @@ def test_progress_only_rises_from_the_first_byte_to_the_finished_file(
                 ("finished", 700, 700),
             ],
             [
-                ("downloading", 0, 900),
-                ("downloading", 900, 900),
-                ("converting", 901, None),
-                ("finished", 1600, 1600),
+                (0, 1800, "downloading: 0.0 of 0.0 MB"),
+                (900, 1800, "downloading: 0.0 of 0.0 MB"),
+                (901, 1800, "converting"),
+                (1800, 1800, "finished"),
             ],
-            id="a conversion that cannot count still moves the progress on",
+            id="a conversion that cannot count waits at half",
         ),
         pytest.param(
             [
@@ -157,12 +160,12 @@ def test_progress_only_rises_from_the_first_byte_to_the_finished_file(
                 ("finished", 90, 90),
             ],
             [
-                ("downloading", 100, 100),
-                ("muxing", 101, 190),
-                ("muxing", 190, 190),
-                ("finished", 191, 191),
+                (100, 200, "downloading: 0.0 of 0.0 MB"),
+                (101, 200, "muxing"),
+                (200, 200, "muxing"),
+                (201, 201, "finished"),
             ],
-            id="every phase is announced even when it adds no bytes",
+            id="every phase is announced even when it adds nothing",
         ),
         pytest.param(
             [
@@ -171,20 +174,32 @@ def test_progress_only_rises_from_the_first_byte_to_the_finished_file(
                 ("downloading", 5, 100),
                 ("downloading", 20, 100),
             ],
-            [("downloading", 10, 100), ("downloading", 20, 100)],
+            [
+                (10, 200, "downloading: 0.0 of 0.0 MB"),
+                (20, 200, "downloading: 0.0 of 0.0 MB"),
+            ],
             id="a repeat or a step back is left out",
+        ),
+        pytest.param(
+            [("downloading", 5, None), ("downloading", 50, 100), ("finished", 90, 90)],
+            [
+                (5, None, "downloading: 0.0 MB"),
+                (50, 200, "downloading: 0.0 of 0.0 MB"),
+                (200, 200, "finished"),
+            ],
+            id="the total is sent once the size is known",
         ),
     ],
 )
-def test_progress_is_counted_on_through_the_phases_of_a_download(
+def test_one_bar_fills_through_the_phases_of_a_download(
     tmp_path: Path,
     given: list[tuple[str, int, int | None]],
-    sent: list[tuple[str, int, int | None]],
+    sent: list[tuple[int, int | None, str]],
 ) -> None:
-    seen: list[Progress] = []
+    seen: list[tuple[float, float | None, str | None]] = []
 
-    async def report(update: Progress) -> None:
-        seen.append(update)
+    async def report(progress: float, total: float | None, message: str | None) -> None:
+        seen.append((progress, total, message))
 
     async def main() -> Any:
         return await download_file(ScriptedClient(given), tmp_path, VIDEO, report=report)
@@ -192,7 +207,7 @@ def test_progress_is_counted_on_through_the_phases_of_a_download(
     with pytest.raises(ToolError):
         anyio.run(main)
 
-    assert [(u.phase, u.bytes_done, u.bytes_total) for u in seen] == sent
+    assert seen == sent
 
 
 def test_videos_embed_or_add_the_requested_subtitles(tmp_path: Path) -> None:
@@ -236,6 +251,23 @@ def test_a_file_already_downloaded_is_skipped_without_a_request(tmp_path: Path) 
         "sidecars": [],
         "skipped": True,
     }
+
+
+def test_a_download_named_after_its_id_is_skipped_too(tmp_path: Path) -> None:
+    youtube = ManyVideos({VIDEO: " . "})  # nothing of this title is left for a file name
+    server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
+    first = call(server, {"video": VIDEO, "format": "m4a"})
+    players = list(youtube.players)
+
+    again = call(server, {"video": VIDEO, "format": "m4a"})
+
+    assert first.structured_content is not None
+    assert first.structured_content["path"] == str(tmp_path / f"{VIDEO}.m4a")
+    assert again.structured_content is not None
+    assert again.structured_content["skipped"] is True
+    assert again.structured_content["path"] == first.structured_content["path"]
+    assert again.structured_content["title"] == VIDEO  # the file name is all there is
+    assert youtube.players == players
 
 
 def test_other_formats_of_the_same_video_are_still_downloaded(tmp_path: Path) -> None:
@@ -303,6 +335,10 @@ def test_a_download_folder_that_cannot_be_created_is_a_tool_error(tmp_path: Path
     text = result.content[0].text
     assert text.startswith("Error executing tool download: ")
     assert "file.txt" in text
+    assert text.endswith(
+        "Suggestion: check that UTMAX_DOWNLOAD_DIR names a folder the MCP server can create and "
+        "write to."
+    )
 
 
 def test_a_download_folder_that_cannot_be_searched_is_a_tool_error(
@@ -352,7 +388,7 @@ def test_a_file_that_vanishes_before_it_is_measured_is_a_tool_error(
 def test_progress_that_cannot_be_reported_does_not_stop_the_download(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    async def broken(update: Progress) -> None:
+    async def broken(progress: float, total: float | None, message: str | None) -> None:
         raise RuntimeError("the client went away")
 
     async def main() -> Any:
@@ -387,15 +423,15 @@ def test_progress_after_the_call_was_cancelled_is_not_reported(tmp_path: Path) -
             raise DownloadCancelled("Stopped.")
 
     client = LateClient()
-    reported: list[Progress] = []
+    reported: list[float] = []
 
-    async def report(update: Progress) -> None:
-        reported.append(update)
+    async def report(progress: float, total: float | None, message: str | None) -> None:
+        reported.append(progress)
 
     async def main() -> None:
         async with anyio.create_task_group() as group:
             group.start_soon(lambda: download_file(client, tmp_path, VIDEO, report=report))
-            await anyio.to_thread.run_sync(client.started.wait)
+            assert await anyio.to_thread.run_sync(client.started.wait, 10)
             group.cancel_scope.cancel()
         await anyio.to_thread.run_sync(client.finished.wait, 10)
 
@@ -411,7 +447,7 @@ def test_cancelling_the_call_stops_the_download(tmp_path: Path) -> None:
     async def main() -> None:
         async with anyio.create_task_group() as group:
             group.start_soon(lambda: download_file(client, tmp_path, VIDEO))
-            await anyio.to_thread.run_sync(client.started.wait)
+            assert await anyio.to_thread.run_sync(client.started.wait, 10)
             group.cancel_scope.cancel()
 
     anyio.run(main)

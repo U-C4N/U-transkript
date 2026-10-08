@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -13,50 +14,54 @@ def test_defaults() -> None:
     config = Config.from_env({})
 
     assert config == Config()
-    assert (config.model, config.base_url, config.proxy) == (None, None, None)
+    assert config.proxy is None
     assert config.download_dir == Path.home() / "Downloads" / "utmax"
     assert default_download_dir() == config.download_dir
 
 
 def test_every_variable_is_read() -> None:
     config = Config.from_env(
-        {
-            "UTMAX_MODEL": " claude=claude-opus-5 ",
-            "UTMAX_BASE_URL": "http://localhost:11434/v1",
-            "UTMAX_DOWNLOAD_DIR": "~/videos",
-            "UTMAX_PROXY": "http://user:pass@proxy.test:8080",
-        }
+        {"UTMAX_DOWNLOAD_DIR": "~/videos", "UTMAX_PROXY": "http://user:pass@proxy.test:8080"}
     )
 
-    assert config.model == "claude=claude-opus-5"
-    assert config.base_url == "http://localhost:11434/v1"
-    assert config.download_dir == Path("~/videos").expanduser()
+    assert config.download_dir == Path.home() / "videos"
     assert config.proxy == "http://user:pass@proxy.test:8080"
 
 
 def test_empty_variables_keep_the_defaults() -> None:
-    names = ("UTMAX_MODEL", "UTMAX_BASE_URL", "UTMAX_DOWNLOAD_DIR", "UTMAX_PROXY")
-
-    assert Config.from_env(dict.fromkeys(names, "  ")) == Config()
+    assert Config.from_env({"UTMAX_DOWNLOAD_DIR": "  ", "UTMAX_PROXY": ""}) == Config()
 
 
 def test_the_process_environment_is_the_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("UTMAX_MODEL", "gemini=gemini-3-pro")
+    monkeypatch.setenv("UTMAX_PROXY", "http://proxy.test:8080")
 
-    assert Config.from_env().model == "gemini=gemini-3-pro"
+    assert Config.from_env().proxy == "http://proxy.test:8080"
 
 
-@pytest.mark.parametrize(
-    ("model", "options"),
-    [
-        ("openai=llama3.1:8b", {"base_url": "http://localhost:11434/v1"}),
-        (" OpenAI = gpt-5 ", {"base_url": "http://localhost:11434/v1"}),
-        ("claude=claude-opus-5", {}),
-        ("openrouter=openai/gpt-5", {}),
-    ],
-)
-def test_base_url_only_goes_to_openai_models(model: str, options: dict[str, str]) -> None:
-    config = Config(base_url="http://localhost:11434/v1")
+def test_the_download_folder_is_expanded_and_absolute(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("UTMAX_TEST_FOLDER", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
 
-    assert config.translator_options(model) == options
-    assert Config().translator_options(model) == {}
+    variable = Config.from_env({"UTMAX_DOWNLOAD_DIR": "$UTMAX_TEST_FOLDER/videos"})
+    relative = Config.from_env({"UTMAX_DOWNLOAD_DIR": "downloads"})
+
+    assert variable.download_dir == tmp_path / "videos"
+    assert relative.download_dir == tmp_path / "downloads"
+    assert relative.download_dir.is_absolute()
+
+
+def test_the_proxy_password_stays_out_of_the_repr() -> None:
+    config = Config(proxy="http://alice:s3cret@proxy.test:8080")
+
+    assert "s3cret" not in repr(config)
+    assert config == Config(proxy="http://alice:s3cret@proxy.test:8080")
+
+
+def test_settings_cannot_change() -> None:
+    config = Config()
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        config.proxy = "http://proxy.test:8080"  # type: ignore[misc]
+    assert not hasattr(config, "__dict__")

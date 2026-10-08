@@ -56,7 +56,7 @@ def test_main_turns_a_missing_sdk_into_the_install_hint(monkeypatch: pytest.Monk
 def test_main_does_not_hide_other_import_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "utmax.mcp.server", None)
 
-    with pytest.raises(ModuleNotFoundError):
+    with pytest.raises(ModuleNotFoundError, match=r"utmax\.mcp\.server"):
         main()
 
 
@@ -82,7 +82,9 @@ def test_main_runs_the_server(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls == ["run"]
 
 
-def test_run_serves_stdio_with_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_serves_stdio_with_the_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     server = pytest.importorskip("utmax.mcp.server")
     served: list[Any] = []
 
@@ -91,21 +93,37 @@ def test_run_serves_stdio_with_the_environment(monkeypatch: pytest.MonkeyPatch) 
             served.append(transport)
 
     def fake_build(client: Any, config: Config) -> FakeServer:
-        served.append((type(client).__name__, config.model))
+        served.append((type(client).__name__, config.download_dir))
         return FakeServer()
 
     monkeypatch.setattr(server, "build_server", fake_build)
     monkeypatch.setattr(sys, "stderr", io.StringIO())
-    monkeypatch.setenv("UTMAX_MODEL", "claude=claude-opus-5")
+    monkeypatch.setenv("UTMAX_DOWNLOAD_DIR", str(tmp_path))
     monkeypatch.delenv("UTMAX_PROXY", raising=False)
 
     server.run()
 
-    assert served == [("Client", "claude=claude-opus-5"), "stdio"]
+    assert served == [("Client", tmp_path), "stdio"]
+
+
+def test_run_writes_utf_8_to_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = pytest.importorskip("utmax.mcp.server")
+    stderr = io.TextIOWrapper(io.BytesIO(), encoding="cp1254")
+    monkeypatch.setattr(
+        server,
+        "build_server",
+        lambda client, config: types.SimpleNamespace(run=lambda transport: None),
+    )
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    server.run()
+
+    assert (stderr.encoding, stderr.errors) == ("utf-8", "backslashreplace")
 
 
 def test_run_refuses_an_unusable_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     server = pytest.importorskip("utmax.mcp.server")
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
     monkeypatch.setenv("UTMAX_PROXY", "socks5://proxy.test:1080")
 
     with pytest.raises(SystemExit, match=r"utmax-mcp: Unsupported proxy URL .* Suggestion: "):

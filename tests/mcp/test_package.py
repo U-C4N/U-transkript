@@ -8,7 +8,7 @@ import sys
 
 from tests.test_architecture import PACKAGE, imported_modules
 
-SDK = ("anyio", "mcp", "mcp_types", "pydantic")
+SDK = ("anyio", "mcp", "mcp_types", "pydantic", "pydantic_core")
 
 
 def test_the_server_uses_utmax_through_its_public_api() -> None:
@@ -44,6 +44,7 @@ def test_importing_utmax_mcp_loads_only_the_standard_library() -> None:
     env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_", "COVERAGE_"))}
     env["PYTHONPATH"] = str(PACKAGE.parent)
     result = subprocess.run(
-        [sys.executable, "-S", "-c", probe], capture_output=True, text=True, env=env, check=True
+        [sys.executable, "-S", "-c", probe], capture_output=True, text=True, env=env, check=False
     )
+    assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == ""

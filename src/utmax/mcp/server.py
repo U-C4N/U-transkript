@@ -1,12 +1,15 @@
-"""The utmax MCP server: YouTube transcripts, AI translation, playlists and downloads as tools.
+"""The utmax MCP server: YouTube transcripts, playlists and downloads as tools.
 
 Every tool returns structured output. A utmax error becomes a tool error that reads
-``"<message> Suggestion: <what to do>"``, so the model can explain it or try again.
+``"<message> Suggestion: <what to do>"``, so the model can explain it or try again. The server
+calls no AI provider: the assistant that uses it translates transcripts itself, and translation
+with an API key stays a feature of the library (:func:`utmax.translate`).
 """
 
 from __future__ import annotations
 
 import glob
+import inspect
 import io
 import logging
 import sys
@@ -14,8 +17,6 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Coroutine, Hashable, Iterator
 from contextlib import contextmanager
-from dataclasses import replace
-from functools import partial
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeVar
 
@@ -29,7 +30,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from utmax import Client, Translator, __version__
+from utmax import Client, __version__
 from utmax.core.ids import parse_video_id
 from utmax.errors import UTMaxError
 from utmax.mcp.config import Config
@@ -50,7 +51,6 @@ __all__ = [
     "TrackOut",
     "TracksOut",
     "TranscriptOut",
-    "TranslationOut",
     "VideoEntryOut",
     "VideoOut",
     "VideosOut",
@@ -60,13 +60,15 @@ __all__ = [
 ]
 
 log = logging.getLogger("utmax.mcp")
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 INSTRUCTIONS = (
     "Tools for YouTube videos, given as URLs or 11-character video IDs: list a video's subtitle "
-    "tracks, get its transcript (plain text, SRT, WebVTT, JSON or timestamped lines), translate "
-    "a transcript with an AI model while keeping its timing, list the videos of a playlist or "
-    "channel, and download a video or its audio into the server's download folder. Read long "
-    "transcripts in parts with max_chars and next_offset."
+    "tracks, get its transcript (plain text, SRT, WebVTT, JSON or timestamped lines), list the "
+    "videos of a playlist or channel, and download a video or its audio into the server's "
+    "download folder. Read long transcripts in parts with max_chars and next_offset. To "
+    "translate a transcript, get it as srt or vtt and translate its text lines yourself, keeping "
+    "the timing lines as they are."
 )
 
 VideoArg = Annotated[str, Field(description="A YouTube video URL or 11-character video ID.")]
@@ -107,19 +109,6 @@ MaxCharsArg = Annotated[
         description=("Return at most this many characters (cut at a line or word end); null: all."),
     ),
 ]
-ToArg = Annotated[str, Field(description="The target language code, such as tr or pt-BR.")]
-ModelArg = Annotated[
-    str | None,
-    Field(
-        description=(
-            "The model as provider=model-id (claude, openai, gemini or openrouter), such as "
-            "claude=claude-opus-5. Default: the server's UTMAX_MODEL."
-        )
-    ),
-]
-InstructionsArg = Annotated[
-    str | None, Field(description="Extra guidance for the translator, such as a glossary.")
-]
 CollectionArg = Annotated[
     str,
     Field(
@@ -152,7 +141,8 @@ SubtitlesArg = Annotated[
     Field(
         description=(
             'Subtitle languages to add, such as ["en", "de"]. Default: the spoken '
-            "language for videos, none for audio; [] adds none."
+            "language for videos, none for audio; [] adds none. Audio files (m4a, mp3) get "
+            "them as .srt files next to them."
         )
     ),
 ]
@@ -196,11 +186,6 @@ class TranscriptOut(BaseModel):
     next_offset: int | None = Field(description="Pass it as offset to read on; null at the end.")
 
 
-class TranslationOut(TranscriptOut):
-    translated_from: str | None = Field(description="The language code of the source track.")
-    translator: str | None = Field(description="The model that translated, provider=model-id.")
-
-
 class VideoEntryOut(BaseModel):
     video_id: str
     title: str
@@ -233,11 +218,11 @@ class DownloadOut(BaseModel):
 
 
 def build_server(client: Client | None = None, config: Config | None = None) -> MCPServer:
-    """The MCP server with utmax's five tools, using ``client`` (by default one built from
+    """The MCP server with utmax's four tools, using ``client`` (by default one built from
     ``config``) and ``config`` (by default read from the environment)."""
     settings = config if config is not None else Config.from_env()
     youtube = client if client is not None else Client(proxy=settings.proxy)
-    reader = _Reader(youtube, settings)
+    reader = _Reader(youtube)
     server = MCPServer(
         "utmax",
         title="u-transcript max",
@@ -250,7 +235,18 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
         read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True
     )
 
-    @server.tool(annotations=reads)
+    def tool(annotations: ToolAnnotations) -> Callable[[_F], _F]:
+        """Register a tool described by its docstring without the indentation, which Python
+        3.11 and 3.12 keep in ``__doc__`` (3.13 removes it)."""
+
+        def register(function: _F) -> _F:
+            description = inspect.cleandoc(function.__doc__ or "")
+            server.add_tool(function, description=description, annotations=annotations)
+            return function
+
+        return register
+
+    @tool(reads)
     def list_tracks(video: VideoArg) -> TracksOut:
         """List the subtitle tracks of a YouTube video: language, written by people or
         generated automatically, and whether YouTube can translate it."""
@@ -269,7 +265,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
             ],
         )
 
-    @server.tool(annotations=reads)
+    @tool(reads)
     def get_transcript(
         video: VideoArg,
         *,
@@ -290,42 +286,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
             )
             return transcript_out(transcript, format, offset, max_chars)
 
-    @server.tool(annotations=reads)
-    def translate_transcript(
-        video: VideoArg,
-        to: ToArg,
-        *,
-        model: ModelArg = None,
-        languages: LanguagesArg = None,
-        format: FormatArg = "txt",
-        bilingual: Annotated[
-            bool, Field(description="Show each original line above its translation.")
-        ] = False,
-        instructions: InstructionsArg = None,
-        offset: OffsetArg = 0,
-        max_chars: MaxCharsArg = None,
-    ) -> TranslationOut:
-        """Translate the transcript of a YouTube video with an AI model, keeping its timing."""
-        spec = model or settings.model
-        if spec is None:
-            raise ToolError(
-                "No translation model is configured. Suggestion: pass model as "
-                "provider=model-id (for example claude=claude-opus-5), or set UTMAX_MODEL in "
-                "the MCP server's environment."
-            )
-        with tool_errors():
-            original, translation = reader.translation(
-                video, to, spec, languages=languages, instructions=instructions
-            )
-            result = youtube.bilingual(original, translation) if bilingual else translation
-            page = transcript_out(result, format, offset, max_chars)
-        return TranslationOut(
-            **page.model_dump(),
-            translated_from=result.translated_from,
-            translator=result.translator,
-        )
-
-    @server.tool(annotations=reads)
+    @tool(reads)
     def list_videos(source: CollectionArg, kind: KindArg = None, limit: LimitArg = 50) -> VideosOut:
         """List the videos of a YouTube playlist or channel, in YouTube's order."""
         with tool_errors():
@@ -349,7 +310,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
             ],
         )
 
-    @server.tool(annotations=writes)
+    @tool(writes)
     async def download(
         video: VideoArg,
         format: ContainerArg = "mp4",
@@ -370,7 +331,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
             quality=quality,
             subtitles=subtitles,
             subtitle_mode=subtitle_mode,
-            report=partial(_report, ctx),
+            report=ctx.report_progress,
         )
 
     return server
@@ -385,15 +346,15 @@ async def download_file(
     quality: Quality = "compat",
     subtitles: list[str] | None = None,
     subtitle_mode: SubtitleMode = "embed",
-    report: Callable[[Progress], Coroutine[Any, Any, None]] | None = None,
+    report: Callable[[float, float | None, str | None], Coroutine[Any, Any, None]] | None = None,
 ) -> DownloadOut:
     """Download ``video`` into ``directory`` on a worker thread, unless it is already there.
 
     The worker also looks for the file, so a folder that cannot be searched is a tool error
-    like any other file system error. ``report`` receives the download's progress on the event
-    loop, counted as one number that only rises: the bytes of muxing, converting and finishing
-    come on top of the downloaded ones (see ``_Counter``). When the caller is cancelled, the
-    download stops and keeps its partial files, so the next call resumes it.
+    like any other file system error. ``report`` receives ``(progress, total, message)`` on the
+    event loop, like ``Context.report_progress``: one bar for the whole call that only fills
+    (see ``_Counter``). When the caller is cancelled, the download stops and keeps its partial
+    files, so the next call resumes it.
     """
     with tool_errors():
         video_id = parse_video_id(video)
@@ -409,8 +370,9 @@ async def download_file(
         counted = counter.count(update)
         if counted is None:
             return
+        progress, total = counted
         try:
-            anyio.from_thread.run(report, counted, token=token)
+            anyio.from_thread.run(report, progress, total, _progress_message(update), token=token)
         except Exception:  # progress is best effort; it must never stop a download
             # The first failure of a download is a warning, so that progress which never gets
             # through (an anyio older than 4.11, say) shows in the log; the rest is debugging.
@@ -425,7 +387,7 @@ async def download_file(
                 path=str(existing),
                 size_bytes=existing.stat().st_size,
                 video_id=video_id,
-                title=existing.name.removesuffix(f" [{video_id}].{format}"),
+                title=existing.name.removesuffix(f".{format}").removesuffix(f" [{video_id}]"),
                 container=format,
                 embedded_subtitles=[],
                 sidecars=[],
@@ -473,7 +435,10 @@ def tool_errors() -> Iterator[None]:
     except UTMaxError as error:
         raise ToolError(f"{error} Suggestion: {error.suggestion}") from error
     except OSError as error:
-        raise ToolError(str(error)) from error
+        raise ToolError(
+            f"{error} Suggestion: check that UTMAX_DOWNLOAD_DIR names a folder the MCP server "
+            "can create and write to."
+        ) from error
 
 
 def transcript_out(
@@ -525,8 +490,14 @@ def _page(text: str, offset: int, max_chars: int | None) -> tuple[str, int | Non
 
 
 def _existing_download(directory: Path, video_id: str, container: Container) -> Path | None:
-    pattern = "*" + glob.escape(f"[{video_id}].{container}")
-    return next(iter(sorted(directory.glob(pattern))), None) if directory.is_dir() else None
+    """A finished download of ``video_id`` as ``container`` in ``directory``: utmax names it
+    ``"{title} [{video_id}].{ext}"``, or ``"{video_id}.{ext}"`` when nothing of the title is left
+    for a file name."""
+    if not directory.is_dir():
+        return None
+    named = directory.glob("* " + glob.escape(f"[{video_id}].{container}"))
+    plain = directory / f"{video_id}.{container}"
+    return min([*named, *([plain] if plain.is_file() else [])], default=None)
 
 
 def _video(info: VideoInfo) -> VideoOut:
@@ -540,10 +511,6 @@ def _video(info: VideoInfo) -> VideoOut:
     )
 
 
-async def _report(ctx: Context[Any, Any], update: Progress) -> None:
-    await ctx.report_progress(update.bytes_done, update.bytes_total, _progress_message(update))
-
-
 def _progress_message(update: Progress) -> str:
     if update.phase != "downloading":
         return update.phase
@@ -554,37 +521,45 @@ def _progress_message(update: Progress) -> str:
 
 
 class _Counter:
-    """Counts the progress of one download as a number that only rises.
+    """Turns the progress of one download into one bar that only fills.
 
-    utmax counts from zero again in every phase (downloading, then muxing or converting, then
-    finished), but the progress of an MCP call must grow with every notification, or a client's
-    progress bar jumps back. So the bytes of the later phases are counted on top of the
-    downloaded ones, and an update that would not move the count on is left out, except the
-    first one of a phase: that one is sent one byte further, so the client still learns of the
-    phase (converting, for one, has nothing to count).
+    utmax counts every phase of a download from zero, but a client draws one bar for the call.
+    The download fills the first half of it and muxing, which writes about as many bytes again,
+    the second, so the total is twice the download's size from the first update that knows it;
+    converting to MP3 reports no amounts and keeps the bar at half until the file is finished.
+    MCP progress must grow with every notification: an update that would not move the bar on is
+    left out, except the first one of a phase, which is sent one byte further so the client
+    still learns of the phase.
     """
 
     def __init__(self) -> None:
-        self._downloaded = 0
+        self._size: int | None = None
         self._sent: int | None = None
         self._phase: ProgressPhase | None = None
 
-    def count(self, update: Progress) -> Progress | None:
-        """``update`` as counted for the whole download, or ``None`` when it adds nothing."""
-        if update.phase == "downloading":
-            self._downloaded = max(self._downloaded, update.bytes_done)
-            offset = 0
+    def count(self, update: Progress) -> tuple[int, int | None] | None:
+        """``(progress, total)`` for ``update``, or ``None`` when it would not move the bar."""
+        if update.phase == "downloading" and update.bytes_total:
+            self._size = update.bytes_total
+        size = self._size
+        total = None if size is None else 2 * size
+        if update.phase == "downloading" or size is None:
+            done = update.bytes_done
+        elif update.phase == "finished":
+            done = 2 * size
+        elif update.phase == "muxing" and update.bytes_total:
+            done = size + update.bytes_done * size // update.bytes_total
         else:
-            offset = self._downloaded
-        done = offset + update.bytes_done
-        total = None if update.bytes_total is None else offset + update.bytes_total
+            done = size
+        if total is not None:
+            done = min(done, total)
         if self._sent is not None and done <= self._sent:
             if update.phase == self._phase:
                 return None
             done = self._sent + 1
             total = None if total is None else max(total, done)
         self._sent, self._phase = done, update.phase
-        return replace(update, bytes_done=done, bytes_total=total)
+        return done, total
 
 
 _MEMORY_SIZE = 8
@@ -617,20 +592,15 @@ class _Memory(Generic[_T]):
 
 
 class _Reader:
-    """Fetches and translates transcripts for the tools, remembering the latest ones.
+    """Fetches transcripts for the tools, remembering the latest ones.
 
-    A tool call keeps no state, so a long transcript or translation is read in parts, one call
-    per part. The reader keeps what those calls share (the captions, the translators and the
-    translations), so that a part costs no request and no model run, and every part is cut from
-    the same text even though a model words its answer differently each time it is asked.
+    A tool call keeps no state, so a long transcript is read in parts, one call per part. The
+    reader keeps the transcripts those calls share, so that a part costs no request.
     """
 
-    def __init__(self, client: Client, config: Config) -> None:
+    def __init__(self, client: Client) -> None:
         self._client = client
-        self._config = config
         self._transcripts = _Memory[Transcript](_MEMORY_SIZE)
-        self._translators = _Memory[Translator](_MEMORY_SIZE)
-        self._translations = _Memory[tuple[Transcript, Transcript]](_MEMORY_SIZE)
 
     def transcript(
         self,
@@ -654,40 +624,3 @@ class _Reader:
             )
             self._transcripts.put(key, transcript)
         return transcript
-
-    def translation(
-        self,
-        video: str,
-        to: str,
-        model: str,
-        *,
-        languages: list[str] | None,
-        instructions: str | None,
-    ) -> tuple[Transcript, Transcript]:
-        """The transcript of ``video`` and its translation into ``to`` by ``model``.
-
-        The model runs only when this translation was not made lately. A model that cannot be
-        used (a malformed spec, an unknown provider, a missing SDK or, except for Claude, a
-        missing API key) is reported before any request, because the translator is made before
-        the captions are fetched.
-        """
-        video_id = parse_video_id(video)
-        wanted = None if languages is None else tuple(languages)
-        key = (video_id, wanted, to, model, instructions)
-        made = self._translations.get(key)
-        if made is None:
-            translator = self._translator(model)
-            original = self.transcript(video_id, languages)
-            translation = self._client.translate(
-                original, to, model=translator, instructions=instructions
-            )
-            made = (original, translation)
-            self._translations.put(key, made)
-        return made
-
-    def _translator(self, model: str) -> Translator:
-        translator = self._translators.get(model)
-        if translator is None:
-            translator = self._client.translator(model, **self._config.translator_options(model))
-            self._translators.put(model, translator)
-        return translator

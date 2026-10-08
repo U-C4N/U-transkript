@@ -16,6 +16,10 @@ def test_a_stdio_client_lists_the_tools_and_gets_errors_as_text(tmp_path: Path) 
     parameters = StdioServerParameters(command=sys.executable, args=["-m", "utmax.mcp"], env=env)
 
     async def main() -> tuple[list[str], str, bool]:
+        with anyio.fail_after(60):  # a server that never answers fails the test, not the job
+            return await talk()
+
+    async def talk() -> tuple[list[str], str, bool]:
         async with (
             stdio_client(parameters) as (read, write),
             ClientSession(read, write) as session,
@@ -29,12 +33,6 @@ def test_a_stdio_client_lists_the_tools_and_gets_errors_as_text(tmp_path: Path) 
 
     names, text, is_error = anyio.run(main)
 
-    assert names == [
-        "list_tracks",
-        "get_transcript",
-        "translate_transcript",
-        "list_videos",
-        "download",
-    ]
+    assert names == ["list_tracks", "get_transcript", "list_videos", "download"]
     assert is_error is True
     assert "Could not find a YouTube video ID in 'not a video ♪'." in text

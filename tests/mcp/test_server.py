@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
-import json
 import threading
 from typing import Any
 
@@ -14,38 +12,15 @@ from mcp.types import CallToolResult, Tool
 
 from tests.helpers.browse import CHANNEL_ID, vr_page
 from tests.helpers.bulk import IDS, TITLES, ManyVideos
-from tests.helpers.fake_translator import FakeTranslator, Script, echo
 from tests.helpers.fake_transport import FakeTransport, json_response
 from tests.helpers.youtube import ASR_JSON3, VIDEO_ID, player_payload, standard_youtube
 from utmax import Client
-from utmax.adapters.providers.base import Translator
 from utmax.mcp import server as mcp_server
 from utmax.mcp.config import Config
 from utmax.mcp.server import build_server
-from utmax.transport import Transport
 
-TOOLS = ["list_tracks", "get_transcript", "translate_transcript", "list_videos", "download"]
+TOOLS = ["list_tracks", "get_transcript", "list_videos", "download"]
 PLAYLIST = "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI"
-
-
-class RecordingClient(Client):
-    """A real Client whose translators are fakes; records the models it was asked for."""
-
-    def __init__(self, transport: Transport, script: Script = echo) -> None:
-        super().__init__(transport=transport)
-        self.models: list[tuple[str, dict[str, Any]]] = []
-        self.translators: list[FakeTranslator] = []
-        self._script = script
-
-    def translator(self, model: str, **options: Any) -> Translator:
-        self.models.append((model, options))
-        self.translators.append(FakeTranslator(self._script))
-        return self.translators[-1]
-
-    @property
-    def model_requests(self) -> int:
-        """How many times the models were asked, however many translators were made."""
-        return sum(len(translator.requests) for translator in self.translators)
 
 
 def call(server: Any, name: str, arguments: dict[str, Any]) -> CallToolResult:
@@ -75,12 +50,28 @@ def error_text(result: CallToolResult) -> str:
     return " ".join(block.text for block in result.content if block.type == "text")
 
 
-def test_the_server_offers_five_tools() -> None:
+def test_the_server_offers_four_tools() -> None:
     offered = tools(build_server(Client(transport=FakeTransport()), Config()))
 
     assert list(offered) == TOOLS
     assert all(tool.description for tool in offered.values())
     assert all(tool.output_schema for tool in offered.values())
+
+
+def test_descriptions_read_the_same_on_every_python_version() -> None:
+    offered = tools(build_server(Client(transport=FakeTransport()), Config()))
+
+    descriptions = {name: tool.description or "" for name, tool in offered.items()}
+    assert descriptions["list_tracks"] == (
+        "List the subtitle tracks of a YouTube video: language, written by people or\n"
+        "generated automatically, and whether YouTube can translate it."
+    )
+    assert all("\n " not in description for description in descriptions.values())
+
+
+def test_the_assistant_is_told_to_translate_by_itself() -> None:
+    assert "translate its text lines yourself" in mcp_server.INSTRUCTIONS
+    assert "keeping the timing lines as they are" in mcp_server.INSTRUCTIONS
 
 
 def test_tool_arguments_are_described_and_bounded() -> None:
@@ -91,14 +82,11 @@ def test_tool_arguments_are_described_and_bounded() -> None:
     assert transcript["properties"]["video"]["description"].startswith("A YouTube video URL")
     assert transcript["properties"]["format"]["enum"] == ["txt", "srt", "vtt", "json", "pretty"]
     assert transcript["properties"]["source"]["enum"] == ["any", "manual", "generated"]
-    assert offered["translate_transcript"].input_schema["required"] == ["video", "to"]
     offset = transcript["properties"]["offset"]
     assert (offset["type"], offset["minimum"], offset["default"]) == ("integer", 0, 0)
     max_chars = transcript["properties"]["max_chars"]
     assert max_chars["anyOf"] == [{"type": "integer", "minimum": 1}, {"type": "null"}]
     assert max_chars["default"] is None
-    translation = offered["translate_transcript"].input_schema["properties"]
-    assert (translation["offset"], translation["max_chars"]) == (offset, max_chars)
     limit = offered["list_videos"].input_schema["properties"]["limit"]
     assert (limit["minimum"], limit["maximum"], limit["default"]) == (1, 5000, 50)
     download = offered["download"].input_schema["properties"]
@@ -115,7 +103,6 @@ def test_only_download_changes_anything() -> None:
     assert hints == {
         "list_tracks": True,
         "get_transcript": True,
-        "translate_transcript": True,
         "list_videos": True,
         "download": False,
     }
@@ -212,136 +199,9 @@ def test_errors_carry_a_suggestion() -> None:
     assert "offset" in negative
 
 
-def test_translation_needs_a_model() -> None:
-    server = build_server(RecordingClient(standard_youtube()), Config())
-
-    message = error_text(call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr"}))
-
-    assert "No translation model is configured." in message
-    assert "UTMAX_MODEL" in message
-
-
-def test_a_model_that_cannot_be_used_fails_before_any_request() -> None:
-    transport = FakeTransport()
-    server = build_server(Client(transport=transport), Config())
-
-    malformed = error_text(
-        call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", "model": "nonsense"})
-    )
-    unknown = error_text(
-        call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", "model": "acme=foo"})
-    )
-
-    assert "The model 'nonsense' is not \"provider=model-id\"" in malformed
-    assert "Unknown provider 'acme' in 'acme=foo'" in unknown
-    for message in (malformed, unknown):
-        assert 'Suggestion: Pass model="provider=model-id", where provider is claude' in message
-    assert transport.requests == []
-
-
-def test_translation_uses_the_model_and_its_base_url() -> None:
-    client = RecordingClient(standard_youtube(repeat=True))
-    config = Config(model="openai=llama3.1:8b", base_url="http://localhost:11434/v1")
-    server = build_server(client, config)
-
-    default = output(call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr"}))
-    chosen = output(
-        call(
-            server,
-            "translate_transcript",
-            {"video": VIDEO_ID, "to": "tr", "model": "claude=claude-opus-5", "bilingual": True},
-        )
-    )
-
-    assert client.models == [
-        ("openai=llama3.1:8b", {"base_url": "http://localhost:11434/v1"}),
-        ("claude=claude-opus-5", {}),
-    ]
-    assert default["content"].startswith("[♪♪♪] ♪ WE'RE NO STRANGERS TO LOVE")
-    assert (default["language_code"], default["language"]) == ("tr", "Turkish")
-    assert (default["translated_from"], default["translator"]) == ("en", "fake=echo-1")
-    assert chosen["language_code"] == "en+tr"
-    assert "♪ We're no strangers to love ♪\n♪ WE'RE NO STRANGERS" in chosen["content"]
-
-
-def test_translation_instructions_reach_the_model() -> None:
-    client = RecordingClient(standard_youtube(repeat=True))
-    server = build_server(client, Config(model="claude=claude-opus-5"))
-
-    output(
-        call(
-            server,
-            "translate_transcript",
-            {"video": VIDEO_ID, "to": "tr", "instructions": "Keep song titles in English."},
-        )
-    )
-
-    assert client.models == [("claude=claude-opus-5", {})]
-    assert [request["instructions"] for request in client.translators[0].requests] == [
-        "Keep song titles in English."
-    ]
-
-
-def test_a_translation_is_made_once_and_read_in_parts() -> None:
-    answers = itertools.count(1)
-
-    def moody(request: dict[str, Any]) -> str:
-        mood = "!" * next(answers)  # a real model words every answer differently
-        items = [
-            {"id": item["id"], "text": item["text"].upper() + mood} for item in request["items"]
-        ]
-        return json.dumps({"items": items})
-
-    client = RecordingClient(standard_youtube(repeat=True), moody)
-    server = build_server(client, Config(model="claude=claude-opus-5"))
-    arguments = {"video": VIDEO_ID, "to": "tr", "format": "srt"}
-    whole = output(call(server, "translate_transcript", arguments))
-    parts: list[str] = []
-    offset: int | None = 0
-
-    while offset is not None:
-        page = output(
-            call(
-                server,
-                "translate_transcript",
-                {**arguments, "offset": offset, "max_chars": 40},
-            )
-        )
-        assert page["total_chars"] == whole["total_chars"]
-        parts.append(page["content"])
-        offset = page["next_offset"]
-
-    assert len(parts) > 2
-    assert "".join(parts) == whole["content"]
-    assert (len(client.translators), client.model_requests) == (1, 1)
-
-
-def test_a_translation_is_reused_only_for_the_same_request() -> None:
-    client = RecordingClient(ManyVideos())
-    server = build_server(client, Config(model="claude=claude-opus-5"))
-
-    def translate(**changes: Any) -> int:
-        output(call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", **changes}))
-        return client.model_requests
-
-    assert translate() == 1
-    assert translate(video=f"https://youtu.be/{VIDEO_ID}", format="vtt", bilingual=True) == 1
-    assert translate(video=IDS[1]) == 2
-    assert translate(to="de") == 3
-    assert translate(instructions="Keep song titles in English.") == 4
-    assert translate(languages=["de"]) == 5
-    assert translate(model="gemini=gemini-3-pro") == 6
-    assert translate(to="de") == 6
-    german = output(
-        call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", "languages": ["de"]})
-    )
-    assert (german["translated_from"], client.model_requests) == ("de-DE", 6)
-    assert [model for model, _ in client.models] == ["claude=claude-opus-5", "gemini=gemini-3-pro"]
-
-
 def test_reading_in_parts_fetches_the_captions_once() -> None:
     youtube = ManyVideos()
-    server = build_server(RecordingClient(youtube), Config(model="claude=claude-opus-5"))
+    server = build_server(Client(transport=youtube), Config())
     arguments = {"video": VIDEO_ID, "format": "srt", "max_chars": 40}
 
     link = f"https://youtu.be/{VIDEO_ID}"
@@ -349,11 +209,9 @@ def test_reading_in_parts_fetches_the_captions_once() -> None:
     second = output(
         call(server, "get_transcript", {**arguments, "video": link, "offset": first["next_offset"]})
     )
-    translated = output(call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr"}))
     other = output(call(server, "get_transcript", {"video": IDS[1]}))
 
     assert second["offset"] == first["next_offset"] > 0
-    assert translated["translated_from"] == "en"
     assert other["title"] == TITLES[IDS[1]]
     assert youtube.players == [VIDEO_ID, IDS[1]]
 
@@ -464,13 +322,12 @@ def test_list_videos_takes_the_kind_of_a_channel_and_refuses_it_for_a_playlist()
 def test_the_server_reads_the_environment_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     created: list[str | None] = []
 
-    def fake_client(*, proxy: str | None) -> RecordingClient:
+    def fake_client(*, proxy: str | None) -> Client:
         created.append(proxy)
-        return RecordingClient(standard_youtube())
+        return Client(transport=standard_youtube())
 
     monkeypatch.setattr(mcp_server, "Client", fake_client)
     monkeypatch.setenv("UTMAX_PROXY", "http://proxy.test:8080")
-    monkeypatch.setenv("UTMAX_MODEL", "gemini=gemini-3-pro")
 
     server = build_server()
 
