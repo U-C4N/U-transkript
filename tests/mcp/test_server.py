@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import itertools
+import json
+import threading
 from typing import Any
 
 import anyio
@@ -10,9 +13,10 @@ from mcp import Client as MCPClient
 from mcp.types import CallToolResult, Tool
 
 from tests.helpers.browse import vr_page
-from tests.helpers.fake_translator import FakeTranslator
+from tests.helpers.bulk import IDS, TITLES, ManyVideos
+from tests.helpers.fake_translator import FakeTranslator, Script, echo
 from tests.helpers.fake_transport import FakeTransport, json_response
-from tests.helpers.youtube import VIDEO_ID, standard_youtube
+from tests.helpers.youtube import ASR_JSON3, VIDEO_ID, player_payload, standard_youtube
 from utmax import Client
 from utmax.adapters.providers.base import Translator
 from utmax.mcp import server as mcp_server
@@ -26,15 +30,21 @@ TOOLS = ["list_tracks", "get_transcript", "translate_transcript", "list_videos"]
 class RecordingClient(Client):
     """A real Client whose translators are fakes; records the models it was asked for."""
 
-    def __init__(self, transport: Transport) -> None:
+    def __init__(self, transport: Transport, script: Script = echo) -> None:
         super().__init__(transport=transport)
         self.models: list[tuple[str, dict[str, Any]]] = []
         self.translators: list[FakeTranslator] = []
+        self._script = script
 
     def translator(self, model: str, **options: Any) -> Translator:
         self.models.append((model, options))
-        self.translators.append(FakeTranslator())
+        self.translators.append(FakeTranslator(self._script))
         return self.translators[-1]
+
+    @property
+    def model_requests(self) -> int:
+        """How many times the models were asked, however many translators were made."""
+        return sum(len(translator.requests) for translator in self.translators)
 
 
 def call(server: Any, name: str, arguments: dict[str, Any]) -> CallToolResult:
@@ -187,6 +197,24 @@ def test_translation_needs_a_model() -> None:
     assert "UTMAX_MODEL" in message
 
 
+def test_a_model_that_cannot_be_used_fails_before_any_request() -> None:
+    transport = FakeTransport()
+    server = build_server(Client(transport=transport), Config())
+
+    malformed = error_text(
+        call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", "model": "nonsense"})
+    )
+    unknown = error_text(
+        call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", "model": "acme=foo"})
+    )
+
+    assert "The model 'nonsense' is not \"provider=model-id\"" in malformed
+    assert "Unknown provider 'acme' in 'acme=foo'" in unknown
+    for message in (malformed, unknown):
+        assert 'Suggestion: Pass model="provider=model-id", where provider is claude' in message
+    assert transport.requests == []
+
+
 def test_translation_uses_the_model_and_its_base_url() -> None:
     client = RecordingClient(standard_youtube(repeat=True))
     config = Config(model="openai=llama3.1:8b", base_url="http://localhost:11434/v1")
@@ -228,6 +256,134 @@ def test_translation_instructions_reach_the_model() -> None:
     assert [request["instructions"] for request in client.translators[0].requests] == [
         "Keep song titles in English."
     ]
+
+
+def test_a_translation_is_made_once_and_read_in_parts() -> None:
+    answers = itertools.count(1)
+
+    def moody(request: dict[str, Any]) -> str:
+        mood = "!" * next(answers)  # a real model words every answer differently
+        items = [
+            {"id": item["id"], "text": item["text"].upper() + mood} for item in request["items"]
+        ]
+        return json.dumps({"items": items})
+
+    client = RecordingClient(standard_youtube(repeat=True), moody)
+    server = build_server(client, Config(model="claude=claude-opus-5"))
+    arguments = {"video": VIDEO_ID, "to": "tr", "format": "srt"}
+    whole = output(call(server, "translate_transcript", arguments))
+    parts: list[str] = []
+    offset: int | None = 0
+
+    while offset is not None:
+        page = output(
+            call(
+                server,
+                "translate_transcript",
+                {**arguments, "offset": offset, "max_chars": 40},
+            )
+        )
+        assert page["total_chars"] == whole["total_chars"]
+        parts.append(page["content"])
+        offset = page["next_offset"]
+
+    assert len(parts) > 2
+    assert "".join(parts) == whole["content"]
+    assert (len(client.translators), client.model_requests) == (1, 1)
+
+
+def test_a_translation_is_reused_only_for_the_same_request() -> None:
+    client = RecordingClient(ManyVideos())
+    server = build_server(client, Config(model="claude=claude-opus-5"))
+
+    def translate(**changes: Any) -> int:
+        output(call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", **changes}))
+        return client.model_requests
+
+    assert translate() == 1
+    assert translate(video=f"https://youtu.be/{VIDEO_ID}", format="vtt", bilingual=True) == 1
+    assert translate(video=IDS[1]) == 2
+    assert translate(to="de") == 3
+    assert translate(instructions="Keep song titles in English.") == 4
+    assert translate(languages=["de"]) == 5
+    assert translate(model="gemini=gemini-3-pro") == 6
+    assert translate(to="de") == 6
+    german = output(
+        call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr", "languages": ["de"]})
+    )
+    assert (german["translated_from"], client.model_requests) == ("de-DE", 6)
+    assert [model for model, _ in client.models] == ["claude=claude-opus-5", "gemini=gemini-3-pro"]
+
+
+def test_reading_in_parts_fetches_the_captions_once() -> None:
+    youtube = ManyVideos()
+    server = build_server(RecordingClient(youtube), Config(model="claude=claude-opus-5"))
+    arguments = {"video": VIDEO_ID, "format": "srt", "max_chars": 40}
+
+    link = f"https://youtu.be/{VIDEO_ID}"
+    first = output(call(server, "get_transcript", arguments))
+    second = output(
+        call(server, "get_transcript", {**arguments, "video": link, "offset": first["next_offset"]})
+    )
+    translated = output(call(server, "translate_transcript", {"video": VIDEO_ID, "to": "tr"}))
+    other = output(call(server, "get_transcript", {"video": IDS[1]}))
+
+    assert second["offset"] == first["next_offset"] > 0
+    assert translated["translated_from"] == "en"
+    assert other["title"] == TITLES[IDS[1]]
+    assert youtube.players == [VIDEO_ID, IDS[1]]
+
+
+def test_the_memory_forgets_the_value_used_longest_ago() -> None:
+    read = mcp_server._Memory[str](2)
+    read.put("a", "first")
+    read.put("b", "second")
+    read.get("a")  # a was used last, so b goes first
+    read.put("c", "third")
+    written = mcp_server._Memory[str](2)
+    written.put("a", "first")
+    written.put("b", "second")
+    written.put("a", "newer")  # replaces the value and counts as used
+    written.put("c", "third")
+
+    assert [read.get(key) for key in "abc"] == ["first", None, "third"]
+    assert [written.get(key) for key in "abc"] == ["newer", None, "third"]
+
+
+def test_the_memory_is_safe_to_share_between_threads() -> None:
+    memory = mcp_server._Memory[str](2)
+    memory.put("a", "first")
+    workers = [
+        threading.Thread(target=lambda: memory.get("a")),
+        threading.Thread(target=lambda: memory.put("b", "second")),
+    ]
+
+    with memory._lock:  # a reader and a writer wait for whoever is using the memory
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(0.2)
+        waiting = [worker.is_alive() for worker in workers]
+    for worker in workers:
+        worker.join()
+
+    assert waiting == [True, True]
+    assert memory.get("b") == "second"
+
+
+def test_a_transcript_is_not_reused_for_another_kind_of_track() -> None:
+    transport = FakeTransport()
+    tracks = (("en", "English (auto-generated)", True),)
+    player = json_response(player_payload(tracks=tracks))
+    transport.add("POST", "/youtubei/v1/player", player, repeat=True)
+    transport.add("GET", "kind=asr", json_response(ASR_JSON3), repeat=True)
+    server = build_server(Client(transport=transport), Config())
+
+    anything = output(call(server, "get_transcript", {"video": VIDEO_ID}))
+    manual = error_text(call(server, "get_transcript", {"video": VIDEO_ID, "source": "manual"}))
+
+    assert anything["is_generated"] is True
+    assert "No subtitles match the filters" in manual
 
 
 def test_list_videos() -> None:

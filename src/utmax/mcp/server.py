@@ -7,16 +7,19 @@ Every tool returns structured output. A utmax error becomes a tool error that re
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+import threading
+from collections import OrderedDict
+from collections.abc import Hashable, Iterator
 from contextlib import contextmanager
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from utmax import Client, __version__
+from utmax import Client, Translator, __version__
+from utmax.core.ids import parse_video_id
 from utmax.errors import UTMaxError
 from utmax.mcp.config import Config
 from utmax.models import CollectionKind, FormatName, Transcript, VideoInfo
@@ -177,6 +180,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
     ``config``) and ``config`` (by default read from the environment)."""
     settings = config if config is not None else Config.from_env()
     youtube = client if client is not None else Client(proxy=settings.proxy)
+    reader = _Reader(youtube, settings)
     server = MCPServer(
         "utmax",
         title="u-transcript max",
@@ -218,7 +222,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
         """Get the transcript (subtitles) of a YouTube video, by default in the spoken language
         with subtitles written by people preferred over automatic ones."""
         with tool_errors():
-            transcript = youtube.fetch(
+            transcript = reader.transcript(
                 video,
                 languages,
                 include_manual=source != "generated",
@@ -250,10 +254,8 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
                 "the MCP server's environment."
             )
         with tool_errors():
-            original = youtube.fetch(video, languages)
-            translator = youtube.translator(spec, **settings.translator_options(spec))
-            translation = youtube.translate(
-                original, to, model=translator, instructions=instructions
+            original, translation = reader.translation(
+                video, to, spec, languages=languages, instructions=instructions
             )
             result = youtube.bilingual(original, translation) if bilingual else translation
             page = transcript_out(result, format, offset, max_chars)
@@ -341,3 +343,109 @@ def _video(info: VideoInfo) -> VideoOut:
         duration_seconds=info.duration,
         url=info.url,
     )
+
+
+_MEMORY_SIZE = 8
+_T = TypeVar("_T")
+
+
+class _Memory(Generic[_T]):
+    """The values used most recently, by key; safe to share between threads."""
+
+    def __init__(self, size: int) -> None:
+        self._size = size
+        self._values: OrderedDict[Hashable, _T] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: Hashable) -> _T | None:
+        """The value remembered for ``key``, which counts as used, or ``None``."""
+        with self._lock:
+            value = self._values.get(key)
+            if value is not None:
+                self._values.move_to_end(key)
+            return value
+
+    def put(self, key: Hashable, value: _T) -> None:
+        """Remember ``value`` for ``key``; when full, forget the value used longest ago."""
+        with self._lock:
+            self._values[key] = value
+            self._values.move_to_end(key)
+            while len(self._values) > self._size:
+                self._values.popitem(last=False)
+
+
+class _Reader:
+    """Fetches and translates transcripts for the tools, remembering the latest ones.
+
+    A tool call keeps no state, so a long transcript or translation is read in parts, one call
+    per part. The reader keeps what those calls share (the captions, the translators and the
+    translations), so that a part costs no request and no model run, and every part is cut from
+    the same text even though a model words its answer differently each time it is asked.
+    """
+
+    def __init__(self, client: Client, config: Config) -> None:
+        self._client = client
+        self._config = config
+        self._transcripts = _Memory[Transcript](_MEMORY_SIZE)
+        self._translators = _Memory[Translator](_MEMORY_SIZE)
+        self._translations = _Memory[tuple[Transcript, Transcript]](_MEMORY_SIZE)
+
+    def transcript(
+        self,
+        video: str,
+        languages: list[str] | None,
+        *,
+        include_manual: bool = True,
+        include_generated: bool = True,
+    ) -> Transcript:
+        """The transcript of ``video``, fetched unless it was fetched lately."""
+        video_id = parse_video_id(video)
+        wanted = None if languages is None else tuple(languages)
+        key = (video_id, wanted, include_manual, include_generated)
+        transcript = self._transcripts.get(key)
+        if transcript is None:
+            transcript = self._client.fetch(
+                video_id,
+                languages,
+                include_manual=include_manual,
+                include_generated=include_generated,
+            )
+            self._transcripts.put(key, transcript)
+        return transcript
+
+    def translation(
+        self,
+        video: str,
+        to: str,
+        model: str,
+        *,
+        languages: list[str] | None,
+        instructions: str | None,
+    ) -> tuple[Transcript, Transcript]:
+        """The transcript of ``video`` and its translation into ``to`` by ``model``.
+
+        The model runs only when this translation was not made lately. A model that cannot be
+        used (a malformed spec, an unknown provider, a missing SDK or, except for Claude, a
+        missing API key) is reported before any request, because the translator is made before
+        the captions are fetched.
+        """
+        video_id = parse_video_id(video)
+        wanted = None if languages is None else tuple(languages)
+        key = (video_id, wanted, to, model, instructions)
+        made = self._translations.get(key)
+        if made is None:
+            translator = self._translator(model)
+            original = self.transcript(video_id, languages)
+            translation = self._client.translate(
+                original, to, model=translator, instructions=instructions
+            )
+            made = (original, translation)
+            self._translations.put(key, made)
+        return made
+
+    def _translator(self, model: str) -> Translator:
+        translator = self._translators.get(model)
+        if translator is None:
+            translator = self._client.translator(model, **self._config.translator_options(model))
+            self._translators.put(model, translator)
+        return translator
