@@ -61,11 +61,19 @@ __all__ = [
     "YouTubeRequestFailed",
 ]
 
+_SNIPPET_KEYS = ("text", "start", "duration")
 _UNSAFE_XML = re.compile(r"<!\s*(?:DOCTYPE|ENTITY)", re.IGNORECASE)
 
 
 @dataclass
 class FetchedTranscriptSnippet:
+    """One snippet of a transcript.
+
+    Beyond youtube-transcript-api 1.2.4, a snippet also reads like the dictionary version 0.6
+    returned (``snippet["text"]``, ``.get()``, ``.keys()``, ``.items()``, ``dict(snippet)``), so
+    code written for 0.6 keeps working on ``Transcript.fetch()``.
+    """
+
     text: str
     start: float
     """
@@ -77,6 +85,37 @@ class FetchedTranscriptSnippet:
     duration of the transcribed speech, but how long the snippet stays on screen.
     Therefore, there can be overlaps between snippets!
     """
+
+    def __getitem__(self, key: str) -> str | float:
+        if key not in _SNIPPET_KEYS:
+            raise KeyError(key)
+        value: str | float = getattr(self, key)
+        return value
+
+    def __contains__(self, key: object) -> bool:
+        return key in _SNIPPET_KEYS
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(_SNIPPET_KEYS)
+
+    def __len__(self) -> int:
+        return len(_SNIPPET_KEYS)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """The value of ``key``, or ``default`` for another key."""
+        return self[key] if key in _SNIPPET_KEYS else default
+
+    def keys(self) -> tuple[str, ...]:
+        """``("text", "start", "duration")``."""
+        return _SNIPPET_KEYS
+
+    def values(self) -> list[str | float]:
+        """The text, start and duration."""
+        return [self[key] for key in _SNIPPET_KEYS]
+
+    def items(self) -> list[tuple[str, str | float]]:
+        """The keys with their values."""
+        return [(key, self[key]) for key in _SNIPPET_KEYS]
 
 
 @dataclass

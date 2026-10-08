@@ -116,7 +116,14 @@ def make_transport(http_client: Any, proxy_config: ProxyConfig | None) -> Transp
     """
     if http_client is not None:
         return SessionTransport(http_client)
-    proxy = proxy_config.to_requests_dict()["https"] if proxy_config is not None else None
+    proxy = None
+    if proxy_config is not None:
+        proxies = proxy_config.to_requests_dict()
+        proxy = proxies.get("https") or proxies.get("http")
+        if not proxy:
+            raise InvalidProxyConfig(
+                f"{type(proxy_config).__name__}.to_requests_dict() names no proxy URL."
+            )
     try:
         inner = UrllibTransport(proxy=proxy, timeout=TIMEOUT)
     except errors.InvalidOption as error:
@@ -180,7 +187,7 @@ def video_id_of(video: str) -> str:
     try:
         return parse_video_id(video)
     except errors.InvalidVideoId as error:
-        if video.startswith(("http://", "https://")):
+        if video.strip().startswith(("http://", "https://")):
             raise InvalidVideoId(video) from error
         raise VideoUnavailable(video) from error
 

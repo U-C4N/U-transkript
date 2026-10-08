@@ -206,3 +206,39 @@ def test_get_transcripts__with_cookies_and_proxies__deprecated(
         )
 
     assert calls == [(VIDEO, ("en",), proxies, "cookies.txt", True)]
+
+
+@pytest.mark.usefixtures("youtube")
+def test_the_deprecation_warnings_name_the_caller() -> None:
+    with pytest.deprecated_call() as listed:
+        YouTubeTranscriptApi.list_transcripts(VIDEO)
+    with pytest.deprecated_call() as fetched:
+        YouTubeTranscriptApi.get_transcript(VIDEO)
+
+    assert [(str(warning.message), warning.filename) for warning in listed] == [
+        (
+            "`list_transcripts` is deprecated and will be removed in a future version. "
+            "Use the `list` method instead!",
+            __file__,
+        )
+    ]
+    assert (str(fetched[0].message), fetched[0].filename) == (
+        "`get_transcript` is deprecated and will be removed in a future version. "
+        "Use the `fetch` method instead!",
+        __file__,
+    )
+
+
+def test_get_transcripts_warns_with_its_own_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    mock_get_transcript(monkeypatch)
+
+    with pytest.deprecated_call() as caught:
+        YouTubeTranscriptApi.get_transcripts([VIDEO])
+
+    assert [(str(warning.message), warning.filename) for warning in caught] == [
+        (
+            "`get_transcripts` is deprecated and will be removed in a future version. "
+            "Use the `fetch` method instead!",
+            __file__,
+        )
+    ]

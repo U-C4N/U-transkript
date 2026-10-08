@@ -35,7 +35,12 @@ from utmax.compat._errors import (
     YouTubeDataUnparsable,
     YouTubeRequestFailed,
 )
-from utmax.compat.proxies import GenericProxyConfig, InvalidProxyConfig, WebshareProxyConfig
+from utmax.compat.proxies import (
+    GenericProxyConfig,
+    InvalidProxyConfig,
+    ProxyConfig,
+    WebshareProxyConfig,
+)
 from utmax.transport import HttpRequest, HttpResponse
 
 PLAYER_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false"
@@ -286,3 +291,34 @@ def test_transcripts_find_their_connection() -> None:
     assert connection_for(connection) is connection
     assert isinstance(connection_for(session), Connection)
     assert isinstance(connection_for(None), Connection)
+
+
+class OneSchemeProxy(ProxyConfig):
+    """A custom configuration that names only some of requests' schemes."""
+
+    def __init__(self, proxies: dict[str, str]) -> None:
+        self.proxies = proxies
+
+    def to_requests_dict(self) -> Any:
+        return self.proxies
+
+
+def test_a_custom_proxy_config_may_name_one_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: list[str | None] = []
+
+    def fake_urllib(*, proxy: str | None, timeout: float) -> FakeTransport:
+        created.append(proxy)
+        return FakeTransport()
+
+    monkeypatch.setattr(_bridge, "UrllibTransport", fake_urllib)
+
+    make_transport(None, OneSchemeProxy({"http": "http://localhost:8080"}))
+    with pytest.raises(InvalidProxyConfig, match=r"OneSchemeProxy\.to_requests_dict\(\) names no"):
+        make_transport(None, OneSchemeProxy({}))
+
+    assert created == ["http://localhost:8080"]
+
+
+def test_padded_urls_without_a_video_are_invalid_video_ids() -> None:
+    with pytest.raises(InvalidVideoId):
+        video_id_of(" https://www.youtube.com/playlist?list=PL1234567890ab ")

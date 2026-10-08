@@ -16,6 +16,7 @@ from tests.helpers.compat import (
 )
 from tests.helpers.fake_transport import FakeTransport, text_response
 from tests.helpers.youtube import caption_track, player_payload
+from utmax import errors
 from utmax.compat._bridge import Connection
 from utmax.compat._errors import (
     NoTranscriptFound,
@@ -271,3 +272,41 @@ def test_hand_built_transcripts_fetch_through_their_http_client() -> None:
     assert transcript.fetch().to_raw_data() == RAW_DATA
     assert transcript.is_translatable is True
     assert transcript.translate("ar").fetch().language_code == "ar"
+
+
+def test_snippets_read_like_the_dictionaries_of_version_0_6() -> None:
+    pieces = transcript_list().find_transcript(["en"]).fetch()
+    first = pieces[0]
+
+    assert " ".join(piece["text"] for piece in pieces) == " ".join(
+        line["text"] for line in RAW_DATA
+    )
+    assert [dict(piece) for piece in pieces] == RAW_DATA
+    assert (first.get("start"), first.get("words"), first.get("words", [])) == (0.0, None, [])
+    assert list(first) == list(first.keys()) == ["text", "start", "duration"]
+    assert first.values() == list(RAW_DATA[0].values())
+    assert first.items() == list(RAW_DATA[0].items())
+    assert ("duration" in first, "words" in first, len(first)) == (True, False, 3)
+    with pytest.raises(KeyError, match="words"):
+        _ = first["words"]
+    assert pieces.to_raw_data() == RAW_DATA
+
+
+@pytest.mark.parametrize(
+    ("url", "error"),
+    [
+        (f"https://evil.example/api/timedtext?v={VIDEO}&lang=en", YouTubeDataUnparsable),
+        (f"http://www.youtube.com/api/timedtext?v={VIDEO}&lang=en", YouTubeDataUnparsable),
+        (f"https://www.youtube.com/api/timedtext?v={VIDEO}&exp=abc,xpe&lang=en", PoTokenRequired),
+    ],
+)
+def test_unsafe_caption_urls_fail_without_a_request(url: str, error: type[Exception]) -> None:
+    transport = FakeTransport()
+    transcript = Transcript(Connection(transport), VIDEO, url, "English", "en", False, [])
+
+    with pytest.raises(error) as caught:
+        transcript.fetch()
+
+    assert isinstance(caught.value.__cause__, errors.YouTubeError)
+    assert type(caught.value.__cause__).__name__ == error.__name__
+    assert transport.requests == []
