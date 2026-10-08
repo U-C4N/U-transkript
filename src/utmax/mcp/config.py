@@ -1,12 +1,15 @@
 """The MCP server's settings, read from environment variables.
 
 - ``UTMAX_MODEL``: the translation model (``"provider=model-id"``) used when a call names none.
-- ``UTMAX_BASE_URL``: the server of ``openai=`` models (Ollama, LM Studio, ...).
+- ``UTMAX_BASE_URL``: the server of ``openai=`` models. When it is set, ``OPENAI_API_KEY`` is not
+  used (a placeholder key is sent instead), so only servers that need no API key work: Ollama,
+  LM Studio, ...
 - ``UTMAX_DOWNLOAD_DIR``: where downloads go; default ``~/Downloads/utmax``.
 - ``UTMAX_PROXY``: an ``http://[user:password@]host:port`` proxy for YouTube.
 
 utmax itself reads ``UTMAX_FFMPEG`` (the ffmpeg for MP3 files) and the provider SDKs read their
-API keys (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, ``GEMINI_API_KEY``, ``OPENROUTER_API_KEY``).
+API keys (``ANTHROPIC_API_KEY``, ``GEMINI_API_KEY``, ``OPENROUTER_API_KEY`` and, unless
+``UTMAX_BASE_URL`` is set, ``OPENAI_API_KEY``).
 """
 
 from __future__ import annotations
