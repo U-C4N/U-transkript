@@ -1,5 +1,6 @@
 """Every public name of youtube-transcript-api 1.2.4 exists in utmax.compat, as the same kind
-of object, with the same signature, bases, attributes and values.
+of object, with the same signature, bases, attributes and values; the package also exports the
+names of version 0.6 and install().
 
 The manifest is recorded from the released wheel by ``scripts/compat_manifest.py``.
 """
@@ -16,6 +17,9 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+
+import utmax.compat
+from utmax.compat._errors import CookieInvalid, IpBlocked, TranscriptsDisabled
 
 MANIFEST_PATH = (
     Path(__file__).resolve().parent.parent
@@ -168,6 +172,19 @@ def test_the_manifest_describes_youtube_transcript_api_1_2_4() -> None:
 @pytest.mark.parametrize("module", sorted(MANIFEST["modules"]))
 def test_utmax_compat_matches_the_manifest(module: str) -> None:
     assert module_problems(module) == []
+
+
+def test_the_package_exports_the_names_of_version_0_6_and_install() -> None:
+    extras = {"TooManyRequests", "NoTranscriptAvailable", "CookiesInvalid", "install"}
+
+    assert utmax.compat.TooManyRequests is IpBlocked
+    assert utmax.compat.NoTranscriptAvailable is TranscriptsDisabled
+    assert utmax.compat.CookiesInvalid is CookieInvalid
+    assert extras <= set(utmax.compat.__all__)
+
+
+def test_every_name_in_all_exists() -> None:
+    assert [name for name in utmax.compat.__all__ if not hasattr(utmax.compat, name)] == []
 
 
 def test_the_parity_check_notices_differences(monkeypatch: pytest.MonkeyPatch) -> None:
