@@ -172,11 +172,16 @@ class Track:
 
 @dataclass(frozen=True, slots=True)
 class TrackList(Sequence[Track]):
-    """All subtitle tracks of a video, in YouTube's order."""
+    """All subtitle tracks of a video, in YouTube's order.
+
+    ``spoken_language`` is the language of the video's original audio when YouTube marks it,
+    which it does for videos with dubbed audio tracks (``None`` otherwise).
+    """
 
     video: VideoInfo
     tracks: tuple[Track, ...]
     translation_languages: tuple[Language, ...] = ()
+    spoken_language: str | None = None
 
     @overload
     def __getitem__(self, index: int) -> Track: ...
@@ -216,6 +221,7 @@ class TrackList(Sequence[Track]):
             languages,
             include_manual=include_manual,
             include_generated=include_generated,
+            spoken_language=self.spoken_language,
         )
 
 

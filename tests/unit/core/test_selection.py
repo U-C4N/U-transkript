@@ -89,3 +89,28 @@ def test_track_list_find_uses_the_same_rules() -> None:
     assert tracks.find(["de"]) is DE
     assert tracks.find() is EN
     assert tracks.find(["en"], include_manual=False) is EN_AUTO
+
+
+AR_AUTO = make_track("ar", generated=True, name="Arabic (auto-generated)")
+DUBBED = (AR_AUTO, EN, EN_AUTO, make_track("de", generated=True))
+
+
+def test_the_original_audio_language_beats_tracks_of_dubbed_audio() -> None:
+    """Videos with dubbed audio list an auto-generated track per dub, often before the
+    original's; without the original audio's language the first one would win."""
+    assert pick(DUBBED) is AR_AUTO
+    assert select_track(DUBBED, spoken_language="en-US") is EN
+    assert select_track(DUBBED, spoken_language="en-US", include_manual=False) is EN_AUTO
+    assert select_track(DUBBED, ["ar"], spoken_language="en-US") is AR_AUTO
+
+
+def test_a_spoken_language_without_tracks_falls_back_to_the_first_auto_track() -> None:
+    assert select_track((AR_AUTO, DE), spoken_language="fr") is AR_AUTO
+    assert select_track((JA, DE), spoken_language="fr") is JA
+
+
+def test_track_list_find_uses_the_original_audio_language() -> None:
+    tracks = TrackList(video=VIDEO, tracks=DUBBED, spoken_language="en-US")
+    assert tracks.find() is EN
+    assert tracks.find(include_manual=False) is EN_AUTO
+    assert TrackList(video=VIDEO, tracks=DUBBED).find() is AR_AUTO

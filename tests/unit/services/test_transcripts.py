@@ -7,6 +7,9 @@ import pytest
 from tests.helpers.fake_transport import FakeTransport, json_response
 from tests.helpers.youtube import (
     ASR_JSON3,
+    DUBBED_AUDIO,
+    DUBBED_TRACKS,
+    MANUAL_JSON3,
     VIDEO_ID,
     json3_payload,
     player_payload,
@@ -138,6 +141,17 @@ def test_track_list_reuses_a_player_response_without_another_request() -> None:
     assert len(tracks) == 6
     assert len(transport.urls("POST")) == 1
     assert tracks[0].fetch().language_code == "en"
+
+
+def test_videos_with_dubbed_audio_default_to_their_original_language() -> None:
+    transport = FakeTransport()
+    payload = player_payload(tracks=DUBBED_TRACKS, streaming_data=DUBBED_AUDIO)
+    transport.add("POST", "/youtubei/v1/player", json_response(payload))
+    transport.add("GET", "lang=en&fmt=json3", json_response(MANUAL_JSON3))
+    tracks = service(transport).list_tracks(VIDEO_ID)
+    assert tracks.spoken_language == "en-US"
+    transcript = tracks.find().fetch()
+    assert (transcript.language_code, transcript.is_generated) == ("en", False)
 
 
 def test_track_list_is_empty_without_captions() -> None:

@@ -35,6 +35,7 @@ class PlayerData:
     caption_tracks: tuple[CaptionTrackInfo, ...] | None
     translation_languages: tuple[Language, ...]
     streams: tuple[Stream, ...] = ()
+    spoken_language: str | None = None
 
 
 def parse_player_response(data: Mapping[str, Any], *, video_id: str) -> PlayerData:
@@ -62,13 +63,34 @@ def parse_player_response(data: Mapping[str, Any], *, video_id: str) -> PlayerDa
         for raw in map(mapping, items(renderer.get("translationLanguages")))
         if raw.get("languageCode")
     )
+    streaming = mapping(data.get("streamingData"))
     return PlayerData(
         video=video,
         playability=parse_playability(data),
         caption_tracks=tracks or None,
         translation_languages=languages if tracks else (),
-        streams=parse_streams(mapping(data.get("streamingData"))),
+        streams=parse_streams(streaming),
+        spoken_language=_original_audio_language(streaming),
     )
+
+
+def _original_audio_language(streaming: Mapping[str, Any]) -> str | None:
+    """The language of the original audio of a video with dubbed audio tracks, like ``en-US``.
+
+    YouTube names that track "<language> original" (utmax always asks in English) and tags its
+    stream URLs ``acont=original``; videos with a single audio track mark nothing.
+    """
+    for raw in map(mapping, items(streaming.get("adaptiveFormats"))):
+        track = mapping(raw.get("audioTrack"))
+        name = str(track.get("displayName") or "").lower()
+        url = str(raw.get("url") or "").lower()
+        original = name.endswith(" original") or any(
+            mark in url for mark in ("acont%3doriginal", "acont=original")
+        )
+        code = str(track.get("id") or "").partition(".")[0]
+        if original and code:
+            return code
+    return None
 
 
 def _track(raw: Mapping[str, Any]) -> CaptionTrackInfo:

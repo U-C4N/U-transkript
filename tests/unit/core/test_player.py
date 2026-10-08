@@ -6,7 +6,13 @@ from typing import Any
 
 import pytest
 
-from tests.helpers.youtube import VIDEO_ID, player_payload, streaming_data
+from tests.helpers.youtube import (
+    DUBBED_AUDIO,
+    VIDEO_ID,
+    audio_track_format,
+    player_payload,
+    streaming_data,
+)
 from utmax.core.player import CaptionTrackInfo, parse_player_response
 from utmax.models import Language, VideoInfo
 
@@ -92,3 +98,43 @@ def test_streams_are_parsed_from_streaming_data() -> None:
 
 def test_players_without_streaming_data_have_no_streams() -> None:
     assert parse_player_response(player_payload(), video_id=VIDEO_ID).streams == ()
+
+
+def test_the_original_audio_track_names_the_spoken_language() -> None:
+    payload = player_payload(streaming_data=DUBBED_AUDIO)
+    assert parse_player_response(payload, video_id=VIDEO_ID).spoken_language == "en-US"
+
+
+@pytest.mark.parametrize(
+    ("name", "xtags"),
+    [
+        ("English (US) original", ""),
+        ("English (US)", "acont%3Doriginal%3Alang%3Den-US"),
+        ("English (US)", "acont=original:lang=en-US"),
+    ],
+)
+def test_either_mark_of_the_original_audio_is_enough(name: str, xtags: str) -> None:
+    dub = audio_track_format("ar.10", "Arabic", xtags="acont%3Ddubbed-auto")
+    original = audio_track_format("en-US.4", name, xtags=xtags)
+    payload = player_payload(streaming_data={"adaptiveFormats": [dub, original]})
+    assert parse_player_response(payload, video_id=VIDEO_ID).spoken_language == "en-US"
+
+
+@pytest.mark.parametrize(
+    "streaming",
+    [
+        None,
+        {"adaptiveFormats": [audio_track_format("ar.10", "Arabic", xtags="acont%3Ddubbed-auto")]},
+        {"adaptiveFormats": [{"audioTrack": {"displayName": "English original"}}]},
+    ],
+)
+def test_without_a_marked_original_audio_there_is_no_spoken_language(
+    streaming: dict[str, Any] | None,
+) -> None:
+    payload = player_payload(streaming_data=streaming)
+    assert parse_player_response(payload, video_id=VIDEO_ID).spoken_language is None
+
+
+def test_a_single_audio_track_carries_no_mark() -> None:
+    payload = player_payload(streaming_data=streaming_data())
+    assert parse_player_response(payload, video_id=VIDEO_ID).spoken_language is None

@@ -97,6 +97,39 @@ DEFAULT_TRACKS: tuple[tuple[str, str, bool], ...] = (
 )
 
 
+def audio_track_format(
+    track_id: str, name: str, *, xtags: str, default: bool = False
+) -> dict[str, Any]:
+    """An AAC format of one audio track of a video with dubbed audio (URL is a placeholder)."""
+    return {
+        "itag": 140,
+        "mimeType": 'audio/mp4; codecs="mp4a.40.2"',
+        "url": f"https://media.test/140?xtags={xtags}",
+        "audioTrack": {"id": track_id, "displayName": name, "audioIsDefault": default},
+    }
+
+
+# Shaped like ZcDFZzsp3_Y on 2026-10-08: English original audio, 20 automatic dubs, and an
+# auto-generated track per dub listed before the original's (Arabic first).
+DUBBED_AUDIO: dict[str, Any] = {
+    "adaptiveFormats": [
+        audio_track_format("ar.10", "Arabic", xtags="acont%3Ddubbed-auto%3Alang%3Dar"),
+        audio_track_format(
+            "en-US.4",
+            "English (US) original",
+            xtags="acont%3Doriginal%3Adrc%3D1%3Alang%3Den-US",
+            default=True,
+        ),
+    ]
+}
+DUBBED_TRACKS: tuple[tuple[str, str, bool], ...] = (
+    ("ar", "Arabic (auto-generated)", True),
+    ("en", "English", False),
+    ("en", "English (auto-generated)", True),
+    ("de", "German (auto-generated)", True),
+)
+
+
 def caption_track(
     code: str, name: str, generated: bool, *, video_id: str = VIDEO_ID
 ) -> dict[str, Any]:

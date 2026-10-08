@@ -44,7 +44,10 @@ class TranscriptService:
             for info in player.caption_tracks or ()
         )
         return TrackList(
-            video=player.video, tracks=tracks, translation_languages=player.translation_languages
+            video=player.video,
+            tracks=tracks,
+            translation_languages=player.translation_languages,
+            spoken_language=player.spoken_language,
         )
 
     def fetch(

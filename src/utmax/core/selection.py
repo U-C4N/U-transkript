@@ -16,13 +16,17 @@ def select_track(
     *,
     include_manual: bool = True,
     include_generated: bool = True,
+    spoken_language: str | None = None,
 ) -> Track:
     """Pick one track from ``tracks``.
 
     With ``languages``, each code is tried in order: a manual track in exactly that code, then a
     manual track in the same base language (``de`` finds ``de-DE``), then the same two steps for
-    auto-generated tracks. Without ``languages`` the spoken language (that of the auto-generated
-    track) wins, manual first. YouTube's own translation is never used implicitly.
+    auto-generated tracks. Without ``languages`` the spoken language wins, manual first: the
+    language of the original audio (``spoken_language``) when tracks exist in it, else that of
+    the first auto-generated track. Videos with dubbed audio list an auto-generated track per
+    dub, so their first one need not be the original's. YouTube's own translation is never
+    used implicitly.
 
     Raises:
         NoTranscriptFound: nothing matches; the error lists every available track.
@@ -44,7 +48,11 @@ def select_track(
                 if pool:
                     return pool[0]
         raise _not_found(tracks, requested)
-    spoken = next((track.language_code for track in tracks if track.is_generated), None)
+    spoken = (
+        spoken_language
+        if spoken_language and _in_language(tracks, spoken_language)
+        else next((track.language_code for track in tracks if track.is_generated), None)
+    )
     if spoken is not None:
         manual = _in_language([track for track in candidates if not track.is_generated], spoken)
         if manual:
