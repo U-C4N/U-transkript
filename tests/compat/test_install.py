@@ -15,9 +15,18 @@ import pytest
 import utmax.compat
 from tests.helpers.compat import RAW_DATA, VIDEO, compat_youtube
 from tests.helpers.fake_transport import FakeTransport
-from utmax.compat import _bridge, formatters, proxies
+from utmax.compat import _api, _bridge, _errors, _settings, _transcripts, formatters, proxies
 
-MODULES = ("", "._api", "._errors", "._settings", "._transcripts", ".formatters", ".proxies")
+MODULES: dict[str, types.ModuleType] = {
+    "": utmax.compat,
+    "._api": _api,
+    "._errors": _errors,
+    "._settings": _settings,
+    "._transcripts": _transcripts,
+    ".formatters": formatters,
+    ".proxies": proxies,
+}
+EXPECTED = {f"youtube_transcript_api{suffix}": module for suffix, module in MODULES.items()}
 LOADER = '''
 def load(video_id):
     """Like LangChain's YouTube loader: import youtube_transcript_api when needed."""
@@ -52,10 +61,8 @@ def restore_sys_modules() -> Iterator[None]:
 def test_install_registers_every_module() -> None:
     utmax.compat.install()
 
-    assert set(registered()) == {f"youtube_transcript_api{suffix}" for suffix in MODULES}
-    assert importlib.import_module("youtube_transcript_api") is utmax.compat
-    assert importlib.import_module("youtube_transcript_api.formatters") is formatters
-    assert importlib.import_module("youtube_transcript_api.proxies") is proxies
+    assert registered() == EXPECTED
+    assert {name: importlib.import_module(name) for name in EXPECTED} == EXPECTED
 
 
 def test_imports_give_utmax_compat_classes() -> None:
@@ -80,11 +87,12 @@ def test_install_again_changes_nothing() -> None:
 
 
 def test_install_replaces_a_youtube_transcript_api_imported_before() -> None:
-    sys.modules["youtube_transcript_api"] = types.ModuleType("youtube_transcript_api")
+    for name in EXPECTED:
+        sys.modules[name] = types.ModuleType(name)
 
     utmax.compat.install()
 
-    assert sys.modules["youtube_transcript_api"] is utmax.compat
+    assert registered() == EXPECTED
 
 
 def test_a_library_that_imports_youtube_transcript_api_runs_on_utmax(
