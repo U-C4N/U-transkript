@@ -24,7 +24,7 @@ from utmax.mcp.config import Config
 from utmax.mcp.server import build_server
 from utmax.transport import Transport
 
-TOOLS = ["list_tracks", "get_transcript", "translate_transcript", "list_videos"]
+TOOLS = ["list_tracks", "get_transcript", "translate_transcript", "list_videos", "download"]
 PLAYLIST = "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI"
 
 
@@ -75,7 +75,7 @@ def error_text(result: CallToolResult) -> str:
     return " ".join(block.text for block in result.content if block.type == "text")
 
 
-def test_the_server_offers_four_tools() -> None:
+def test_the_server_offers_five_tools() -> None:
     offered = tools(build_server(Client(transport=FakeTransport()), Config()))
 
     assert list(offered) == TOOLS
@@ -101,12 +101,24 @@ def test_tool_arguments_are_described_and_bounded() -> None:
     assert (translation["offset"], translation["max_chars"]) == (offset, max_chars)
     limit = offered["list_videos"].input_schema["properties"]["limit"]
     assert (limit["minimum"], limit["maximum"], limit["default"]) == (1, 5000, 50)
+    download = offered["download"].input_schema["properties"]
+    assert list(download) == ["video", "format", "quality", "subtitles", "subtitle_mode"]
+    assert download["format"]["enum"] == ["mp4", "mov", "m4a", "mp3"]
 
 
-def test_the_tools_only_read() -> None:
+def test_only_download_changes_anything() -> None:
     offered = tools(build_server(Client(transport=FakeTransport()), Config()))
 
-    assert all(tool.annotations and tool.annotations.read_only_hint for tool in offered.values())
+    hints = {
+        name: tool.annotations.read_only_hint for name, tool in offered.items() if tool.annotations
+    }
+    assert hints == {
+        "list_tracks": True,
+        "get_transcript": True,
+        "translate_transcript": True,
+        "list_videos": True,
+        "download": False,
+    }
 
 
 def test_list_tracks() -> None:

@@ -6,14 +6,22 @@ Every tool returns structured output. A utmax error becomes a tool error that re
 
 from __future__ import annotations
 
+import glob
 import logging
 import threading
 from collections import OrderedDict
-from collections.abc import Hashable, Iterator
+from collections.abc import Callable, Coroutine, Hashable, Iterator
 from contextlib import contextmanager
-from typing import Annotated, Generic, Literal, TypeVar
+from functools import partial
+from pathlib import Path
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
+import anyio
+import anyio.from_thread
+import anyio.lowlevel
+import anyio.to_thread
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
@@ -22,9 +30,20 @@ from utmax import Client, Translator, __version__
 from utmax.core.ids import parse_video_id
 from utmax.errors import UTMaxError
 from utmax.mcp.config import Config
-from utmax.models import CollectionKind, FormatName, Transcript, VideoInfo
+from utmax.models import (
+    CollectionKind,
+    Container,
+    DownloadResult,
+    FormatName,
+    Progress,
+    Quality,
+    SubtitleMode,
+    Transcript,
+    VideoInfo,
+)
 
 __all__ = [
+    "DownloadOut",
     "TrackOut",
     "TracksOut",
     "TranscriptOut",
@@ -33,6 +52,7 @@ __all__ = [
     "VideoOut",
     "VideosOut",
     "build_server",
+    "download_file",
 ]
 
 log = logging.getLogger("utmax.mcp")
@@ -40,8 +60,9 @@ log = logging.getLogger("utmax.mcp")
 INSTRUCTIONS = (
     "Tools for YouTube videos, given as URLs or 11-character video IDs: list a video's subtitle "
     "tracks, get its transcript (plain text, SRT, WebVTT, JSON or timestamped lines), translate "
-    "a transcript with an AI model while keeping its timing, and list the videos of a playlist "
-    "or channel. Read long transcripts in parts with max_chars and next_offset."
+    "a transcript with an AI model while keeping its timing, list the videos of a playlist or "
+    "channel, and download a video or its audio into the server's download folder. Read long "
+    "transcripts in parts with max_chars and next_offset."
 )
 
 VideoArg = Annotated[str, Field(description="A YouTube video URL or 11-character video ID.")]
@@ -114,6 +135,27 @@ KindArg = Annotated[
     ),
 ]
 LimitArg = Annotated[int, Field(ge=1, le=5000, description="The most videos to list.")]
+ContainerArg = Annotated[
+    Container,
+    Field(description="mp4 or mov: video with sound; m4a or mp3: audio only (mp3 needs ffmpeg)."),
+]
+QualityArg = Annotated[
+    Quality,
+    Field(description="compat: H.264 up to 1080p (plays everywhere); max: up to 4K (mp4 only)."),
+]
+SubtitlesArg = Annotated[
+    list[str] | None,
+    Field(
+        description=(
+            'Subtitle languages to add, such as ["en", "de"]. Default: the spoken '
+            "language for videos, none for audio; [] adds none."
+        )
+    ),
+]
+SubtitleModeArg = Annotated[
+    SubtitleMode,
+    Field(description="embed: inside the video; sidecar: .srt files next to it; both: the two."),
+]
 
 
 class VideoOut(BaseModel):
@@ -175,8 +217,19 @@ class VideosOut(BaseModel):
     videos: list[VideoEntryOut]
 
 
+class DownloadOut(BaseModel):
+    path: str
+    size_bytes: int
+    video_id: str
+    title: str
+    container: Container
+    embedded_subtitles: list[str]
+    sidecars: list[str]
+    skipped: bool = Field(description="True when the file was already in the download folder.")
+
+
 def build_server(client: Client | None = None, config: Config | None = None) -> MCPServer:
-    """The MCP server with utmax's tools, using ``client`` (by default one built from
+    """The MCP server with utmax's five tools, using ``client`` (by default one built from
     ``config``) and ``config`` (by default read from the environment)."""
     settings = config if config is not None else Config.from_env()
     youtube = client if client is not None else Client(proxy=settings.proxy)
@@ -189,6 +242,9 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
         website_url="https://github.com/U-C4N/U-transkript",
     )
     reads = ToolAnnotations(read_only_hint=True, open_world_hint=True)
+    writes = ToolAnnotations(
+        read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True
+    )
 
     @server.tool(annotations=reads)
     def list_tracks(video: VideoArg) -> TracksOut:
@@ -289,7 +345,103 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
             ],
         )
 
+    @server.tool(annotations=writes)
+    async def download(
+        video: VideoArg,
+        format: ContainerArg = "mp4",
+        quality: QualityArg = "compat",
+        subtitles: SubtitlesArg = None,
+        subtitle_mode: SubtitleModeArg = "embed",
+        *,
+        ctx: Context[Any, Any],
+    ) -> DownloadOut:
+        """Download a YouTube video (mp4, mov) or its audio (m4a, mp3) into the server's
+        download folder, named after its title. A file that is already there is not
+        downloaded again."""
+        return await download_file(
+            youtube,
+            settings.download_dir,
+            video,
+            format=format,
+            quality=quality,
+            subtitles=subtitles,
+            subtitle_mode=subtitle_mode,
+            report=partial(_report, ctx),
+        )
+
     return server
+
+
+async def download_file(
+    client: Client,
+    directory: Path,
+    video: str,
+    *,
+    format: Container = "mp4",
+    quality: Quality = "compat",
+    subtitles: list[str] | None = None,
+    subtitle_mode: SubtitleMode = "embed",
+    report: Callable[[Progress], Coroutine[Any, Any, None]] | None = None,
+) -> DownloadOut:
+    """Download ``video`` into ``directory`` on a worker thread, unless it is already there.
+
+    ``report`` receives the download's progress on the event loop. When the caller is
+    cancelled, the download stops and keeps its partial files, so the next call resumes it.
+    """
+    with tool_errors():
+        video_id = parse_video_id(video)
+    existing = _existing_download(directory, video_id, format)
+    if existing is not None:
+        return DownloadOut(
+            path=str(existing),
+            size_bytes=existing.stat().st_size,
+            video_id=video_id,
+            title=existing.name.removesuffix(f" [{video_id}].{format}"),
+            container=format,
+            embedded_subtitles=[],
+            sidecars=[],
+            skipped=True,
+        )
+    token = anyio.lowlevel.current_token()
+    cancel = threading.Event()
+
+    def forward(update: Progress) -> None:
+        if report is None:
+            return
+        try:
+            anyio.from_thread.run(report, update, token=token)
+        except Exception:  # progress is best effort; it must never stop a download
+            log.debug("could not report download progress", exc_info=True)
+
+    def work() -> DownloadResult:
+        directory.mkdir(parents=True, exist_ok=True)
+        return client.download(
+            video_id,
+            directory,
+            format=format,
+            quality=quality,
+            subtitles=subtitles,
+            subtitle_mode=subtitle_mode,
+            progress=forward,
+            cancel=cancel,
+        )
+
+    try:
+        with tool_errors():
+            result = await anyio.to_thread.run_sync(work, abandon_on_cancel=True)
+    except anyio.get_cancelled_exc_class():
+        cancel.set()
+        raise
+    return DownloadOut(
+        path=str(result.path),
+        size_bytes=result.size_bytes,
+        video_id=result.video.video_id,
+        title=result.video.title,
+        container=result.container,
+        embedded_subtitles=list(result.embedded_subtitles),
+        sidecars=[str(path) for path in result.sidecars],
+        skipped=False,
+    )
 
 
 @contextmanager
@@ -334,6 +486,11 @@ def _page(text: str, offset: int, max_chars: int | None) -> tuple[str, int | Non
     return text[offset:end], end
 
 
+def _existing_download(directory: Path, video_id: str, container: Container) -> Path | None:
+    pattern = "*" + glob.escape(f"[{video_id}].{container}")
+    return next(iter(sorted(directory.glob(pattern))), None) if directory.is_dir() else None
+
+
 def _video(info: VideoInfo) -> VideoOut:
     return VideoOut(
         video_id=info.video_id,
@@ -343,6 +500,19 @@ def _video(info: VideoInfo) -> VideoOut:
         duration_seconds=info.duration,
         url=info.url,
     )
+
+
+async def _report(ctx: Context[Any, Any], update: Progress) -> None:
+    await ctx.report_progress(update.bytes_done, update.bytes_total, _progress_message(update))
+
+
+def _progress_message(update: Progress) -> str:
+    if update.phase != "downloading":
+        return update.phase
+    done = f"{update.bytes_done / 1_000_000:.1f}"
+    if update.bytes_total is None:
+        return f"downloading: {done} MB"
+    return f"downloading: {done} of {update.bytes_total / 1_000_000:.1f} MB"
 
 
 _MEMORY_SIZE = 8
