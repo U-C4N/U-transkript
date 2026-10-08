@@ -202,6 +202,23 @@ def test_a_cue_before_a_pause_ends_at_its_own_end() -> None:
     )
 
 
+def test_options_reach_json_dumps_and_pformat(transcript: FetchedTranscript) -> None:
+    raw = transcript.to_raw_data()
+
+    # The options must change the output, or this test would pin nothing.
+    assert json.dumps(raw, indent=2) != json.dumps(raw)
+    assert pprint.pformat(raw, width=20) != pprint.pformat(raw)
+
+    assert JSONFormatter().format_transcript(transcript, indent=2) == json.dumps(raw, indent=2)
+    assert JSONFormatter().format_transcripts([transcript], indent=2) == json.dumps([raw], indent=2)
+    assert PrettyPrintFormatter().format_transcript(transcript, width=20) == pprint.pformat(
+        raw, width=20
+    )
+    assert PrettyPrintFormatter().format_transcripts([transcript], width=20) == pprint.pformat(
+        [raw], width=20
+    )
+
+
 @pytest.mark.parametrize(
     ("seconds", "srt"),
     [
