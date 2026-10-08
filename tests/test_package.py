@@ -8,8 +8,8 @@ import re
 import utmax
 
 
-def test_version_is_a_pep440_release_or_dev_version() -> None:
-    assert re.fullmatch(r"\d+\.\d+\.\d+(\.dev\d+)?", utmax.__version__)
+def test_version_is_a_pep440_release_pre_release_or_dev_version() -> None:
+    assert re.fullmatch(r"\d+\.\d+\.\d+((a|b|rc)\d+)?(\.dev\d+)?", utmax.__version__)
 
 
 def test_library_logger_has_a_null_handler() -> None:

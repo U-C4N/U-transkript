@@ -1,0 +1,63 @@
+name: Release
+
+# Publishing a GitHub release builds the package and uploads it to PyPI through Trusted
+# Publishing (no token). The upload waits in the "pypi" environment until a maintainer approves
+# it. Running the workflow by hand only builds and checks the package.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.14"
+      - name: The release tag names the package version
+        if: github.event_name == 'release'
+        run: |
+          version=$(uv run --no-project python -c "import runpy; print(runpy.run_path('src/utmax/_version.py')['__version__'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not name the package version $version (expected v$version)."
+            exit 1
+          fi
+      - run: uv build
+      - run: uvx twine check --strict dist/*
+      - name: The wheel contains only the utmax package
+        run: >-
+          uv run --no-project python -c "import glob, zipfile;
+          names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist();
+          bad = [n for n in names if not n.startswith(('utmax/', 'u_transcript_max-'))];
+          assert not bad, bad"
+      - name: The wheel installs and imports
+        run: uv run --no-project --isolated --with dist/*.whl python -c "import utmax, utmax.compat, utmax.mcp; print(utmax.__version__)"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: publish to PyPI
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/u-transcript-max/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
