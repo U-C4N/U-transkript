@@ -416,6 +416,9 @@ async def download_file(
                 skipped=True,
             )
         directory.mkdir(parents=True, exist_ok=True)
+        # The search above already kept a finished download. What is left in the way is a
+        # subtitle file of an earlier download, which this one replaces: the tool has no
+        # overwrite argument for the model to follow utmax's suggestion with.
         result = client.download(
             video_id,
             directory,
@@ -423,6 +426,7 @@ async def download_file(
             quality=quality,
             subtitles=subtitles,
             subtitle_mode=subtitle_mode,
+            overwrite=True,
             progress=forward,
             cancel=cancel,
         )

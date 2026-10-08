@@ -131,6 +131,37 @@ def test_other_formats_of_the_same_video_are_still_downloaded(tmp_path: Path) ->
     assert result.structured_content["skipped"] is False
 
 
+def test_a_subtitle_file_from_an_earlier_download_does_not_block_a_later_one(
+    tmp_path: Path,
+) -> None:
+    server = build_server(Client(transport=ManyVideos()), Config(download_dir=tmp_path))
+
+    audio = call(server, {"video": VIDEO, "format": "m4a", "subtitles": ["en"]})
+    video = call(
+        server,
+        {"video": VIDEO, "format": "mp4", "subtitles": ["en"], "subtitle_mode": "sidecar"},
+    )
+
+    sidecar = str(tmp_path / f"{NAME}.en.srt")
+    assert audio.structured_content is not None
+    assert audio.structured_content["sidecars"] == [sidecar]
+    assert video.is_error is False, video.content
+    assert video.structured_content is not None
+    assert video.structured_content["skipped"] is False
+    assert video.structured_content["sidecars"] == [sidecar]
+
+
+def test_a_subtitle_file_left_behind_without_its_video_is_replaced(tmp_path: Path) -> None:
+    sidecar = tmp_path / f"{NAME}.en.srt"
+    sidecar.write_text("left behind", encoding="utf-8")
+    server = build_server(Client(transport=ManyVideos()), Config(download_dir=tmp_path))
+
+    result = call(server, {"video": VIDEO, "format": "m4a", "subtitles": ["en"]})
+
+    assert result.is_error is False, result.content
+    assert sidecar.read_text(encoding="utf-8") != "left behind"
+
+
 def test_bad_requests_fail_before_any_request(tmp_path: Path) -> None:
     youtube = ManyVideos()
     server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
