@@ -12,7 +12,7 @@ import pytest
 from mcp import Client as MCPClient
 from mcp.types import CallToolResult, Tool
 
-from tests.helpers.browse import vr_page
+from tests.helpers.browse import CHANNEL_ID, vr_page
 from tests.helpers.bulk import IDS, TITLES, ManyVideos
 from tests.helpers.fake_translator import FakeTranslator, Script, echo
 from tests.helpers.fake_transport import FakeTransport, json_response
@@ -25,6 +25,7 @@ from utmax.mcp.server import build_server
 from utmax.transport import Transport
 
 TOOLS = ["list_tracks", "get_transcript", "translate_transcript", "list_videos"]
+PLAYLIST = "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI"
 
 
 class RecordingClient(Client):
@@ -91,6 +92,13 @@ def test_tool_arguments_are_described_and_bounded() -> None:
     assert transcript["properties"]["format"]["enum"] == ["txt", "srt", "vtt", "json", "pretty"]
     assert transcript["properties"]["source"]["enum"] == ["any", "manual", "generated"]
     assert offered["translate_transcript"].input_schema["required"] == ["video", "to"]
+    offset = transcript["properties"]["offset"]
+    assert (offset["type"], offset["minimum"], offset["default"]) == ("integer", 0, 0)
+    max_chars = transcript["properties"]["max_chars"]
+    assert max_chars["anyOf"] == [{"type": "integer", "minimum": 1}, {"type": "null"}]
+    assert max_chars["default"] is None
+    translation = offered["translate_transcript"].input_schema["properties"]
+    assert (translation["offset"], translation["max_chars"]) == (offset, max_chars)
     limit = offered["list_videos"].input_schema["properties"]["limit"]
     assert (limit["minimum"], limit["maximum"], limit["default"]) == (1, 5000, 50)
 
@@ -180,12 +188,16 @@ def test_errors_carry_a_suggestion() -> None:
     invalid = error_text(call(server, "get_transcript", {"video": "not a video"}))
     missing = error_text(call(server, "get_transcript", {"video": VIDEO_ID, "languages": ["xx"]}))
     bounded = error_text(call(server, "list_videos", {"source": "PL" + "x" * 16, "limit": 0}))
+    empty = error_text(call(server, "get_transcript", {"video": VIDEO_ID, "max_chars": 0}))
+    negative = error_text(call(server, "get_transcript", {"video": VIDEO_ID, "offset": -1}))
 
     assert "Could not find a YouTube video ID in 'not a video'." in invalid
     assert "Suggestion: Pass a YouTube URL or an 11-character video ID." in invalid
     assert "No subtitles in xx match" in missing
     assert "Suggestion: Pick one of the available languages" in missing
     assert "limit" in bounded
+    assert "max_chars" in empty
+    assert "offset" in negative
 
 
 def test_translation_needs_a_model() -> None:
@@ -392,11 +404,11 @@ def test_list_videos() -> None:
     transport.add("POST", "/youtubei/v1/browse", json_response(page))
     server = build_server(Client(transport=transport), Config())
 
-    result = output(call(server, "list_videos", {"source": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI"}))
+    result = output(call(server, "list_videos", {"source": PLAYLIST}))
 
     assert {key: value for key, value in result.items() if key != "videos"} == {
         "title": "A playlist",
-        "source_id": "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
+        "source_id": PLAYLIST,
         "kind": "all",
         "count": 2,
     }
@@ -409,6 +421,32 @@ def test_list_videos() -> None:
         "index": 2,
         "url": "https://www.youtube.com/watch?v=bbbbbbbbbbb",
     }
+
+
+def test_list_videos_stops_at_the_limit() -> None:
+    transport = FakeTransport()
+    page = vr_page("aaaaaaaaaaa", "bbbbbbbbbbb", count="2 videos")
+    transport.add("POST", "/youtubei/v1/browse", json_response(page))
+    server = build_server(Client(transport=transport), Config())
+
+    result = output(call(server, "list_videos", {"source": PLAYLIST, "limit": 1}))
+
+    assert [video["video_id"] for video in result["videos"]] == ["aaaaaaaaaaa"]
+    assert result["count"] == 2
+
+
+def test_list_videos_takes_the_kind_of_a_channel_and_refuses_it_for_a_playlist() -> None:
+    transport = FakeTransport()
+    page = vr_page("aaaaaaaaaaa", count="1 video")
+    transport.add("POST", "/youtubei/v1/browse", json_response(page))
+    server = build_server(Client(transport=transport), Config())
+
+    shorts = output(call(server, "list_videos", {"source": CHANNEL_ID, "kind": "shorts"}))
+    refused = error_text(call(server, "list_videos", {"source": PLAYLIST, "kind": "videos"}))
+
+    assert (shorts["kind"], shorts["source_id"]) == ("shorts", f"UUSH{CHANNEL_ID[2:]}")
+    assert refused.endswith("Suggestion: Leave kind out for playlists.")
+    assert len(transport.requests) == 1  # the refusal came before any request
 
 
 def test_the_server_reads_the_environment_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
