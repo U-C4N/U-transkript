@@ -13,6 +13,7 @@ EXPECTED_REQUIREMENTS = {
     "openai<4,>=3.19; extra == 'openai'",
     "openai<4,>=3.19; extra == 'openrouter'",
     "mcp<3,>=2.2; extra == 'mcp'",
+    "anyio<5,>=4.11; extra == 'mcp'",
 }
 
 

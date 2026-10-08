@@ -1704,6 +1704,7 @@ gemini = [
     { name = "google-genai" },
 ]
 mcp = [
+    { name = "anyio" },
     { name = "mcp" },
 ]
 openai = [
@@ -1725,6 +1726,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'ai'", specifier = ">=1.8,<2" },
     { name = "anthropic", marker = "extra == 'claude'", specifier = ">=1.8,<2" },
+    { name = "anyio", marker = "extra == 'mcp'", specifier = ">=4.11,<5" },
     { name = "google-genai", marker = "extra == 'ai'", specifier = ">=2.25,<3" },
     { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=2.25,<3" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.2,<3" },
