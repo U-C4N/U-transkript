@@ -179,10 +179,10 @@ def video_id_of(video: str) -> str:
     """
     try:
         return parse_video_id(video)
-    except errors.InvalidVideoId:
+    except errors.InvalidVideoId as error:
         if video.startswith(("http://", "https://")):
-            raise InvalidVideoId(video) from None
-        raise VideoUnavailable(video) from None
+            raise InvalidVideoId(video) from error
+        raise VideoUnavailable(video) from error
 
 
 def compat_error(

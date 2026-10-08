@@ -178,6 +178,8 @@ def test_inputs_without_a_video_raise_what_youtube_transcript_api_raises() -> No
 
     assert unavailable.value.video_id == "abc"
     assert invalid.value.video_id == f"https://www.youtube.com/youtubei/v1/player?v={VIDEO}"
+    assert isinstance(unavailable.value.__cause__, errors.InvalidVideoId)
+    assert isinstance(invalid.value.__cause__, errors.InvalidVideoId)
 
 
 @pytest.mark.parametrize(
