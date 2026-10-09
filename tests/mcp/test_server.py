@@ -19,7 +19,14 @@ from utmax.mcp import server as mcp_server
 from utmax.mcp.config import Config
 from utmax.mcp.server import build_server
 
-TOOLS = ["list_tracks", "get_transcript", "list_videos", "download"]
+TOOLS = [
+    "list_tracks",
+    "get_transcript",
+    "list_formats",
+    "list_videos",
+    "download",
+    "save_subtitles",
+]
 PLAYLIST = "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI"
 
 
@@ -50,7 +57,7 @@ def error_text(result: CallToolResult) -> str:
     return " ".join(block.text for block in result.content if block.type == "text")
 
 
-def test_the_server_offers_four_tools() -> None:
+def test_the_server_offers_six_tools() -> None:
     offered = tools(build_server(Client(transport=FakeTransport()), Config()))
 
     assert list(offered) == TOOLS
@@ -74,6 +81,20 @@ def test_the_assistant_is_told_to_translate_by_itself() -> None:
     assert "keeping the timing lines as they are" in mcp_server.INSTRUCTIONS
 
 
+def test_the_assistant_is_told_what_to_ask_before_a_download() -> None:
+    instructions = mcp_server.INSTRUCTIONS
+    for words in (
+        "ask which file type",
+        "which resolution",
+        "whether to embed subtitles",
+        "translated_subtitles",
+        "save_subtitles",
+        "overwrite=true",
+        "already answered",
+    ):
+        assert words in instructions, words
+
+
 def test_tool_arguments_are_described_and_bounded() -> None:
     offered = tools(build_server(Client(transport=FakeTransport()), Config()))
 
@@ -90,11 +111,34 @@ def test_tool_arguments_are_described_and_bounded() -> None:
     limit = offered["list_videos"].input_schema["properties"]["limit"]
     assert (limit["minimum"], limit["maximum"], limit["default"]) == (1, 5000, 50)
     download = offered["download"].input_schema["properties"]
-    assert list(download) == ["video", "format", "quality", "subtitles", "subtitle_mode"]
+    assert list(download) == [
+        "video",
+        "format",
+        "quality",
+        "resolution",
+        "subtitles",
+        "translated_subtitles",
+        "subtitle_mode",
+        "overwrite",
+    ]
     assert download["format"]["enum"] == ["mp4", "mov", "m4a", "mp3"]
+    assert download["quality"]["enum"] == ["best", "compat"]
+    assert download["quality"]["default"] == "best"
+    assert download["resolution"]["anyOf"] == [{"type": "integer", "minimum": 1}, {"type": "null"}]
+    save = offered["save_subtitles"].input_schema
+    assert save["required"] == ["video"]
+    assert list(save["properties"]) == [
+        "video",
+        "languages",
+        "source",
+        "translated_srt",
+        "translated_language",
+        "format",
+    ]
+    assert save["properties"]["format"]["enum"] == ["srt", "vtt"]
 
 
-def test_only_download_changes_anything() -> None:
+def test_only_download_and_save_subtitles_change_anything() -> None:
     offered = tools(build_server(Client(transport=FakeTransport()), Config()))
 
     hints = {
@@ -103,8 +147,10 @@ def test_only_download_changes_anything() -> None:
     assert hints == {
         "list_tracks": True,
         "get_transcript": True,
+        "list_formats": True,
         "list_videos": True,
         "download": False,
+        "save_subtitles": False,
     }
 
 

@@ -33,6 +33,13 @@ def test_a_stdio_client_lists_the_tools_and_gets_errors_as_text(tmp_path: Path) 
 
     names, text, is_error = anyio.run(main)
 
-    assert names == ["list_tracks", "get_transcript", "list_videos", "download"]
+    assert names == [
+        "list_tracks",
+        "get_transcript",
+        "list_formats",
+        "list_videos",
+        "download",
+        "save_subtitles",
+    ]
     assert is_error is True
     assert "Could not find a YouTube video ID in 'not a video ♪'." in text
