@@ -10,6 +10,16 @@ server lets Claude, Codex and other AI assistants use them too.
 > **Alpha.** The API can still change before 0.1.0. The design lives in
 > [docs/design](https://github.com/U-C4N/U-transkript/tree/main/docs/design).
 
+- **Transcripts** of any video, playlist or channel: every language, written by people or
+  generated, as SRT, WebVTT, JSON or text.
+- **AI translation** that keeps every timing (Claude, OpenAI and compatible servers such as
+  Ollama, Gemini, OpenRouter), and bilingual subtitles.
+- **Downloads in the best quality** a file holds: AV1 or H.264 up to 8K, HDR and 60 fps in
+  `.mp4` (also `.mov`, `.m4a`, `.mp3`), with subtitles as switchable tracks and the original
+  audio of dubbed videos. Parallel and resumable; no ffmpeg needed except for `.mp3`.
+- **A drop-in replacement** for youtube-transcript-api.
+- **An MCP server** for Claude, Codex and other AI assistants.
+
 ## Install
 
 From [PyPI](https://pypi.org/project/u-transcript-max/), on Python 3.11 or newer:
@@ -33,8 +43,14 @@ transcript.save("rick.srt")  # also .vtt, .json and .txt
 turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5-5")  # needs [claude]
 utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
-utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best MP4 (AV1 or H.264) with English subtitles
+utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best picture (AV1 up to 8K), English subtitles
+utmax.download("dQw4w9WgXcQ", "rick-720.mp4", resolution=720)  # at most 720p
+utmax.download("dQw4w9WgXcQ", "rick.mp4", quality="compat")  # H.264 up to 1080p, plays anywhere
+utmax.download("dQw4w9WgXcQ", "rick.m4a")  # the audio only
+print([f.label for f in utmax.list_formats("dQw4w9WgXcQ") if f.kind == "video"])
+
 videos = utmax.list_videos("@RickAstleyYT", kind="videos", limit=20)
+utmax.fetch_many(videos, out_dir="subs")  # one .srt per video
 ```
 
 Coming from youtube-transcript-api? Change one import:
@@ -49,7 +65,15 @@ from utmax.compat import YouTubeTranscriptApi
 `list_videos`, `download` and `save_subtitles`. It needs no API key. Ask it to download a video
 and the assistant asks which file type, which of the video's resolutions and which subtitles
 (original or translated) you want; ask for a translation and it translates the subtitles
-itself. The commands below start it with `uvx` from
+itself. Things to ask:
+
+- *"Download https://youtu.be/ZcDFZzsp3_Y in the highest resolution with Turkish subtitles."*
+  The assistant finds 2160p, translates the English subtitles itself and downloads a 4K
+  `.mp4` with English and Turkish tracks (Turkish on by default) plus `.srt` files.
+- *"Save the subtitles of this video, translated into German."*
+- *"List the last 20 videos of @RickAstleyYT and summarize the newest one."*
+
+Files go to `~/Downloads/utmax`. The commands below start the server with `uvx` from
 [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs it from PyPI;
 `@latest` makes it move to each new release the next time the client starts the server.
 
