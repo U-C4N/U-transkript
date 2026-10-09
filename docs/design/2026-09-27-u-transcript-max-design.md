@@ -482,7 +482,9 @@ Compat maps same-named errors 1:1 (upstream constructors); `NetworkError` → `Y
 | M5 | Collections | `parse_source`, resolve, browse parsers (VR + WEB), `list_videos`, `fetch_many/translate_many/download_many` | Both continuation styles; skip-existing; circuit breaker; live playlist + channel kinds |
 | M6 | Compat | manifest script, full `utmax.compat`, session transport, error bridge, `install()` | 100 % manifest parity; ported upstream tests pass |
 | M7 | MCP server | config, 4 tools (no AI provider), paging, progress, entry points | In-memory and stdio tests; manual run in Claude Code/Desktop with a config snippet |
-| M8 | Docs & release 0.1.0 | Minimal README (ASCII diagram, install/extras, quickstart, features, MCP setup, compat one-liner, legal/ToS note), CHANGELOG, CONTRIBUTING, `live.yml`, `release.yml` (approval-gated Trusted Publishing) | All gates green; `uv build` + `twine check`; release job waits for approval; publish only when the user says so |
+| M8 | Access, formats & MCP flow | VISIONOS + visitorData, `best`/`compat` + `resolution`, HDR AV1 in MP4, `list_formats`, `save_subtitles`, translated subtitles (see `2026-10-09-high-quality-downloads-design.md`) | Ten-video reach test; 4K `.mp4` + ffprobe; 0.1.0a4 |
+| M9 | MKV & WebM | Shared media model, WebM reader, Matroska writer, `.mkv`/`.webm` targets (same document) | Byte-identical MP4; ffprobe-clean `.mkv`/`.webm`; 0.1.0a5 |
+| M10 | Docs & release 0.1.0 | Minimal README (ASCII diagram, install/extras, quickstart, features, MCP setup, compat one-liner, legal/ToS note), CHANGELOG, CONTRIBUTING, `live.yml`, `release.yml` (approval-gated Trusted Publishing) | All gates green; `uv build` + `twine check`; release job waits for approval; publish only when the user says so |
 
 ## 10. Risks
 
