@@ -42,7 +42,7 @@ __all__ = [
 
 FormatName = Literal["txt", "srt", "vtt", "json", "pretty"]
 Container = Literal["mp4", "mov", "m4a", "mp3"]
-Quality = Literal["compat", "max"]
+Quality = Literal["best", "compat"]
 SubtitleMode = Literal["embed", "sidecar", "both"]
 ProgressPhase = Literal["downloading", "muxing", "converting", "finished"]
 Codec = Literal["h264", "av1", "vp9", "aac", "he-aac", "opus", "other"]
@@ -326,7 +326,12 @@ class Transcript(Sequence[Segment]):
 
 @dataclass(frozen=True, slots=True)
 class Format:
-    """One stream YouTube offers for a video; its URL never leaves utmax."""
+    """One stream YouTube offers for a video; its URL never leaves utmax.
+
+    ``hdr`` and ``bit_depth`` describe the picture; ``language`` is the language of an audio
+    track (``None`` when YouTube does not say), and ``is_original`` marks the original audio
+    of a video that also has dubbed tracks.
+    """
 
     itag: int
     kind: Literal["video", "audio"]
@@ -343,17 +348,28 @@ class Format:
     is_default_audio: bool = True
     is_drc: bool = False
     last_modified: str = ""
+    hdr: bool = False
+    bit_depth: int = 8
+    language: str | None = None
+    is_original: bool = False
 
     @property
     def label(self) -> str:
-        """A short description such as ``"137 mp4 h264 1080p25"`` or ``"140 mp4 aac 44.1kHz"``."""
+        """A short description such as ``"137 mp4 h264 1080p25"``, ``"701 mp4 av1 2160p60 hdr"``
+        or ``"140 mp4 aac 44.1kHz en-US original"``."""
         words = [str(self.itag), self.container, self.codec]
         if self.kind == "video":
             side = min((n for n in (self.width, self.height) if n), default=0)
             words.append(f"{side}p{self.fps or ''}")
+            if self.hdr:
+                words.append("hdr")
         else:
             if self.audio_sample_rate:
                 words.append(f"{self.audio_sample_rate / 1000:g}kHz")
+            if self.language:
+                words.append(self.language)
+            if self.is_original:
+                words.append("original")
             if self.is_drc:
                 words.append("drc")
         return " ".join(words)

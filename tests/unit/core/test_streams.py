@@ -41,10 +41,20 @@ def streams(*entries: dict[str, Any]) -> tuple[Stream, ...]:
 
 
 def choose(
-    found: tuple[Stream, ...], container: Container = "mp4", quality: Quality = "compat"
+    found: tuple[Stream, ...],
+    container: Container = "mp4",
+    quality: Quality = "best",
+    resolution: int | None = None,
 ) -> tuple[int | None, int]:
-    picked, sound = choose_streams(found, container=container, quality=quality, video_id="v")
+    picked, sound = choose_streams(
+        found, container=container, quality=quality, resolution=resolution, video_id="v"
+    )
     return (picked.format.itag if picked else None, sound.format.itag)
+
+
+def track_url(itag: int, xtags: str) -> str:
+    """A stream URL with YouTube's ``xtags`` (percent-encoded, as YouTube sends it)."""
+    return f"https://rr1.googlevideo.com/videoplayback?itag={itag}&c=VISIONOS&xtags={xtags}"
 
 
 def test_the_recorded_android_vr_streams_parse() -> None:
@@ -87,10 +97,11 @@ def test_the_recorded_android_vr_streams_parse() -> None:
     ("container", "quality", "expected"),
     [
         ("mp4", "compat", (137, 140)),
-        ("mp4", "max", (401, 140)),
+        ("mp4", "best", (401, 140)),
         ("mov", "compat", (137, 140)),
-        ("m4a", "compat", (None, 140)),
-        ("mp3", "max", (None, 140)),
+        ("mov", "best", (137, 140)),
+        ("m4a", "best", (None, 140)),
+        ("mp3", "compat", (None, 140)),
     ],
 )
 def test_the_recorded_streams_pick_the_expected_itags(
@@ -110,25 +121,11 @@ def test_the_recorded_streams_pick_the_expected_itags(
             "needs a signature utmax cannot compute",
         ),
         (raw(18, 'video/mp4; codecs="avc1.42001E, mp4a.40.2"'), "audio and video combined"),
-        (video(248, "vp9", 1920, 1080), "WebM"),
-        (video(337, "vp09.02.51.10.01.09.16.09.00", 3840, 2160), "WebM"),
-        (video(701, "av01.0.12M.10.0.110.09.16.09.0", 3840, 2160), "HDR or more than 8 bits"),
-        (
-            video(
-                399,
-                "av01.0.08M.08",
-                1920,
-                1080,
-                colorInfo={"transferCharacteristics": "COLOR_TRANSFER_CHARACTERISTICS_SMPTEST2084"},
-            ),
-            "HDR or more than 8 bits",
-        ),
-        (
-            video(400, "av01.0.12M.08", 2560, 1440, qualityLabel="1440p60 HDR"),
-            "HDR or more than 8 bits",
-        ),
+        (video(248, "vp9", 1920, 1080), None),
+        (video(337, "vp09.02.51.10.01.09.16.09.00", 3840, 2160), None),
+        (video(701, "av01.0.12M.10.0.110.09.16.09.0", 3840, 2160), None),
         (audio(328, "ec-3"), "other codec"),
-        (audio(251, "opus"), "WebM"),
+        (audio(251, "opus"), None),
     ],
 )
 def test_problems_explain_why_a_stream_is_skipped(
@@ -159,18 +156,24 @@ def test_codec_families(codecs: str, codec: str) -> None:
     assert stream.format.codec == codec
 
 
-def test_max_prefers_av1_at_equal_size_then_frame_rate_and_bitrate() -> None:
+def test_best_prefers_size_then_frame_rate_then_av1_then_bitrate() -> None:
     found = streams(
         video(137, "avc1.640028", 1920, 1080, bitrate=4_000_000),
         video(399, "av01.0.08M.08", 1920, 1080, bitrate=1_600_000),
-        video(299, "avc1.64002a", 1920, 1080, fps=50, bitrate=5_000_000),
+        video(136, "avc1.4d401f", 1280, 720, fps=50, bitrate=3_000_000),
         audio(140),
     )
-    assert choose(found, quality="compat") == (299, 140)
-    assert choose(found, quality="max") == (399, 140)
+    assert choose(found) == (399, 140)
+    assert choose(found, quality="compat") == (137, 140)
+    faster = streams(
+        video(299, "avc1.64002a", 1920, 1080, fps=50, bitrate=5_000_000),
+        video(399, "av01.0.08M.08", 1920, 1080, bitrate=1_600_000),
+        audio(140),
+    )
+    assert choose(faster) == (299, 140)
 
 
-def test_quality_caps_the_size() -> None:
+def test_best_has_no_size_limit_and_resolution_caps_it() -> None:
     found = streams(
         video(137, "avc1.640028", 1920, 1080),
         video(138, "avc1.640033", 7680, 4320),
@@ -178,8 +181,90 @@ def test_quality_caps_the_size() -> None:
         video(571, "av01.0.16M.08", 7680, 4320),
         audio(140),
     )
-    assert choose(found) == (137, 140)
-    assert choose(found, quality="max") == (401, 140)
+    assert choose(found) == (571, 140)
+    assert choose(found, resolution=2160) == (401, 140)
+    assert choose(found, resolution=1440) == (137, 140)
+    assert choose(found, quality="compat") == (137, 140)
+    assert choose(found, quality="compat", resolution=4320) == (137, 140)
+    with pytest.raises(FormatNotAvailable, match=r"has no H\.264 or AV1 video up to 720p in MP4"):
+        choose(found, resolution=720)
+    with pytest.raises(FormatNotAvailable, match=r"has no H\.264 video up to 720p"):
+        choose(found, quality="compat", resolution=720)
+
+
+def test_hdr_is_chosen_only_where_it_is_bigger_and_never_for_compat() -> None:
+    hdr = {"qualityLabel": "HDR", "fps": 60}
+    found = streams(
+        video(701, "av01.0.12M.10.0.110.09.16.09.0", 3840, 2160, **hdr),
+        video(699, "av01.0.08M.10.0.110.09.16.09.0", 1920, 1080, **hdr),
+        video(399, "av01.0.08M.08", 1920, 1080, fps=60),
+        video(299, "avc1.64002a", 1920, 1080, fps=60),
+        audio(140),
+    )
+    assert choose(found) == (701, 140)
+    assert choose(found, resolution=1080) == (399, 140)
+    assert choose(found, quality="compat") == (299, 140)
+
+
+def test_mov_takes_h264_only() -> None:
+    found = streams(
+        video(137, "avc1.640028", 1920, 1080),
+        video(401, "av01.0.12M.08", 3840, 2160),
+        audio(140),
+    )
+    assert choose(found, "mov") == (137, 140)
+    with pytest.raises(FormatNotAvailable, match=r"has no H\.264 video\."):
+        choose(streams(video(401, "av01.0.12M.08", 3840, 2160), audio(140)), "mov")
+
+
+def test_webm_streams_do_not_fit_mp4_files() -> None:
+    found = streams(video(313, "vp9", 3840, 2160), video(137, "avc1.640028", 1920, 1080))
+    with pytest.raises(FormatNotAvailable, match="has no AAC audio in MP4"):
+        choose((*found, *streams(audio(251, "opus"))))
+    assert choose((*found, *streams(audio(140)))) == (137, 140)
+
+
+def test_audio_tracks_hdr_and_bit_depth_are_parsed() -> None:
+    dub, original, tagged, picture = streams(
+        audio(
+            140,
+            url=track_url(140, "acont%3Ddubbed-auto%3Alang%3Dar"),
+            audioTrack={"id": "ar.10", "displayName": "Arabic", "audioIsDefault": True},
+        ),
+        audio(
+            140,
+            url=track_url(140, "acont%3Doriginal%3Adrc%3D1%3Alang%3Den-US"),
+            audioTrack={"id": "en-US.4", "displayName": "English (US) original"},
+        ),
+        audio(251, "opus", url=track_url(251, "acont%3Doriginal%3Alang%3Dde")),
+        video(701, "av01.0.12M.10.0.110.09.16.09.0", 3840, 2160, qualityLabel="2160p60 HDR"),
+    )
+    assert (dub.format.language, dub.format.is_original) == ("ar", False)
+    assert (original.format.language, original.format.is_original) == ("en-US", True)
+    assert (tagged.format.language, tagged.format.is_original) == ("de", True)
+    assert (picture.format.hdr, picture.format.bit_depth) == (True, 10)
+    assert original.format.label == "140 mp4 aac 44.1kHz en-US original"
+    assert picture.format.label == "701 mp4 av1 2160p25 hdr"
+
+
+def test_audio_prefers_the_original_track_of_a_dubbed_video() -> None:
+    found = streams(
+        video(137, "avc1.640028", 1920, 1080),
+        audio(
+            140,
+            bitrate=140_000,
+            url=track_url(140, "acont%3Ddubbed-auto%3Alang%3Dar"),
+            audioTrack={"id": "ar.10", "displayName": "Arabic", "audioIsDefault": True},
+        ),
+        audio(
+            140,
+            bitrate=129_000,
+            url=track_url(140, "acont%3Doriginal%3Alang%3Den-US"),
+            audioTrack={"id": "en-US.4", "displayName": "English (US) original"},
+        ),
+    )
+    _, chosen = choose_streams(found, container="m4a", quality="best", video_id="v")
+    assert (chosen.format.language, chosen.format.is_original) == ("en-US", True)
 
 
 def test_vertical_videos_are_measured_on_the_short_side() -> None:
@@ -199,7 +284,7 @@ def test_audio_prefers_the_default_track_then_no_drc_then_bitrate() -> None:
         audio(139, "mp4a.40.5", bitrate=50_000),
         audio(141, bitrate=260_000, audioTrack={"audioIsDefault": False, "displayName": "Spanish"}),
     )
-    _, chosen = choose_streams(found, container="mp4", quality="compat", video_id="v")
+    _, chosen = choose_streams(found, container="mp4", quality="best", video_id="v")
     assert (chosen.format.itag, chosen.format.is_drc, chosen.format.bitrate) == (
         140,
         False,
@@ -221,11 +306,8 @@ def test_mov_needs_stereo_audio() -> None:
 def test_nothing_suitable_lists_every_stream() -> None:
     found = streams(video(248, "vp9", 1920, 1080), audio(251, "opus"))
     with pytest.raises(FormatNotAvailable, match="has no AAC audio in MP4") as caught:
-        choose_streams(found, container="mp4", quality="compat", video_id="abc")
-    assert caught.value.available == (
-        "248 webm vp9 1080p25 (WebM)",
-        "251 webm opus 44.1kHz (WebM)",
-    )
+        choose_streams(found, container="mp4", quality="best", video_id="abc")
+    assert caught.value.available == ("248 webm vp9 1080p25", "251 webm opus 44.1kHz")
     assert caught.value.video_id == "abc"
     only_av1 = streams(video(399, "av01.0.08M.08", 1920, 1080), audio(140))
     with pytest.raises(FormatNotAvailable, match=r"has no H\.264 video up to 1080p"):
@@ -279,8 +361,8 @@ def test_malformed_entries_are_skipped() -> None:
 
 
 def test_describe_stream() -> None:
-    (webm,) = streams(video(248, "vp9", 1920, 1080))
-    assert describe_stream(webm) == "248 webm vp9 1080p25 (WebM)"
+    (protected,) = streams(video(137, "avc1.640028", 1920, 1080, drmFamilies=["WIDEVINE"]))
+    assert describe_stream(protected) == "137 mp4 h264 1080p25 (DRM-protected)"
     (usable,) = streams(audio(140))
     assert describe_stream(usable) == "140 mp4 aac 44.1kHz"
 

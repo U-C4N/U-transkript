@@ -86,7 +86,7 @@ def test_folder_targets_are_checked_once_the_title_is_known(tmp_path: Path) -> N
 @pytest.mark.parametrize(
     ("name", "options", "error", "match"),
     [
-        ("rick.mp4", DownloadOptions(quality="best"), InvalidOption, "quality="),
+        ("rick.mp4", DownloadOptions(quality="max"), InvalidOption, 'is not "best" or "compat"'),
         ("rick.mp4", DownloadOptions(subtitle_mode="burn"), InvalidOption, "subtitle_mode="),
         ("rick.mp4", DownloadOptions(connections=0), InvalidOption, "connections must be"),
         ("rick.mp4", DownloadOptions(connections=17), InvalidOption, "connections must be"),
@@ -104,7 +104,6 @@ def test_folder_targets_are_checked_once_the_title_is_known(tmp_path: Path) -> N
             InvalidOption,
             "Each subtitle must be",
         ),
-        ("rick.mov", DownloadOptions(quality="max"), InvalidOption, r"needs \.mp4"),
         ("rick.m4a", DownloadOptions(default_subtitle="en"), InvalidOption, "cannot embed"),
         ("rick.avi", DownloadOptions(), UnsupportedFormat, "Cannot tell the file type"),
         ("rick.mp4", DownloadOptions(format="mp3"), InvalidOption, "does not match"),

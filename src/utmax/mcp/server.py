@@ -134,7 +134,12 @@ ContainerArg = Annotated[
 ]
 QualityArg = Annotated[
     Quality,
-    Field(description="compat: H.264 up to 1080p (plays everywhere); max: up to 4K (mp4 only)."),
+    Field(
+        description=(
+            "best: the largest picture the file type holds (mp4: AV1 or H.264, up to 8K); "
+            "compat: H.264 up to 1080p, plays everywhere."
+        )
+    ),
 ]
 SubtitlesArg = Annotated[
     list[str] | None,
@@ -314,7 +319,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
     async def download(
         video: VideoArg,
         format: ContainerArg = "mp4",
-        quality: QualityArg = "compat",
+        quality: QualityArg = "best",
         subtitles: SubtitlesArg = None,
         subtitle_mode: SubtitleModeArg = "embed",
         *,
@@ -343,7 +348,7 @@ async def download_file(
     video: str,
     *,
     format: Container = "mp4",
-    quality: Quality = "compat",
+    quality: Quality = "best",
     subtitles: list[str] | None = None,
     subtitle_mode: SubtitleMode = "embed",
     report: Callable[[float, float | None, str | None], Coroutine[Any, Any, None]] | None = None,

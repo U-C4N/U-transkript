@@ -48,7 +48,7 @@ __all__ = ["MAX_CONNECTIONS", "DownloadOptions", "DownloadService"]
 log = logging.getLogger("utmax.download")
 
 MAX_CONNECTIONS = 16
-_QUALITIES = ("compat", "max")
+_QUALITIES = ("best", "compat")
 _SUBTITLE_MODES = ("embed", "sidecar", "both")
 
 
@@ -61,7 +61,7 @@ class DownloadOptions:
     """
 
     format: Container | None = None
-    quality: Quality = "compat"
+    quality: Quality = "best"
     subtitles: Sequence[str | Transcript] | None = None
     subtitle_mode: SubtitleMode = "embed"
     default_subtitle: str | None = None
@@ -77,7 +77,7 @@ class DownloadOptions:
     def check(self) -> None:
         """Reject option values that can never work, before anything is requested."""
         if self.quality not in _QUALITIES:
-            raise InvalidOption(f'quality={self.quality!r} is not "compat" or "max".')
+            raise InvalidOption(f'quality={self.quality!r} is not "best" or "compat".')
         if self.subtitle_mode not in _SUBTITLE_MODES:
             raise InvalidOption(
                 f'subtitle_mode={self.subtitle_mode!r} is not "embed", "sidecar" or "both".'
@@ -220,12 +220,6 @@ class DownloadService:
         options.check()
         target = resolve_target(path, format=options.format, is_dir=Path(path).is_dir())
         container = target.container
-        if container == "mov" and options.quality == "max":
-            raise InvalidOption(
-                'quality="max" needs .mp4: QuickTime .mov files cannot hold AV1 video.',
-                suggestion='Save max quality as .mp4, or use quality="compat" for .mov.',
-                video_id=video_id,
-            )
         if container in ("m4a", "mp3") and options.default_subtitle is not None:
             raise InvalidOption(
                 f".{container} files cannot embed subtitles, so default_subtitle has no effect.",

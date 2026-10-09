@@ -2,7 +2,8 @@
 
 YouTube lists every stream of a video in ``streamingData``: progressive ``formats`` (audio and
 video together, at most 360p) and ``adaptiveFormats`` (video-only or audio-only). utmax
-downloads one adaptive MP4 video stream and one AAC audio stream and muxes them itself.
+downloads one adaptive video stream and one audio stream that fit the target file and muxes
+them itself.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ from utmax.models import Codec, Container, Format, Quality
 
 __all__ = [
     "COMPAT_MAX_SIDE",
-    "MAX_MAX_SIDE",
     "QUICKTIME_MAX_RATE",
     "Stream",
     "choose_streams",
@@ -29,7 +29,6 @@ __all__ = [
 ]
 
 COMPAT_MAX_SIDE = 1080
-MAX_MAX_SIDE = 2160
 QUICKTIME_MAX_RATE = 65535
 _MIME = re.compile(r'(video|audio)/(mp4|webm)\s*;\s*codecs="([^"]*)"')
 _KINDS: Mapping[str, Literal["video", "audio"]] = {"video": "video", "audio": "audio"}
@@ -37,7 +36,10 @@ _CONTAINERS: Mapping[str, Literal["mp4", "webm"]] = {"mp4": "mp4", "webm": "webm
 _HDR_TRANSFERS = frozenset(
     {"COLOR_TRANSFER_CHARACTERISTICS_SMPTEST2084", "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"}
 )
-_MUXABLE: frozenset[str] = frozenset({"h264", "av1", "aac", "he-aac"})
+# The video codecs each file type holds, the preferred one first.
+_VIDEO_CODECS: Mapping[Container, tuple[Codec, ...]] = {"mp4": ("av1", "h264"), "mov": ("h264",)}
+_AUDIO_CODECS: tuple[Codec, ...] = ("aac", "he-aac")
+_CODEC_NAMES: tuple[tuple[Codec, str], ...] = (("h264", "H.264"), ("av1", "AV1"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,15 +50,16 @@ class Stream:
     url: str = field(default="", repr=False)
     expires_at: int | None = None
     user_agent: str = DESKTOP_USER_AGENT
-    bit_depth: int = 8
-    hdr: bool = False
     drm: bool = False
     live: bool = False
     progressive: bool = False
 
     @property
     def problem(self) -> str | None:
-        """Why utmax cannot download and mux this stream, or ``None`` when it can."""
+        """Why utmax can never download this stream, or ``None`` when it can.
+
+        Whether a usable stream fits a file type is :func:`choose_streams`' business.
+        """
         if self.drm:
             return "DRM-protected"
         if self.live:
@@ -65,12 +68,8 @@ class Stream:
             return "needs a signature utmax cannot compute"
         if self.progressive:
             return "audio and video combined"
-        if self.format.container != "mp4":
-            return "WebM"
-        if self.hdr or self.bit_depth > 8:
-            return "HDR or more than 8 bits"
-        if self.format.codec not in _MUXABLE:
-            return f"{self.format.codec} codec"
+        if self.format.codec == "other":
+            return "other codec"
         return None
 
 
@@ -88,15 +87,23 @@ def describe_stream(stream: Stream) -> str:
 
 
 def choose_streams(
-    streams: Sequence[Stream], *, container: Container, quality: Quality, video_id: str
+    streams: Sequence[Stream],
+    *,
+    container: Container,
+    quality: Quality,
+    resolution: int | None = None,
+    video_id: str,
 ) -> tuple[Stream | None, Stream]:
     """The video stream (``None`` for audio files) and the audio stream to download.
 
-    Video: MP4 H.264 up to 1080p for ``"compat"``; MP4 H.264 or 8-bit AV1 up to 2160p for
-    ``"max"``, AV1 first at the same size; then the higher frame rate and bitrate. Sizes are
-    measured on the short side, so vertical videos count like their landscape twins. Audio: MP4
-    AAC, preferring the video's default audio track, then streams without dynamic range
-    compression, then the higher bitrate; ``.mov`` accepts only stereo at most 65535 Hz.
+    Video, sizes measured on the short side so that vertical videos count like their landscape
+    twins: ``"best"`` takes the largest picture the file type holds (``.mp4``: AV1 or H.264,
+    HDR included; ``.mov``: H.264) up to ``resolution`` lines, then the higher frame rate, then
+    SDR over HDR, then AV1 over H.264, then the higher bitrate. ``"compat"`` takes SDR H.264 up
+    to 1080p (or ``resolution``, when smaller), which plays everywhere. Audio: AAC, preferring
+    the original track of a dubbed video, then YouTube's default track, then streams without
+    dynamic range compression, then the higher bitrate; ``.mov`` accepts only stereo at most
+    65535 Hz.
 
     Raises:
         FormatNotAvailable: nothing fits; the error lists every stream YouTube offered.
@@ -108,44 +115,53 @@ def choose_streams(
         raise _not_available(streams, wanted, video_id)
     if container in ("m4a", "mp3"):
         return None, audio
-    video = _best_video(usable, quality)
+    codecs = ("h264",) if quality == "compat" else _VIDEO_CODECS[container]
+    limit = resolution
+    if quality == "compat":
+        limit = min(resolution or COMPAT_MAX_SIDE, COMPAT_MAX_SIDE)
+    video = _best_video(usable, codecs, limit, sdr_only=quality == "compat")
     if video is None:
-        wanted = (
-            "H.264 or 8-bit AV1 video up to 2160p in MP4"
-            if quality == "max"
-            else "H.264 video up to 1080p in MP4"
-        )
-        raise _not_available(streams, wanted, video_id)
+        raise _not_available(streams, _wanted_video(container, codecs, limit), video_id)
     return video, audio
 
 
-def _best_video(streams: Sequence[Stream], quality: Quality) -> Stream | None:
-    limit = MAX_MAX_SIDE if quality == "max" else COMPAT_MAX_SIDE
-    codecs = ("h264", "av1") if quality == "max" else ("h264",)
+def _best_video(
+    streams: Sequence[Stream], codecs: tuple[Codec, ...], limit: int | None, *, sdr_only: bool
+) -> Stream | None:
     candidates = [
         stream
         for stream in streams
         if stream.format.kind == "video"
         and stream.format.codec in codecs
-        and 0 < _short_side(stream.format) <= limit
+        and 0 < _short_side(stream.format) <= (limit or _short_side(stream.format))
+        and not (sdr_only and stream.format.hdr)
     ]
     return max(
         candidates,
         key=lambda stream: (
             _short_side(stream.format),
-            stream.format.codec == "av1",
             stream.format.fps or 0,
+            not stream.format.hdr,
+            -codecs.index(stream.format.codec),
             stream.format.bitrate,
         ),
         default=None,
     )
 
 
+def _wanted_video(container: Container, codecs: tuple[Codec, ...], limit: int | None) -> str:
+    """``"H.264 or AV1 video up to 720p in MP4"`` and the like, for an error message."""
+    names = " or ".join(name for codec, name in _CODEC_NAMES if codec in codecs)
+    size = f" up to {limit}p" if limit is not None else ""
+    where = " in MP4" if container == "mp4" and len(codecs) > 1 else ""
+    return f"{names} video{size}{where}"
+
+
 def _best_audio(streams: Sequence[Stream], container: Container) -> Stream | None:
     candidates = [
         stream
         for stream in streams
-        if stream.format.kind == "audio" and stream.format.codec in ("aac", "he-aac")
+        if stream.format.kind == "audio" and stream.format.codec in _AUDIO_CODECS
     ]
     if container == "mov":
         candidates = [
@@ -157,6 +173,7 @@ def _best_audio(streams: Sequence[Stream], container: Container) -> Stream | Non
     return max(
         candidates,
         key=lambda stream: (
+            stream.format.is_original,
             stream.format.is_default_audio,
             not stream.format.is_drc,
             stream.format.bitrate,
@@ -192,6 +209,8 @@ def _stream(raw: Mapping[str, Any]) -> Stream | None:
     query = dict(parse_qsl(urlsplit(url).query))
     profile = PROFILES.get(query.get("c", ""))
     track = mapping(raw.get("audioTrack"))
+    tags = _xtags(query.get("xtags", ""))
+    name = str(track.get("displayName") or "")
     return Stream(
         format=Format(
             itag=itag,
@@ -209,12 +228,14 @@ def _stream(raw: Mapping[str, Any]) -> Stream | None:
             is_default_audio=bool(track.get("audioIsDefault", True)),
             is_drc=bool(raw.get("isDrc", False)),
             last_modified=str(raw.get("lastModified") or ""),
+            hdr=_is_hdr(raw),
+            bit_depth=_bit_depth(first),
+            language=str(track.get("id") or "").partition(".")[0] or tags.get("lang") or None,
+            is_original=tags.get("acont") == "original" or name.lower().endswith(" original"),
         ),
         url=url,
         expires_at=_int(query.get("expire")),
         user_agent=profile.user_agent if profile is not None else DESKTOP_USER_AGENT,
-        bit_depth=_bit_depth(first),
-        hdr=_is_hdr(raw),
         drm=bool(raw.get("drmFamilies")),
         live="targetDurationSec" in raw,
         progressive="," in codecs,
@@ -247,6 +268,12 @@ def _bit_depth(codec: str) -> int:
     ):
         return int(parts[3])
     return 8
+
+
+def _xtags(text: str) -> dict[str, str]:
+    """YouTube's ``xtags`` of a stream, such as ``acont=original:lang=en-US``, as a dict."""
+    pairs = (part.partition("=") for part in text.split(":") if part)
+    return {key: value for key, _, value in pairs}
 
 
 def _is_hdr(raw: Mapping[str, Any]) -> bool:

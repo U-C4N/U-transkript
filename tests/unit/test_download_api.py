@@ -64,7 +64,7 @@ def test_download_signature_matches_the_spec() -> None:
     assert list(parameters) == PARAMETERS
     assert parameters["chunk_size"].default == 2 * 2**20
     assert (parameters["quality"].default, parameters["subtitle_mode"].default) == (
-        "compat",
+        "best",
         "embed",
     )
     assert list(inspect.signature(Client.download).parameters)[1:] == PARAMETERS

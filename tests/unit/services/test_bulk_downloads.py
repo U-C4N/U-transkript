@@ -61,7 +61,7 @@ def test_videos_are_named_by_title_and_id(tmp_path: Path) -> None:
         assert value(result).path == result.path
         assert value(result).embedded_subtitles == ("en",)
         tracks = read_movie(value(result).path).tracks
-        assert [codec_of(track) for track in tracks] == [b"avc1", b"mp4a", b"tx3g"]
+        assert [codec_of(track) for track in tracks] == [b"av01", b"mp4a", b"tx3g"]
     assert folder_names(folder) == sorted(names)
 
 
@@ -92,7 +92,7 @@ def test_skip_existing_false_replaces_the_file_it_downloads_again(tmp_path: Path
     report = ManyVideos().bulk().download_many(IDS[:1], tmp_path, skip_existing=False)
     assert [(result.status, result.path) for result in report] == [("ok", file)]
     tracks = read_movie(file).tracks
-    assert [codec_of(track) for track in tracks] == [b"avc1", b"mp4a", b"tx3g"]
+    assert [codec_of(track) for track in tracks] == [b"av01", b"mp4a", b"tx3g"]
 
 
 def test_templates_number_listing_entries(tmp_path: Path) -> None:
@@ -154,8 +154,7 @@ def test_mp3_needs_ffmpeg_before_any_request(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "options",
     [
-        {"quality": "best"},
-        {"format": "mov", "quality": "max"},
+        {"quality": "max"},
         {"format": "avi"},
         {"subtitles": "en"},
         {"subtitles": [make_transcript()]},

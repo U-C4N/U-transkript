@@ -303,7 +303,7 @@ class BulkService:
         out_dir: str | os.PathLike[str],
         *,
         format: Container = "mp4",
-        quality: Quality = "compat",
+        quality: Quality = "best",
         subtitles: Sequence[str] | None = None,
         subtitle_mode: SubtitleMode = "embed",
         concurrency: int = 2,

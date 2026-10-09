@@ -334,7 +334,7 @@ def download(
     path: str | os.PathLike[str],
     *,
     format: Container | None = None,
-    quality: Quality = "compat",
+    quality: Quality = "best",
     subtitles: Sequence[str | Transcript] | None = None,
     subtitle_mode: SubtitleMode = "embed",
     default_subtitle: str | None = None,
@@ -352,7 +352,7 @@ def download(
 
         utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 up to 1080p, AAC, English subtitles
         utmax.download("dQw4w9WgXcQ", "rick.m4a")  # audio only; no ffmpeg needed
-        utmax.download("dQw4w9WgXcQ", "videos/", quality="max")  # AV1 up to 4K, named by title
+        utmax.download("dQw4w9WgXcQ", "videos/")  # the best MP4 (AV1 up to 8K), named by title
         utmax.download("dQw4w9WgXcQ", "rick.mp4", subtitles=[english, turkish])
 
     Args:
@@ -362,8 +362,9 @@ def download(
             ``"{title} [{video_id}].{ext}"``.
         format: the file type when ``path`` is a folder or has no extension; it must match the
             extension otherwise.
-        quality: ``"compat"`` (H.264 up to 1080p, plays everywhere) or ``"max"`` (AV1 or
-            H.264 up to 2160p; ``.mp4`` only).
+        quality: ``"best"`` (the largest picture the file type holds: AV1 or H.264 in
+            ``.mp4``, HDR where it is the only way to a larger picture; H.264 in ``.mov``) or
+            ``"compat"`` (H.264 up to 1080p, plays everywhere).
         subtitles: language codes and/or transcripts (translations and bilingual ones too).
             ``None`` embeds the spoken-language track in videos and adds nothing to audio;
             ``[]`` adds none. Codes are chosen like :func:`fetch`, never with YouTube's own
@@ -600,7 +601,7 @@ def download_many(
     out_dir: str | os.PathLike[str],
     *,
     format: Container = "mp4",
-    quality: Quality = "compat",
+    quality: Quality = "best",
     subtitles: Sequence[str] | None = None,
     subtitle_mode: SubtitleMode = "embed",
     concurrency: int = 2,

@@ -28,11 +28,11 @@ def test_mp4_downloads_embed_the_spoken_language_by_default(tmp_path: Path) -> N
     youtube = FakeYouTube()
     result = youtube.service().download(VIDEO_ID, tmp_path / "rick.mp4", DownloadOptions())
     assert result.video_format is not None
-    assert (result.video_format.itag, result.audio_format.itag) == (137, 140)
+    assert (result.video_format.itag, result.audio_format.itag) == (399, 140)
     assert result.embedded_subtitles == ("en",)
     movie = read_movie(result.path)
     assert [track.handler for track in movie.tracks] == ["vide", "soun", "sbtl"]
-    assert [codec_of(track) for track in movie.tracks] == [b"avc1", b"mp4a", b"tx3g"]
+    assert [codec_of(track) for track in movie.tracks] == [b"av01", b"mp4a", b"tx3g"]
     assert [len(track.samples) for track in movie.tracks[:2]] == [100, 172]
     subtitle = movie.tracks[2]
     assert (subtitle.extended_language, subtitle.name, subtitle.flags & 1) == ("en", "English", 1)
@@ -119,12 +119,12 @@ def test_mov_downloads_use_the_quicktime_flavor(tmp_path: Path) -> None:
     assert read_movie(result.path).major_brand == "qt  "
 
 
-def test_max_quality_prefers_av1(tmp_path: Path) -> None:
-    options = DownloadOptions(quality="max")
+def test_compat_quality_keeps_h264(tmp_path: Path) -> None:
+    options = DownloadOptions(quality="compat")
     result = FakeYouTube().service().download(VIDEO_ID, tmp_path / "rick.mp4", options)
     assert result.video_format is not None
-    assert result.video_format.itag == 399
-    assert codec_of(read_movie(result.path).tracks[0]) == b"av01"
+    assert result.video_format.itag == 137
+    assert codec_of(read_movie(result.path).tracks[0]) == b"avc1"
 
 
 def test_transcripts_of_other_videos_are_refused(tmp_path: Path) -> None:
