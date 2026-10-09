@@ -19,6 +19,7 @@ PARAMETERS = [
     "path",
     "format",
     "quality",
+    "resolution",
     "subtitles",
     "subtitle_mode",
     "default_subtitle",
@@ -57,6 +58,28 @@ def test_the_facade_uses_the_default_client(
     monkeypatch.setattr(utmax, "_default_client", Client(transport=FakeYouTube()))
     result = utmax.download(f"https://youtu.be/{VIDEO_ID}", tmp_path / "rick.m4a")
     assert result.audio_format.itag == 140
+
+
+def test_resolution_caps_the_picture(tmp_path: Path) -> None:
+    with Client(transport=FakeYouTube()) as client:
+        with pytest.raises(utmax.FormatNotAvailable, match="up to 720p"):
+            client.download(VIDEO_ID, tmp_path / "rick.mp4", resolution=720)
+        result = client.download(VIDEO_ID, tmp_path / "rick.mp4", resolution=1080)
+    assert result.video_format is not None
+    assert result.video_format.itag == 399
+
+
+def test_list_formats_names_what_a_download_can_choose(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(utmax, "_default_client", Client(transport=FakeYouTube()))
+    formats = utmax.list_formats(f"https://youtu.be/{VIDEO_ID}")
+    assert formats.video.video_id == VIDEO_ID
+    assert [fmt.label for fmt in formats] == [
+        "137 mp4 h264 1080p25",
+        "399 mp4 av1 1080p25",
+        "140 mp4 aac 44.1kHz",
+    ]
+    assert len(formats) == 3
+    assert formats[1].codec == "av1"
 
 
 def test_download_signature_matches_the_spec() -> None:

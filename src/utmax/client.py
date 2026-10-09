@@ -20,6 +20,7 @@ from utmax.models import (
     CollectionKind,
     Container,
     DownloadResult,
+    FormatList,
     FormatName,
     Progress,
     Quality,
@@ -121,6 +122,10 @@ class Client:
         """Every subtitle track of ``video``, in YouTube's order."""
         return self._transcripts.list_tracks(video)
 
+    def list_formats(self, video: str) -> FormatList:
+        """The streams of ``video`` a download can choose from; see :func:`utmax.list_formats`."""
+        return self._downloads.list_formats(video)
+
     def video_info(self, video: str) -> VideoInfo:
         """Title, channel and duration of ``video``."""
         return self._transcripts.video_info(video)
@@ -162,6 +167,7 @@ class Client:
         *,
         format: Container | None = None,
         quality: Quality = "best",
+        resolution: int | None = None,
         subtitles: Sequence[str | Transcript] | None = None,
         subtitle_mode: SubtitleMode = "embed",
         default_subtitle: str | None = None,
@@ -177,6 +183,7 @@ class Client:
         options = DownloadOptions(
             format=format,
             quality=quality,
+            resolution=resolution,
             subtitles=subtitles,
             subtitle_mode=subtitle_mode,
             default_subtitle=default_subtitle,
@@ -267,6 +274,7 @@ class Client:
         *,
         format: Container = "mp4",
         quality: Quality = "best",
+        resolution: int | None = None,
         subtitles: Sequence[str] | None = None,
         subtitle_mode: SubtitleMode = "embed",
         concurrency: int = 2,
@@ -281,6 +289,7 @@ class Client:
             out_dir,
             format=format,
             quality=quality,
+            resolution=resolution,
             subtitles=subtitles,
             subtitle_mode=subtitle_mode,
             concurrency=concurrency,

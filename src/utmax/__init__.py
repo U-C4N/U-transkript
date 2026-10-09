@@ -77,6 +77,7 @@ from utmax.models import (
     Container,
     DownloadResult,
     Format,
+    FormatList,
     FormatName,
     Language,
     Progress,
@@ -112,6 +113,7 @@ __all__ = [
     "FFmpegNotFound",
     "FailedToCreateConsentCookie",
     "Format",
+    "FormatList",
     "FormatName",
     "FormatNotAvailable",
     "InvalidModelSpec",
@@ -161,6 +163,7 @@ __all__ = [
     "download_many",
     "fetch",
     "fetch_many",
+    "list_formats",
     "list_tracks",
     "list_videos",
     "translate",
@@ -232,6 +235,22 @@ def fetch(
 def list_tracks(video: str) -> TrackList:
     """Every subtitle track of a video, in YouTube's order."""
     return _client().list_tracks(video)
+
+
+def list_formats(video: str) -> FormatList:
+    """The streams of a video that :func:`download` can choose from, in YouTube's order.
+
+    Example::
+
+        formats = utmax.list_formats("dQw4w9WgXcQ")
+        sizes = sorted({f.height for f in formats if f.kind == "video"}, reverse=True)
+        utmax.download("dQw4w9WgXcQ", "rick.mp4", resolution=sizes[1])
+
+    Raises:
+        InvalidVideoId: ``video`` is not a YouTube video URL or ID.
+        VideoUnavailable, VideoUnplayable, AgeRestricted, RequestBlocked: YouTube refused.
+    """
+    return _client().list_formats(video)
 
 
 def video_info(video: str) -> VideoInfo:
@@ -335,6 +354,7 @@ def download(
     *,
     format: Container | None = None,
     quality: Quality = "best",
+    resolution: int | None = None,
     subtitles: Sequence[str | Transcript] | None = None,
     subtitle_mode: SubtitleMode = "embed",
     default_subtitle: str | None = None,
@@ -365,6 +385,8 @@ def download(
         quality: ``"best"`` (the largest picture the file type holds: AV1 or H.264 in
             ``.mp4``, HDR where it is the only way to a larger picture; H.264 in ``.mov``) or
             ``"compat"`` (H.264 up to 1080p, plays everywhere).
+        resolution: the largest picture to take, in lines of its short side (``1080`` means at
+            most 1080p); ``None`` takes the largest. :func:`list_formats` shows what exists.
         subtitles: language codes and/or transcripts (translations and bilingual ones too).
             ``None`` embeds the spoken-language track in videos and adds nothing to audio;
             ``[]`` adds none. Codes are chosen like :func:`fetch`, never with YouTube's own
@@ -409,6 +431,7 @@ def download(
         path,
         format=format,
         quality=quality,
+        resolution=resolution,
         subtitles=subtitles,
         subtitle_mode=subtitle_mode,
         default_subtitle=default_subtitle,
@@ -602,6 +625,7 @@ def download_many(
     *,
     format: Container = "mp4",
     quality: Quality = "best",
+    resolution: int | None = None,
     subtitles: Sequence[str] | None = None,
     subtitle_mode: SubtitleMode = "embed",
     concurrency: int = 2,
@@ -620,8 +644,8 @@ def download_many(
     Args:
         videos: video IDs, URLs and/or entries of a :func:`list_videos` result.
         out_dir: the folder for the files (created when missing).
-        format, quality, subtitles, subtitle_mode, ffmpeg: as in :func:`download`, for every
-            video; ``subtitles`` takes language codes only.
+        format, quality, resolution, subtitles, subtitle_mode, ffmpeg: as in :func:`download`,
+            for every video; ``subtitles`` takes language codes only.
         concurrency: how many videos are downloaded at the same time, 1 to 16 (each with four
             connections).
         skip_existing: skip a video, without any request, when ``out_dir`` already holds its
@@ -645,6 +669,7 @@ def download_many(
         out_dir,
         format=format,
         quality=quality,
+        resolution=resolution,
         subtitles=subtitles,
         subtitle_mode=subtitle_mode,
         concurrency=concurrency,

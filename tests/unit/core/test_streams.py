@@ -8,7 +8,13 @@ import pytest
 
 from tests.helpers.youtube import streaming_data
 from utmax.core.clients import ANDROID_VR, DESKTOP_USER_AGENT, IOS
-from utmax.core.streams import Stream, choose_streams, describe_stream, parse_streams
+from utmax.core.streams import (
+    Stream,
+    choose_streams,
+    describe_stream,
+    file_types,
+    parse_streams,
+)
 from utmax.errors import FormatNotAvailable
 from utmax.models import Container, Format, Quality
 
@@ -222,6 +228,24 @@ def test_webm_streams_do_not_fit_mp4_files() -> None:
     with pytest.raises(FormatNotAvailable, match="has no AAC audio in MP4"):
         choose((*found, *streams(audio(251, "opus"))))
     assert choose((*found, *streams(audio(140)))) == (137, 140)
+
+
+def test_file_types_name_where_a_format_fits() -> None:
+    h264, av1, vp9, aac, opus = (
+        stream.format
+        for stream in streams(
+            video(137, "avc1.640028", 1920, 1080),
+            video(401, "av01.0.12M.08", 3840, 2160),
+            video(313, "vp9", 3840, 2160),
+            audio(140),
+            audio(251, "opus"),
+        )
+    )
+    assert file_types(h264) == ("mp4", "mov")
+    assert file_types(av1) == ("mp4",)
+    assert file_types(vp9) == ()
+    assert file_types(aac) == ("mp4", "mov", "m4a", "mp3")
+    assert file_types(opus) == ()
 
 
 def test_audio_tracks_hdr_and_bit_depth_are_parsed() -> None:

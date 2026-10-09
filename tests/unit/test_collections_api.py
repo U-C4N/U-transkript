@@ -52,6 +52,7 @@ PARAMETERS = {
         "out_dir",
         "format",
         "quality",
+        "resolution",
         "subtitles",
         "subtitle_mode",
         "concurrency",

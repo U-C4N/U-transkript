@@ -16,7 +16,13 @@ from tests.helpers.downloads import FakeFFmpegRuns, codec_of, read_movie
 from tests.helpers.files import folder_names
 from utmax.adapters.ffmpeg import FFmpeg
 from utmax.adapters.innertube import InnerTubeClient
-from utmax.errors import FFmpegNotFound, InvalidOption, IpBlocked, VideoUnavailable
+from utmax.errors import (
+    FFmpegNotFound,
+    FormatNotAvailable,
+    InvalidOption,
+    IpBlocked,
+    VideoUnavailable,
+)
 from utmax.models import BulkResult, DownloadResult, VideoEntry
 from utmax.services.bulk import BulkService
 from utmax.services.download import DownloadOptions, DownloadService
@@ -151,10 +157,18 @@ def test_mp3_needs_ffmpeg_before_any_request(tmp_path: Path) -> None:
     assert not (tmp_path / "audio").exists()
 
 
+def test_resolution_reaches_every_download(tmp_path: Path) -> None:
+    youtube = ManyVideos()
+    report = youtube.bulk().download_many(IDS, tmp_path / "videos", resolution=720)
+    assert len(report.failed) == len(IDS)
+    assert all(isinstance(result.error, FormatNotAvailable) for result in report.failed)
+
+
 @pytest.mark.parametrize(
     "options",
     [
         {"quality": "max"},
+        {"resolution": -1},
         {"format": "avi"},
         {"subtitles": "en"},
         {"subtitles": [make_transcript()]},

@@ -25,6 +25,7 @@ __all__ = [
     "Stream",
     "choose_streams",
     "describe_stream",
+    "file_types",
     "parse_streams",
 ]
 
@@ -84,6 +85,17 @@ def describe_stream(stream: Stream) -> str:
     """``"313 webm vp9 2160p25 (WebM)"``: the label, plus why the stream cannot be used."""
     problem = stream.problem
     return stream.format.label if problem is None else f"{stream.format.label} ({problem})"
+
+
+def file_types(fmt: Format) -> tuple[Container, ...]:
+    """The file types a stream can go into with ``quality="best"``."""
+    if fmt.kind == "video":
+        return tuple(
+            container for container, codecs in _VIDEO_CODECS.items() if fmt.codec in codecs
+        )
+    if fmt.codec in _AUDIO_CODECS:
+        return ("mp4", "mov", "m4a", "mp3")
+    return ()
 
 
 def choose_streams(

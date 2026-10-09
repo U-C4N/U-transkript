@@ -88,6 +88,8 @@ def test_folder_targets_are_checked_once_the_title_is_known(tmp_path: Path) -> N
     [
         ("rick.mp4", DownloadOptions(quality="max"), InvalidOption, 'is not "best" or "compat"'),
         ("rick.mp4", DownloadOptions(subtitle_mode="burn"), InvalidOption, "subtitle_mode="),
+        ("rick.mp4", DownloadOptions(resolution=0), InvalidOption, "resolution must be"),
+        ("rick.mp4", DownloadOptions(resolution=True), InvalidOption, "resolution must be"),
         ("rick.mp4", DownloadOptions(connections=0), InvalidOption, "connections must be"),
         ("rick.mp4", DownloadOptions(connections=17), InvalidOption, "connections must be"),
         ("rick.mp4", DownloadOptions(chunk_size=1000), InvalidOption, "chunk_size must be"),

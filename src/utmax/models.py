@@ -23,6 +23,7 @@ __all__ = [
     "Container",
     "DownloadResult",
     "Format",
+    "FormatList",
     "FormatName",
     "Language",
     "Progress",
@@ -373,6 +374,27 @@ class Format:
             if self.is_drc:
                 words.append("drc")
         return " ".join(words)
+
+
+@dataclass(frozen=True, slots=True)
+class FormatList(Sequence[Format]):
+    """The streams of a video that utmax can download, in YouTube's order."""
+
+    video: VideoInfo
+    formats: tuple[Format, ...]
+
+    @overload
+    def __getitem__(self, index: int) -> Format: ...
+    @overload
+    def __getitem__(self, index: slice) -> tuple[Format, ...]: ...
+    def __getitem__(self, index: int | slice) -> Format | tuple[Format, ...]:
+        return self.formats[index]
+
+    def __len__(self) -> int:
+        return len(self.formats)
+
+    def __iter__(self) -> Iterator[Format]:
+        return iter(self.formats)
 
 
 @dataclass(frozen=True, slots=True)

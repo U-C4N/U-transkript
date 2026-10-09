@@ -304,6 +304,7 @@ class BulkService:
         *,
         format: Container = "mp4",
         quality: Quality = "best",
+        resolution: int | None = None,
         subtitles: Sequence[str] | None = None,
         subtitle_mode: SubtitleMode = "embed",
         concurrency: int = 2,
@@ -325,6 +326,7 @@ class BulkService:
         options = DownloadOptions(
             format=format,
             quality=quality,
+            resolution=resolution,
             subtitles=subtitles,
             subtitle_mode=subtitle_mode,
             overwrite=True,

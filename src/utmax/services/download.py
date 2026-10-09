@@ -34,6 +34,7 @@ from utmax.errors import DownloadCancelled, InvalidOption, OutputExists, UTMaxEr
 from utmax.models import (
     Container,
     DownloadResult,
+    FormatList,
     Progress,
     Quality,
     SubtitleMode,
@@ -62,6 +63,7 @@ class DownloadOptions:
 
     format: Container | None = None
     quality: Quality = "best"
+    resolution: int | None = None
     subtitles: Sequence[str | Transcript] | None = None
     subtitle_mode: SubtitleMode = "embed"
     default_subtitle: str | None = None
@@ -78,6 +80,15 @@ class DownloadOptions:
         """Reject option values that can never work, before anything is requested."""
         if self.quality not in _QUALITIES:
             raise InvalidOption(f'quality={self.quality!r} is not "best" or "compat".')
+        if self.resolution is not None and (
+            isinstance(self.resolution, bool)
+            or not isinstance(self.resolution, int)
+            or self.resolution < 1
+        ):
+            raise InvalidOption(
+                "resolution must be a positive number of lines, such as 1080, "
+                f"not {self.resolution!r}."
+            )
         if self.subtitle_mode not in _SUBTITLE_MODES:
             raise InvalidOption(
                 f'subtitle_mode={self.subtitle_mode!r} is not "embed", "sidecar" or "both".'
@@ -137,6 +148,12 @@ class DownloadService:
                 error.video_id = video_id
             raise
 
+    def list_formats(self, video: str) -> FormatList:
+        """The streams of ``video`` that a download can choose from."""
+        player = self._innertube.player(parse_video_id(video), purpose="streams")
+        usable = tuple(stream.format for stream in player.streams if stream.problem is None)
+        return FormatList(video=player.video, formats=usable)
+
     def check(self, path: str | os.PathLike[str], options: DownloadOptions) -> None:
         """Raise what :meth:`download` would raise for ``path`` and ``options`` before its first
         request: bad options, no usable ffmpeg for ``.mp3``, an existing file."""
@@ -160,7 +177,11 @@ class DownloadService:
         for sidecar, _ in sidecars:
             _check_free(sidecar, options.overwrite, video_id)
         video_stream, audio_stream = choose_streams(
-            player.streams, container=container, quality=options.quality, video_id=video_id
+            player.streams,
+            container=container,
+            quality=options.quality,
+            resolution=options.resolution,
+            video_id=video_id,
         )
         streams = [stream for stream in (video_stream, audio_stream) if stream is not None]
         log.info(
