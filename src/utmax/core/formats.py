@@ -1,7 +1,9 @@
-"""Render transcripts as SRT, WebVTT, JSON, plain text or timestamped ("pretty") text."""
+"""Render transcripts as SRT, WebVTT, JSON, plain text or timestamped ("pretty") text, and read
+SRT and WebVTT text back into segments."""
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from collections.abc import Callable, Sequence
@@ -9,13 +11,14 @@ from dataclasses import dataclass
 from os import PathLike
 from pathlib import PurePath
 
-from utmax.errors import UnsupportedFormat
+from utmax.errors import InvalidOption, UnsupportedFormat
 from utmax.models import FormatName, Segment, Transcript
 
 __all__ = [
     "EXTENSIONS",
     "FORMATS",
     "format_for_path",
+    "parse_subtitles",
     "render",
     "to_bilingual_text",
     "to_json",
@@ -29,6 +32,12 @@ FORMATS: tuple[FormatName, ...] = ("srt", "vtt", "json", "txt", "pretty")
 EXTENSIONS: dict[str, FormatName] = {".srt": "srt", ".vtt": "vtt", ".json": "json", ".txt": "txt"}
 
 _ALLOWED_VTT_TAG = re.compile(r"&lt;(/?)([biu])&gt;")
+_TIMING = re.compile(
+    r"\s*(?P<start>(?:\d+:)?\d{1,2}:\d{1,2}[,.]\d{1,3})\s*-->\s*"
+    r"(?P<end>(?:\d+:)?\d{1,2}:\d{1,2}[,.]\d{1,3})"
+)
+# WebVTT tags other than <b>, <i> and <u>: voices, classes, timestamps.
+_OTHER_VTT_TAG = re.compile(r"<(?!/?[biu]>)[^>]*>")
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +143,57 @@ def to_pretty(segments: Sequence[Segment]) -> str:
         indent = " " * (len(stamp) + 1)
         lines.extend(f"{indent}{line}" for line in text_lines[1:])
     return "\n".join(lines) + "\n"
+
+
+def parse_subtitles(text: str) -> tuple[Segment, ...]:
+    """Segments from SubRip (SRT) or WebVTT text, in cue order.
+
+    Cue numbers and identifiers, WebVTT headers, ``NOTE``/``STYLE``/``REGION`` blocks, cue
+    settings and WebVTT tags other than ``<b>``, ``<i>`` and ``<u>`` are left out; the lines of
+    a cue stay separate lines. Any line endings, a byte-order mark and a missing blank line
+    between cues are fine. A cue that ends before it starts lasts no time.
+
+    Raises:
+        InvalidOption: the text holds no subtitle cue.
+    """
+    lines = text.removeprefix("\U0000feff").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    webvtt = lines[0].startswith("WEBVTT")
+    segments: list[Segment] = []
+    index = 0
+    while index < len(lines):
+        timing = _TIMING.match(lines[index])
+        index += 1
+        if timing is None:
+            continue
+        body: list[str] = []
+        while index < len(lines) and lines[index].strip() and not _starts_cue(lines, index):
+            body.append(lines[index].strip())
+            index += 1
+        cue = "\n".join(body)
+        if webvtt:
+            cue = html.unescape(_OTHER_VTT_TAG.sub("", cue))
+        start, end = _milliseconds(timing["start"]), _milliseconds(timing["end"])
+        segments.append(Segment(start / 1000, max(0, end - start) / 1000, cue))
+    if not segments:
+        raise InvalidOption("The text holds no subtitle cue; utmax reads SRT and WebVTT.")
+    return tuple(segments)
+
+
+def _starts_cue(lines: list[str], index: int) -> bool:
+    """Whether ``lines[index]`` begins a cue: a timing line, or a number just before one."""
+    if _TIMING.match(lines[index]):
+        return True
+    following = lines[index + 1] if index + 1 < len(lines) else ""
+    return lines[index].strip().isdigit() and _TIMING.match(following) is not None
+
+
+def _milliseconds(stamp: str) -> int:
+    """``"01:02:03,450"`` or ``"02:03.45"`` in milliseconds."""
+    clock, fraction = re.split(r"[,.]", stamp)
+    seconds = 0
+    for part in clock.split(":"):
+        seconds = seconds * 60 + int(part)
+    return seconds * 1000 + int(fraction.ljust(3, "0"))
 
 
 def _cues(segments: Sequence[Segment]) -> list[_Cue]:

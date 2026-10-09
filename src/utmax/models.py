@@ -264,6 +264,38 @@ class Transcript(Sequence[Segment]):
         """True for bilingual transcripts such as ``en+tr``."""
         return "+" in self.language_code
 
+    @classmethod
+    def from_srt(
+        cls,
+        text: str,
+        language_code: str,
+        *,
+        video: VideoInfo,
+        language: str | None = None,
+        translated_from: str | None = None,
+        translator: str | None = None,
+    ) -> Transcript:
+        """A transcript of ``video`` from SRT or WebVTT text, such as a translation made elsewhere.
+
+        ``language`` defaults to the English name of ``language_code``. ``translator`` names
+        who or what translated the text (subtitle tracks show it) and marks it as generated.
+
+        Raises:
+            InvalidOption: the text holds no subtitle cue.
+        """
+        from utmax.core.formats import parse_subtitles
+        from utmax.core.languages import english_name
+
+        return cls(
+            video=video,
+            language_code=language_code,
+            language=language or english_name(language_code) or language_code,
+            is_generated=translator is not None,
+            segments=parse_subtitles(text),
+            translated_from=translated_from,
+            translator=translator,
+        )
+
     def to_dicts(self) -> list[dict[str, str | float]]:
         """``[{"text", "start", "duration"}, ...]`` like youtube-transcript-api's ``to_raw_data()``."""
         return [
