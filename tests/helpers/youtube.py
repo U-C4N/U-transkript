@@ -10,6 +10,12 @@ from tests.helpers.fake_transport import FakeTransport, json_response
 
 VIDEO_ID = "dQw4w9WgXcQ"
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "youtube"
+VISITOR_DATA = "CgtWaXNpdG9yRGF0YSiA"
+
+
+def visitor_payload(value: str = VISITOR_DATA) -> dict[str, Any]:
+    """The ``/youtubei/v1/visitor_id`` answer (only the field utmax reads)."""
+    return {"responseContext": {"visitorData": value}}
 
 
 def streaming_data() -> dict[str, Any]:

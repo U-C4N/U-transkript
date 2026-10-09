@@ -8,7 +8,13 @@ from typing import Any
 import pytest
 
 from tests.helpers.fake_transport import FakeTransport, json_response, text_response
-from tests.helpers.youtube import MANUAL_JSON3, VIDEO_ID, player_payload, streaming_data
+from tests.helpers.youtube import (
+    MANUAL_JSON3,
+    VIDEO_ID,
+    player_payload,
+    streaming_data,
+    visitor_payload,
+)
 from utmax.adapters.innertube import InnerTubeClient
 from utmax.core.clients import IOS
 from utmax.errors import (
@@ -28,11 +34,19 @@ CAPTION_URL = f"https://www.youtube.com/api/timedtext?v={VIDEO_ID}&lang=en&fmt=s
 
 
 def client_names(transport: FakeTransport) -> list[str]:
+    """The client of every player request, in order."""
     return [
         json.loads(r.body or b"{}")["context"]["client"]["clientName"]
         for r in transport.requests
-        if r.method == "POST"
+        if "/youtubei/v1/player" in r.url
     ]
+
+
+def stream_transport() -> FakeTransport:
+    """A transport that issues a visitorData, which the VISIONOS stream profile asks for."""
+    transport = FakeTransport()
+    transport.add("POST", "/youtubei/v1/visitor_id", json_response(visitor_payload()), repeat=True)
+    return transport
 
 
 def test_player_uses_the_first_profile_when_it_works() -> None:
@@ -213,7 +227,7 @@ def streams_payload(*, direct: bool) -> dict[str, Any]:
 
 
 def test_stream_players_skip_profiles_without_direct_mp4_urls() -> None:
-    transport = FakeTransport()
+    transport = stream_transport()
     transport.add(
         "POST",
         "/youtubei/v1/player",
@@ -221,19 +235,19 @@ def test_stream_players_skip_profiles_without_direct_mp4_urls() -> None:
         json_response(streams_payload(direct=True)),
     )
     player = InnerTubeClient(transport).player(VIDEO_ID, purpose="streams")
-    assert client_names(transport) == ["ANDROID_VR", "ANDROID"]
+    assert client_names(transport) == ["VISIONOS", "ANDROID_VR"]
     assert any(stream.url for stream in player.streams)
 
 
 def test_stream_players_fall_back_to_the_watch_page_then_give_up() -> None:
-    transport = FakeTransport()
+    transport = stream_transport()
     transport.add(
         "POST", "/youtubei/v1/player", json_response(streams_payload(direct=False)), repeat=True
     )
     transport.add("GET", "/watch", text_response(WATCH_HTML))
     with pytest.raises(YouTubeDataUnparsable, match="no direct MP4 stream URLs"):
         InnerTubeClient(transport).player(VIDEO_ID, purpose="streams")
-    assert client_names(transport) == ["ANDROID_VR", "ANDROID", "IOS", "ANDROID"]
+    assert client_names(transport) == ["VISIONOS", "ANDROID_VR", "ANDROID"]
 
 
 def test_caption_players_do_not_need_streams() -> None:
@@ -243,13 +257,15 @@ def test_caption_players_do_not_need_streams() -> None:
 
 
 def test_a_bot_check_on_one_stream_profile_moves_on_to_the_next() -> None:
+    """VISIONOS is asked twice (the second time with a new visitorData) before ANDROID_VR."""
     blocked = player_payload(status="LOGIN_REQUIRED", reason="Sign in to confirm you're not a bot")
-    transport = FakeTransport()
+    transport = stream_transport()
     transport.add(
         "POST",
         "/youtubei/v1/player",
         json_response(blocked),
+        json_response(blocked),
         json_response(streams_payload(direct=True)),
     )
     InnerTubeClient(transport).player(VIDEO_ID, purpose="streams")
-    assert client_names(transport) == ["ANDROID_VR", "ANDROID"]
+    assert client_names(transport) == ["VISIONOS", "VISIONOS", "ANDROID_VR"]

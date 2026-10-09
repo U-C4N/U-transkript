@@ -22,7 +22,9 @@ __all__ = [
 ]
 
 MIB = 1 << 20
-DEFAULT_CHUNK_SIZE = 8 * MIB
+# YouTube slows VISIONOS range requests of 8 MiB to about 150 KB/s after a burst, while 4 MiB
+# and smaller ones run at full speed (measured 2026-10-09); 2 MiB leaves a margin.
+DEFAULT_CHUNK_SIZE = 2 * MIB
 MIN_CHUNK_SIZE = 256 * 1024
 REFRESH_MARGIN = 300.0
 _STATE_VERSION = 1

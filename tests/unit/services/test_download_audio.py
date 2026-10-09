@@ -243,8 +243,10 @@ def test_cancel_during_mux_keeps_the_parts_for_a_resume(tmp_path: Path) -> None:
 
 def test_failed_downloads_keep_their_parts(tmp_path: Path) -> None:
     youtube = FakeYouTube()
-    youtube.media.expired.add("https://media.test/140?c=ANDROID_VR")
+    youtube.media.expired.add("https://media.test/140?c=VISIONOS")
     with pytest.raises(StreamForbidden):
         youtube.service().download(VIDEO_ID, tmp_path / "rick.m4a", DownloadOptions())
     assert (tmp_path / "rick.m4a.140.part").exists()
     assert (tmp_path / "rick.m4a.140.part.json").exists()
+    visitors = [url for url in youtube.api.urls("POST") if "/youtubei/v1/visitor_id" in url]
+    assert len(visitors) == 4  # the first visitor, then a new one for each of three refreshes

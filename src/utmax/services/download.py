@@ -175,7 +175,9 @@ class DownloadService:
             self._opener,
             connections=options.connections,
             chunk_size=options.chunk_size,
-            refresh=lambda: self._innertube.player(video_id, purpose="streams").streams,
+            refresh=lambda: (
+                self._innertube.player(video_id, purpose="streams", renew_visitor=True).streams
+            ),
             reporter=reporter,
             cancel=options.cancel,
         )

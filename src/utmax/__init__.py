@@ -373,7 +373,8 @@ def download(
         default_subtitle: the language code of the embedded track shown by default (else the
             first one).
         connections: parallel connections, 1 to 16.
-        chunk_size: bytes per range request, at least 256 KiB.
+        chunk_size: bytes per range request, at least 256 KiB (YouTube slows down larger
+            requests of 8 MiB, so the default is 2 MiB).
         resume: continue an interrupted download from its ``.part`` files.
         overwrite: replace existing files instead of raising :class:`OutputExists`.
         ffmpeg: the ffmpeg executable for ``.mp3`` (default: ``$UTMAX_FFMPEG``, then ``PATH``).

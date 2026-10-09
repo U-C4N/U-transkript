@@ -13,7 +13,7 @@ from typing import Any
 from tests.helpers.fake_media import FakeBody, FakeMedia
 from tests.helpers.fake_transport import FakeTransport, json_response
 from tests.helpers.fmp4_factory import Sample, Track, simple_file
-from tests.helpers.youtube import MANUAL_JSON3, json3_payload, player_payload
+from tests.helpers.youtube import MANUAL_JSON3, json3_payload, player_payload, visitor_payload
 from utmax.adapters.ffmpeg import FFmpeg
 from utmax.adapters.files import FileByteSource
 from utmax.adapters.innertube import InnerTubeClient
@@ -44,7 +44,7 @@ def _format(itag: int, mime: str, url: str, size: int, **fields: Any) -> dict[st
     return {
         "itag": itag,
         "mimeType": mime,
-        "url": f"{url}?c=ANDROID_VR",
+        "url": f"{url}?c=VISIONOS",
         "bitrate": 1000 * itag,
         "contentLength": str(size),
         "lastModified": LAST_MODIFIED,
@@ -90,6 +90,9 @@ class FakeYouTube:
     def __init__(self, *, captions: bool = True) -> None:
         self.media = FakeMedia()
         self.api = FakeTransport()
+        self.api.add(
+            "POST", "/youtubei/v1/visitor_id", json_response(visitor_payload()), repeat=True
+        )
         payload = player_payload(streaming_data=streaming_data_for(self.media), captions=captions)
         self.api.add("POST", "/youtubei/v1/player", json_response(payload), repeat=True)
         self.api.add("GET", "lang=en&fmt=json3", json_response(MANUAL_JSON3), repeat=True)

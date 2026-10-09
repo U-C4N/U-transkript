@@ -14,7 +14,7 @@ from typing import Any
 from tests.helpers.downloads import streaming_data_for
 from tests.helpers.fake_media import FakeBody, FakeMedia
 from tests.helpers.fake_transport import json_response
-from tests.helpers.youtube import MANUAL_JSON3, json3_payload, player_payload
+from tests.helpers.youtube import MANUAL_JSON3, json3_payload, player_payload, visitor_payload
 from utmax.adapters.innertube import InnerTubeClient
 from utmax.services.bulk import BulkService
 from utmax.services.download import DownloadService
@@ -52,6 +52,8 @@ class ManyVideos:
         self._lock = threading.Lock()
 
     def send(self, request: HttpRequest) -> HttpResponse:
+        if "/youtubei/v1/visitor_id" in request.url:
+            return json_response(visitor_payload())
         if "/youtubei/v1/player" in request.url:
             video_id = json.loads(request.body or b"{}")["videoId"]
             with self._lock:

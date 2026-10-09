@@ -5,15 +5,24 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from collections.abc import Callable
 from functools import partial
 from typing import Any, TypeVar
 
 from utmax.adapters.watch_page import fetch_api_key
 from utmax.core.captions import caption_url, check_caption_url
-from utmax.core.clients import ANDROID, DESKTOP_USER_AGENT, ORDER, ClientProfile, Purpose
+from utmax.core.clients import (
+    ANDROID,
+    DESKTOP_USER_AGENT,
+    ORDER,
+    VISIONOS,
+    ClientProfile,
+    Purpose,
+)
 from utmax.core.playability import check_playability
 from utmax.core.player import PlayerData, parse_player_response
+from utmax.core.ytdata import mapping
 from utmax.errors import (
     IpBlocked,
     RequestBlocked,
@@ -34,24 +43,36 @@ _HTTP_LEVEL_FAILURES = (YouTubeRequestFailed, YouTubeDataUnparsable)
 
 
 class InnerTubeClient:
-    """Talks to InnerTube with a chain of client profiles (see ``utmax.core.clients``)."""
+    """Talks to InnerTube with a chain of client profiles (see ``utmax.core.clients``).
+
+    Profiles that need a ``visitorData`` send the one this client asked YouTube for on first
+    use, shared by every thread; a bot check renews it once per player request.
+    """
 
     def __init__(self, transport: Transport, *, block_retries: int = 0) -> None:
         self._transport = transport
         self._block_retries = block_retries
+        self._visitor: str | None = None
+        self._visitor_lock = threading.Lock()
 
-    def player(self, video_id: str, *, purpose: Purpose = "captions") -> PlayerData:
+    def player(
+        self, video_id: str, *, purpose: Purpose = "captions", renew_visitor: bool = False
+    ) -> PlayerData:
         """A playable player response, trying each profile for ``purpose`` in order.
 
         For ``"streams"``, a response without a direct MP4 stream URL counts as a failed profile.
+        ``renew_visitor`` first asks YouTube for a new ``visitorData``: it restricts the streams
+        of some visitors, so a download that keeps meeting 403s refreshes as a new one.
         """
+        if renew_visitor:
+            self._renew_visitor_data(self._visitor)
         profiles = ORDER[purpose]
         failures: list[YouTubeError] = []
         http_failures = 0
         for profile in profiles:
             try:
                 return self._with_block_retries(
-                    partial(self._playable, profile, video_id, None, purpose=purpose)
+                    partial(self._playable_as_visitor, profile, video_id, purpose=purpose)
                 )
             except _HTTP_LEVEL_FAILURES as error:
                 http_failures += 1
@@ -70,21 +91,37 @@ class InnerTubeClient:
         raise failures[0]
 
     def player_json(
-        self, profile: ClientProfile, video_id: str, *, api_key: str | None = None
+        self,
+        profile: ClientProfile,
+        video_id: str,
+        *,
+        api_key: str | None = None,
+        visitor_data: str | None = None,
     ) -> dict[str, Any]:
         """The raw player response of one profile (low level; used by the fixture recorder)."""
         url = f"{API_BASE}/player?prettyPrint=false"
         if api_key is not None:
             url += f"&key={api_key}"
         payload = {
-            "context": profile.context_payload(),
+            "context": profile.context_payload(visitor_data),
             "videoId": video_id,
             "contentCheckOk": True,
             "racyCheckOk": True,
         }
         body = json.dumps(payload).encode("utf-8")
-        response = self._transport.send(HttpRequest("POST", url, profile.request_headers(), body))
+        headers = profile.request_headers(visitor_data)
+        response = self._transport.send(HttpRequest("POST", url, headers, body))
         return _json_object(response, video_id=video_id)
+
+    def visitor_data(self) -> str | None:
+        """The ``visitorData`` YouTube issued to this client, asked for on first use.
+
+        ``None`` when YouTube issued none; the next call asks again.
+        """
+        with self._visitor_lock:
+            if self._visitor is None:
+                self._visitor = self._new_visitor_data()
+            return self._visitor
 
     def browse(
         self,
@@ -126,10 +163,51 @@ class InnerTubeClient:
         response = self._transport.send(HttpRequest("POST", url, profile.request_headers(), body))
         return _json_object(response)
 
-    def _playable(
-        self, profile: ClientProfile, video_id: str, api_key: str | None, *, purpose: Purpose
+    def _new_visitor_data(self) -> str | None:
+        try:
+            data = self._post(VISIONOS, "visitor_id", {"context": VISIONOS.context_payload()})
+        except (YouTubeRequestFailed, YouTubeDataUnparsable) as error:
+            log.info("YouTube issued no visitorData: %s", error)
+            return None
+        value = mapping(data.get("responseContext")).get("visitorData")
+        return value if isinstance(value, str) and value else None
+
+    def _renew_visitor_data(self, seen: str | None) -> str | None:
+        """A new ``visitorData``, unless another thread already replaced ``seen``."""
+        with self._visitor_lock:
+            if self._visitor == seen:
+                self._visitor = self._new_visitor_data()
+            return self._visitor
+
+    def _playable_as_visitor(
+        self, profile: ClientProfile, video_id: str, *, purpose: Purpose
     ) -> PlayerData:
-        data = self.player_json(profile, video_id, api_key=api_key)
+        """``_playable`` for ``profile``; one that needs a ``visitorData`` and meets a bot check
+        tries once more with a new one."""
+        if not profile.needs_visitor:
+            return self._playable(profile, video_id, None, purpose=purpose)
+        visitor = self.visitor_data()
+        try:
+            return self._playable(profile, video_id, None, purpose=purpose, visitor_data=visitor)
+        except RequestBlocked as error:
+            if isinstance(error, IpBlocked):
+                raise
+            log.info(
+                "%s met a bot check for %s; asking for a new visitorData", profile.name, video_id
+            )
+            visitor = self._renew_visitor_data(visitor)
+            return self._playable(profile, video_id, None, purpose=purpose, visitor_data=visitor)
+
+    def _playable(
+        self,
+        profile: ClientProfile,
+        video_id: str,
+        api_key: str | None,
+        *,
+        purpose: Purpose,
+        visitor_data: str | None = None,
+    ) -> PlayerData:
+        data = self.player_json(profile, video_id, api_key=api_key, visitor_data=visitor_data)
         player = parse_player_response(data, video_id=video_id)
         check_playability(player.playability, video_id=video_id)
         if purpose == "streams" and not any(

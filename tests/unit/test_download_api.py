@@ -62,7 +62,7 @@ def test_the_facade_uses_the_default_client(
 def test_download_signature_matches_the_spec() -> None:
     parameters = inspect.signature(utmax.download).parameters
     assert list(parameters) == PARAMETERS
-    assert parameters["chunk_size"].default == 8 * 2**20
+    assert parameters["chunk_size"].default == 2 * 2**20
     assert (parameters["quality"].default, parameters["subtitle_mode"].default) == (
         "compat",
         "embed",

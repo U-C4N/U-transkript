@@ -36,7 +36,8 @@ def test_mp4_downloads_embed_the_spoken_language_by_default(tmp_path: Path) -> N
     assert [len(track.samples) for track in movie.tracks[:2]] == [100, 172]
     subtitle = movie.tracks[2]
     assert (subtitle.extended_language, subtitle.name, subtitle.flags & 1) == ("en", "English", 1)
-    assert len(youtube.api.urls("POST")) == 1  # one player response serves streams and captions
+    players = [url for url in youtube.api.urls("POST") if "/youtubei/v1/player" in url]
+    assert len(players) == 1  # one player response serves streams and captions
 
 
 def test_an_empty_subtitle_list_embeds_nothing(tmp_path: Path) -> None:
