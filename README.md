@@ -33,7 +33,7 @@ transcript.save("rick.srt")  # also .vtt, .json and .txt
 turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5-5")  # needs [claude]
 utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
-utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 up to 1080p with English subtitles
+utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best MP4 (AV1 or H.264) with English subtitles
 videos = utmax.list_videos("@RickAstleyYT", kind="videos", limit=20)
 ```
 
@@ -45,9 +45,11 @@ from utmax.compat import YouTubeTranscriptApi
 
 ## MCP server
 
-`utmax-mcp` gives an AI assistant four tools: `list_tracks`, `get_transcript`, `list_videos`
-and `download`. It needs no API key: ask for a translation and the assistant translates the
-transcript itself. The commands below start it with `uvx` from
+`utmax-mcp` gives an AI assistant six tools: `list_tracks`, `get_transcript`, `list_formats`,
+`list_videos`, `download` and `save_subtitles`. It needs no API key. Ask it to download a video
+and the assistant asks which file type, which of the video's resolutions and which subtitles
+(original or translated) you want; ask for a translation and it translates the subtitles
+itself. The commands below start it with `uvx` from
 [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs it from PyPI;
 `@latest` makes it move to each new release the next time the client starts the server.
 

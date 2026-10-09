@@ -25,7 +25,7 @@ architecture; green quality gates; a minimal, beautiful README with an ASCII arc
 | Dependencies | Core: stdlib only. Extras: `claude` (anthropic), `openai`, `gemini` (google-genai), `openrouter` (= openai SDK), `ai` (all), `mcp` |
 | v0.1.0 scope | Transcripts · AI translation · bilingual subtitles · downloads · playlist/channel bulk · compat layer · MCP server |
 | Audio | `.m4a` (AAC, native, zero deps) always; `.mp3` only when an `ffmpeg` executable is found, else typed error + hint |
-| Video | `.mp4` / `.mov` with audio + subtitles; default best **H.264 ≤ 1080p**; `quality="max"` → **AV1 ≤ 2160p** (`.mp4` only) |
+| Video | `.mp4` / `.mov` with audio + subtitles; `quality="best"` (default since M8) takes the largest picture the file type holds (`.mp4`: AV1 or H.264, up to 8K, HDR AV1 included), `resolution` caps it; `"compat"` → **H.264 ≤ 1080p** |
 | Merging | **Own pure-Python MP4/MOV muxer** (no ffmpeg); WebM/VP9 sources not supported |
 | Subtitles in video | Embedded soft toggleable tx3g track(s) (multi-language, translations, bilingual) and/or sidecar `.srt` |
 | Subtitle default | Video downloads embed the spoken-language track (manual preferred); `subtitles=[]` disables; explicit list overrides; sidecars only on request |
@@ -41,7 +41,7 @@ architecture; green quality gates; a minimal, beautiful README with an ASCII arc
 | Docs | Spec + milestone plans committed under `docs/design/` |
 | Extension | After the library; own spec→plan cycle; reuses `core/translate/data/*`; subtitle/translation only (Web Store bans YouTube downloaders) |
 | Defaults (mine) | Python ≥ 3.11 · hatchling + uv · ruff + mypy --strict + pytest (coverage ≥ 90 %, branch) · CI Linux/Windows (+macOS 3.14) · nightly live tests · Trusted Publishing, publish only on user approval |
-| Small calls (mine) | `quality="max"` + `.mov` → `InvalidOption` · MCP download dir default `~/Downloads/utmax` · OpenRouter via openai SDK (official SDK pins `pydantic<2.13`) |
+| Small calls (mine) | `.mov` holds H.264 only · MCP download dir default `~/Downloads/utmax` · OpenRouter via openai SDK (official SDK pins `pydantic<2.13`) |
 
 ## 2. Verified facts (stdlib-only probes, 2026-09-27)
 
@@ -151,10 +151,12 @@ video_info(video) -> VideoInfo
 translator(model: str, **options) -> Translator                      # "provider=model-id"
 translate(transcript, to, *, model: str | Translator, instructions=None, resegment=None, **options) -> Transcript
 bilingual(original, translation, *, translation_first=False) -> Transcript
-download(video, path, *, format: Container | None = None, quality: Literal["compat", "max"] = "compat",
+list_formats(video) -> FormatList                                   # the streams a download can choose from
+download(video, path, *, format: Container | None = None, quality: Literal["best", "compat"] = "best",
+         resolution: int | None = None,                                 # at most this many lines (short side)
          subtitles: Sequence[str | Transcript] | None = None,          # None = spoken-language track; [] = none
          subtitle_mode: Literal["embed", "sidecar", "both"] = "embed", default_subtitle=None,
-         connections=4, chunk_size=8 * 2**20, resume=True, overwrite=False, ffmpeg=None,
+         connections=4, chunk_size=2 * 2**20, resume=True, overwrite=False, ffmpeg=None,
          progress: Callable[[Progress], None] | None = None, cancel: threading.Event | None = None) -> DownloadResult
 list_videos(source, *, kind: Literal["all", "videos", "shorts", "live"] | None = None,  # None: a channel
             limit=None) -> VideoList                                    # link's tab (/videos /shorts /streams), else all
@@ -165,7 +167,8 @@ translate_many(videos, to, *, model: str | Translator, out_dir=None, format: For
                bilingual=False, instructions=None, resegment=None, concurrency=2, skip_existing=True,
                filename="{video_id}.{language_code}.{ext}", progress=None,
                **options) -> BulkReport[Transcript]                   # files named by target (or src+dst) language
-download_many(videos, out_dir, *, format: Container = "mp4", quality="compat", subtitles: Sequence[str] | None = None,
+download_many(videos, out_dir, *, format: Container = "mp4", quality="best", resolution=None,
+              subtitles: Sequence[str] | None = None,
               subtitle_mode="embed", concurrency=2, skip_existing=True, filename="{title} [{video_id}].{ext}",
               ffmpeg=None, progress=None) -> BulkReport[DownloadResult]
 # out_dir=None → results in memory only; progress callbacks receive one BulkResult per finished item, and an
@@ -183,7 +186,7 @@ t.save("rick.srt"); t.save("rick.txt", format="pretty")
 tr = utmax.translate(t, "tr", model="claude=claude-opus-5")
 tr = utmax.translate(t, "tr", model="openai=llama3.1:8b", base_url="http://localhost:11434/v1")  # Ollama, free
 utmax.bilingual(t, tr).save("rick.en+tr.vtt")            # every format works for translations
-utmax.download("dQw4w9WgXcQ", "rick.mp4")                # H.264 ≤1080p + AAC + embedded English track
+utmax.download("dQw4w9WgXcQ", "rick.mp4")                # best MP4 (AV1 4K) + AAC + embedded English track
 utmax.download("dQw4w9WgXcQ", "rick.mov", subtitles=[t, tr], subtitle_mode="both")
 utmax.download("dQw4w9WgXcQ", "rick.m4a"); utmax.download("dQw4w9WgXcQ", "rick.mp3")  # mp3 needs ffmpeg
 vids = utmax.list_videos("https://www.youtube.com/@RickAstleyYT", kind="videos", limit=100)
@@ -202,7 +205,9 @@ from utmax.compat import YouTubeTranscriptApi           # one-line migration
   translator, source` (1:1 source cues of an AI translation; not compared); `text`, `to(format)`, `to_srt/…`,
   `to_dicts()`, `save(path, format=None) -> Path`, `merge_sentences()`, `is_bilingual` (`"+"` in code).
 - `Format(itag, kind: video|audio, container: mp4|webm, codec: h264|av1|vp9|aac|he-aac|opus, codecs, width,
-  height, fps, bitrate, content_length, audio_sample_rate, audio_channels, is_default_audio, is_drc)` ·
+  height, fps, bitrate, content_length, audio_sample_rate, audio_channels, is_default_audio, is_drc, last_modified,
+  hdr, bit_depth, language, is_original)` (`language`/`is_original`: audio tracks of dubbed videos) ·
+  `FormatList(Sequence[Format])`: `video, formats` ·
   `Progress(video_id, phase, bytes_done, bytes_total, speed_bps, eta_seconds)` ·
   `DownloadResult(path, video, container, video_format, audio_format, embedded_subtitles, sidecars, size_bytes, resumed)`
 - `VideoEntry(video_id, title, duration, channel, channel_id, index)` (+`url`; `duration` is `None` when YouTube
@@ -228,8 +233,8 @@ model-id (first `=` only) else `InvalidModelSpec`; `base_url` with non-`openai` 
 
 | Target | Result |
 |---|---|
-| `.mp4` | best H.264 ≤1080p (`max`: AV1/H.264 ≤2160p, 8-bit) + AAC; tx3g tracks when mode includes embed |
-| `.mov` | same H.264 + AAC, QuickTime flavor; `quality="max"` → `InvalidOption` |
+| `.mp4` | `best`: the largest AV1 or H.264 picture (HDR where it is the only way to a larger one) + AAC; `compat`: H.264 ≤1080p; tx3g tracks when mode includes embed |
+| `.mov` | H.264 + AAC, QuickTime flavor |
 | `.m4a` | AAC (itag 140 preferred) remuxed to non-fragmented M4A; subtitles only as sidecars |
 | `.mp3` | AAC → ffmpeg `libmp3lame -q:a 2`; `FFmpegNotFound` with install hint |
 | directory / trailing separator | `format` (default mp4) + `"{title} [{video_id}].{ext}"` (sanitized) |
@@ -277,8 +282,15 @@ model-id (first `=` only) else `InvalidModelSpec`; `base_url` with non-`openai` 
 |---|---|---|
 | `list_tracks` | `video` | video (id, title, channel, channel_id, duration_seconds, url) + tracks (code, name, is_generated, is_translatable) |
 | `get_transcript` | `video, languages=None, format="txt", source="any", offset=0, max_chars=None` | video_id, title, language_code, language, is_generated, format, content, total_chars, offset, next_offset |
+| `list_formats` | `video` | video + file_types + resolutions[] (resolution label, height, fps, hdr, file_types), largest first |
 | `list_videos` | `source, kind=None (the link's tab, else all), limit=50 (1..5000)` | title, source_id, kind, count, videos[] |
-| `download` | `video, format="mp4", quality="compat", subtitles=None, subtitle_mode="embed"` | path, size_bytes, video_id, title, container, embedded_subtitles, sidecars, skipped |
+| `download` | `video, format="mp4", quality="best", resolution=None, subtitles=None, translated_subtitles=None ([{language, srt}]), subtitle_mode="embed", overwrite=False` | path, size_bytes, video_id, title, container, embedded_subtitles, sidecars, skipped |
+| `save_subtitles` | `video, languages=None, source="any", translated_srt=None, translated_language=None, format="srt"` | path, video_id, title, language_code, language, format, cues |
+
+Since M8 the instructions describe the conversation: on "download this" the assistant calls `list_formats`, asks
+for the file type, a resolution the video has and the subtitles (original, translated by itself, or none) unless
+the user already said, then calls `download`; `save_subtitles` saves subtitles alone (see
+`2026-10-09-high-quality-downloads-design.md`).
 
 The server calls no AI provider and needs no API key (user's decision, 2026-10-08): its instructions tell the
 assistant to translate the text lines of an srt or vtt transcript itself; AI translation with keys stays in the
@@ -305,7 +317,8 @@ playlists, which are not supported yet); a single video → `InvalidSource` poin
 `com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip`), IOS `20.10.4`, ANDROID_VR `1.62.27` (Oculus
 Quest 3), WEB `2.20260925.01.00`. `POST /youtubei/v1/{player|browse|navigation/resolve_url}?prettyPrint=false`, no
 key, headers UA + `X-YouTube-Client-Name/Version` + `Accept-Language: en-US` + gzip. Fallback orders:
-`captions: ANDROID→IOS→ANDROID_VR`, `streams: ANDROID_VR→ANDROID→IOS`, `browse/resolve: ANDROID_VR→WEB`. Next
+`captions: ANDROID→IOS→ANDROID_VR`, `streams: VISIONOS→ANDROID_VR` (since M8; VISIONOS `1.02` sends a
+`visitorData` from `visitor_id`, renewed after a bot check or a 403 refresh), `browse/resolve: ANDROID_VR→WEB`. Next
 profile on 4xx≠429, non-JSON, UNPLAYABLE, or no direct-URL MP4 formats (streams); final on 429 (`IpBlocked`),
 "unavailable" (`VideoUnavailable`), age gate (`AgeRestricted`). All profiles fail at HTTP level → watch-page fallback
 once (per-call consent cookie, `INNERTUBE_API_KEY`, reCAPTCHA → `IpBlocked`). A download reuses its player response
@@ -348,11 +361,14 @@ Missing SDK → `ProviderNotInstalled` with `pip install "u-transcript-max[<extr
 **Bilingual**: zip 1:1 with `translation.source` when present, else align by segment midpoints; text
 `orig + "\n" + trans`; code `"en+tr"`, name `"English + Turkish"`.
 
-**Stream selection**: exclude ciphered, DRM, WebM/VP9/Opus, HDR/10-bit, itag 18. `compat`: MP4 `avc1` ≤1080p by
-(height, fps, bitrate). `max`: MP4 `avc1` or 8-bit `av01` ≤2160p, AV1 preferred at equal height. Audio: MP4 AAC,
-default track, non-DRC, highest bitrate (140 > 139). None eligible → `FormatNotAvailable(reason, available)`.
+**Stream selection** (since M8): exclude ciphered, DRM, live, progressive and unknown codecs; the file type decides
+the rest. `best`: the largest short side ≤ `resolution` among the codecs the file holds (`.mp4` AV1/H.264, `.mov`
+H.264), then fps, SDR over HDR, AV1 over H.264, bitrate. `compat`: SDR `avc1` ≤1080p. Audio: AAC, the original
+track of a dubbed video, then the default track, non-DRC, highest bitrate (140 > 139). None eligible →
+`FormatNotAvailable(reason, available)`.
 
-**Downloader**: size from `content_length` or first 206 `Content-Range`; 8 MiB chunks in an ascending FIFO shared by
+**Downloader**: size from `content_length` or first 206 `Content-Range`; 2 MiB chunks (YouTube slows 8 MiB ranges of
+VISIONOS down to ~150 KB/s) in an ascending FIFO shared by
 video+audio, 4 connections, single GET under 2 chunks; `<target>.<itag>.part` + `.part.json` state
 (`video_id, itag, content_length, last_modified, chunk_size, completed[]`, atomic, throttled). Workers use own `r+b`
 handles, 256 KiB reads, short-read retry. Resume: fresh player response, match by itag + size + lmt, else restart.

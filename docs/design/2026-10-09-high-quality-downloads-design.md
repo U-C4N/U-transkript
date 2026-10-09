@@ -46,7 +46,11 @@ The server's instructions spell this flow out so Claude, Codex and other clients
 - `adapters/innertube.py`: a visitor session per `InnerTubeClient`: the first request fetches
   `visitorData` once (thread-safe) through `visitor_id`; every InnerTube request sends it as
   `context.client.visitorData` and `X-Goog-Visitor-Id`. A bot-check answer renews it once and
-  retries. The PO-token probe of the downloader stays as a safety net.
+  retries, and a download that refreshes its URLs after a 403 asks as a new visitor (YouTube
+  restricted the streams of about one fresh visitor in six). The PO-token probe of the
+  downloader stays as a safety net.
+- Downloads use 2 MiB ranges: YouTube slowed 8 MiB ranges of VISIONOS to about 150 KB/s after a
+  burst, while 4 MiB and smaller ones kept full speed.
 
 ### Formats and selection
 - `Format` gains `hdr`, `bit_depth`, `language` (of an audio track) and `is_original` (the
@@ -94,10 +98,13 @@ The server's instructions spell this flow out so Claude, Codex and other clients
 
 ### Tests
 - Fake-transport tests for the visitor session (one fetch, header and context, renewal on a
-  bot check), the VISIONOS profile and the stream order; a recorded, redacted VISIONOS player
-  response of a dubbed HDR video; selection tables for every target, quality and resolution;
-  SRT/VTT parsing; MCP tools in memory (flow, errors, paths inside the download folder).
-- Live: the ten-video reach test; a 4K `.mp4` and a `resolution=720` download with ffprobe.
+  bot check or a download's 403 refresh, threads sharing one value), the VISIONOS profile and
+  the stream order; selection tables for every target, quality and resolution on payloads
+  shaped like the 2026-10-09 VISIONOS answers (dubbed audio tracks, HDR AV1); SRT/VTT parsing;
+  MCP tools in memory (flow, errors, paths inside the download folder).
+- Live: three videos (two met the bot check without a visitorData) list their formats; a
+  `resolution=144` download of a dubbed video keeps its original audio; a 4K HDR `.mp4` is
+  checked by hand with ffprobe.
 
 ## 4. M9 — MKV and WebM (0.1.0a5)
 
