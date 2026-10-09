@@ -527,7 +527,7 @@ only), 10-bit/HDR AV1, VP9/WebM sources, REST API, CLI.
 - Live: `uv run pytest -m live` (transcripts, tracks, playlist/channel, m4a, small mp4 + ffprobe).
 - Manual before 0.1.0: translate with the user's keys (Claude, OpenAI/Ollama, Gemini, OpenRouter) and save all
   formats + bilingual; download `.mp4` (default, embedded English track toggles in VLC/QuickTime), `.mov`,
-  `.m4a`, `.mp3` (ffmpeg); `quality="max"` 4K AV1; interrupt and resume a download; `fetch_many` on a small
+  `.m4a`, `.mp3` (ffmpeg); 4K AV1 (`quality="best"`); interrupt and resume a download; `fetch_many` on a small
   playlist; a youtube-transcript-api script switched by one import; `utmax.compat.install()` with a LangChain-style
   import; `utmax-mcp` registered in Claude Code, all 4 tools called; Windows cp1254 console shows no crash.
 - Packaging: `uv build` + `twine check`; `pip install dist/*.whl` in a clean venv → `import utmax` pulls no

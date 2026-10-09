@@ -224,3 +224,91 @@ def test_save_subtitles_needs_the_language_of_a_translation(tmp_path: Path) -> N
 
     assert "translated_language" in error_text(result)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_language_codes_cannot_steer_files_out_of_the_download_folder(tmp_path: Path) -> None:
+    folder = tmp_path / "downloads"
+    server = build_server(Client(transport=FakeYouTube()), Config(download_dir=folder))
+    escape = "tr/../../escaped"
+
+    saved = call(
+        server,
+        "save_subtitles",
+        {"video": VIDEO_ID, "translated_srt": TURKISH, "translated_language": escape},
+    )
+    embedded = call(
+        server,
+        "download",
+        {"video": VIDEO_ID, "translated_subtitles": [{"language": escape, "srt": TURKISH}]},
+    )
+
+    assert saved.is_error is True
+    assert embedded.is_error is True
+    assert [path for path in tmp_path.rglob("*") if path.is_file()] == []
+
+
+def test_regional_language_codes_name_the_file(tmp_path: Path) -> None:
+    server = build_server(Client(transport=FakeYouTube()), Config(download_dir=tmp_path))
+
+    result = output(
+        call(
+            server,
+            "save_subtitles",
+            {"video": VIDEO_ID, "translated_srt": TURKISH, "translated_language": "pt-BR"},
+        )
+    )
+
+    assert result["path"] == str(tmp_path / f"{RICK} [{VIDEO_ID}].pt-BR.srt")
+
+
+def test_translations_become_files_next_to_audio_and_in_sidecar_mode(tmp_path: Path) -> None:
+    server = build_server(Client(transport=FakeYouTube()), Config(download_dir=tmp_path))
+    translated = [{"language": "tr", "srt": TURKISH}]
+    sidecar = str(tmp_path / f"{RICK} [{VIDEO_ID}].tr.srt")
+
+    audio = output(
+        call(
+            server,
+            "download",
+            {"video": VIDEO_ID, "format": "m4a", "translated_subtitles": translated},
+        )
+    )
+    video = output(
+        call(
+            server,
+            "download",
+            {"video": VIDEO_ID, "subtitle_mode": "sidecar", "translated_subtitles": translated},
+        )
+    )
+
+    assert (audio["embedded_subtitles"], audio["sidecars"]) == ([], [sidecar])
+    assert (video["embedded_subtitles"], video["sidecars"]) == ([], [sidecar])
+
+
+def test_a_resolution_lists_the_picture_download_takes_for_each_file_type() -> None:
+    info = VideoInfo("abcdefghijk", "Clip", "Channel", "UC", 60.0, False)
+    same_height = FormatList(
+        info,
+        (
+            video(699, "av1", 1080, fps=60, hdr=True),
+            video(399, "av1", 1080, fps=60),
+            video(299, "h264", 1080, fps=60),
+            Format(140, "audio", "mp4", "aac", "mp4a.40.2"),
+        ),
+    )
+    differing = FormatList(
+        info,
+        (
+            video(399, "av1", 1080, fps=60),
+            video(137, "h264", 1080, fps=30),
+            Format(140, "audio", "mp4", "aac", "mp4a.40.2"),
+        ),
+    )
+
+    assert [(r.resolution, r.file_types) for r in formats_out(same_height).resolutions] == [
+        ("1080p60", ["mp4", "mov"])
+    ]
+    assert [(r.resolution, r.file_types) for r in formats_out(differing).resolutions] == [
+        ("1080p60", ["mp4"]),
+        ("1080p", ["mov"]),
+    ]

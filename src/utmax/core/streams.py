@@ -27,6 +27,7 @@ __all__ = [
     "describe_stream",
     "file_types",
     "parse_streams",
+    "pick_video",
 ]
 
 COMPAT_MAX_SIDE = 1080
@@ -82,7 +83,7 @@ def parse_streams(streaming_data: Mapping[str, Any]) -> tuple[Stream, ...]:
 
 
 def describe_stream(stream: Stream) -> str:
-    """``"313 webm vp9 2160p25 (WebM)"``: the label, plus why the stream cannot be used."""
+    """``"137 mp4 h264 1080p25 (DRM-protected)"``: the label, plus why the stream cannot be used."""
     problem = stream.problem
     return stream.format.label if problem is None else f"{stream.format.label} ({problem})"
 
@@ -127,38 +128,56 @@ def choose_streams(
         raise _not_available(streams, wanted, video_id)
     if container in ("m4a", "mp3"):
         return None, audio
-    codecs = ("h264",) if quality == "compat" else _VIDEO_CODECS[container]
-    limit = resolution
-    if quality == "compat":
-        limit = min(resolution or COMPAT_MAX_SIDE, COMPAT_MAX_SIDE)
-    video = _best_video(usable, codecs, limit, sdr_only=quality == "compat")
-    if video is None:
+    picked = pick_video(
+        [stream.format for stream in usable],
+        container=container,
+        quality=quality,
+        resolution=resolution,
+    )
+    if picked is None:
+        codecs, limit = _video_rule(container, quality, resolution)
         raise _not_available(streams, _wanted_video(container, codecs, limit), video_id)
-    return video, audio
+    return next(stream for stream in usable if stream.format is picked), audio
 
 
-def _best_video(
-    streams: Sequence[Stream], codecs: tuple[Codec, ...], limit: int | None, *, sdr_only: bool
-) -> Stream | None:
+def pick_video(
+    formats: Sequence[Format],
+    *,
+    container: Container,
+    quality: Quality = "best",
+    resolution: int | None = None,
+) -> Format | None:
+    """The video format a download into ``container`` takes, by :func:`choose_streams`' rules;
+    ``None`` when none fits (and for audio file types)."""
+    codecs, limit = _video_rule(container, quality, resolution)
     candidates = [
-        stream
-        for stream in streams
-        if stream.format.kind == "video"
-        and stream.format.codec in codecs
-        and 0 < _short_side(stream.format) <= (limit or _short_side(stream.format))
-        and not (sdr_only and stream.format.hdr)
+        fmt
+        for fmt in formats
+        if fmt.kind == "video"
+        and fmt.codec in codecs
+        and 0 < _short_side(fmt) <= (limit or _short_side(fmt))
+        and not (quality == "compat" and fmt.hdr)
     ]
     return max(
         candidates,
-        key=lambda stream: (
-            _short_side(stream.format),
-            stream.format.fps or 0,
-            not stream.format.hdr,
-            -codecs.index(stream.format.codec),
-            stream.format.bitrate,
+        key=lambda fmt: (
+            _short_side(fmt),
+            fmt.fps or 0,
+            not fmt.hdr,
+            -codecs.index(fmt.codec),
+            fmt.bitrate,
         ),
         default=None,
     )
+
+
+def _video_rule(
+    container: Container, quality: Quality, resolution: int | None
+) -> tuple[tuple[Codec, ...], int | None]:
+    """The video codecs, in order of preference, and the size limit of a download."""
+    if quality == "compat":
+        return ("h264",), min(resolution or COMPAT_MAX_SIDE, COMPAT_MAX_SIDE)
+    return _VIDEO_CODECS.get(container, ()), resolution
 
 
 def _wanted_video(container: Container, codecs: tuple[Codec, ...], limit: int | None) -> str:

@@ -81,3 +81,13 @@ def test_transcript_from_srt_describes_the_translation() -> None:
         "00:00:01,000 --> 00:00:02,000\nx\n", "tr", video=VIDEO, language="Turkce"
     )
     assert named.language == "Turkce"
+
+
+def test_code_fences_and_a_leading_blank_line_are_ignored() -> None:
+    text = "\n```vtt\nWEBVTT\n\n00:01.000 --> 00:02.000\n<v Rick>Fish &amp; chips\n```\n"
+    assert parse_subtitles(text) == (Segment(1.0, 1.0, "Fish & chips"),)
+
+
+def test_subtitles_without_any_text_are_refused() -> None:
+    with pytest.raises(InvalidOption, match="no text"):
+        parse_subtitles("1\n00:00:01,000 --> 00:00:02,000\n\nMerhaba\n")

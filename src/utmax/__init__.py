@@ -10,7 +10,7 @@ Quick start::
     turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5")
     utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
-    utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 + AAC + English subtitles
+    utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best MP4 (AV1 or H.264), English subtitles
 
     videos = utmax.list_videos("@RickAstleyYT", kind="videos", limit=20)
     utmax.fetch_many(videos, out_dir="subs")  # one .srt per video
@@ -238,13 +238,14 @@ def list_tracks(video: str) -> TrackList:
 
 
 def list_formats(video: str) -> FormatList:
-    """The streams of a video that :func:`download` can choose from, in YouTube's order.
+    """The streams of a video utmax can download, in YouTube's order; :func:`download` picks
+    among those its file type holds (see :func:`utmax.core.streams.file_types`).
 
     Example::
 
         formats = utmax.list_formats("dQw4w9WgXcQ")
-        sizes = sorted({f.height for f in formats if f.kind == "video"}, reverse=True)
-        utmax.download("dQw4w9WgXcQ", "rick.mp4", resolution=sizes[1])
+        print([f.label for f in formats if f.kind == "video"])  # "401 mp4 av1 2160p25", ...
+        utmax.download("dQw4w9WgXcQ", "rick.mp4", resolution=720)  # lines of the short side
 
     Raises:
         InvalidVideoId: ``video`` is not a YouTube video URL or ID.
@@ -370,7 +371,7 @@ def download(
 
     Examples::
 
-        utmax.download("dQw4w9WgXcQ", "rick.mp4")  # H.264 up to 1080p, AAC, English subtitles
+        utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best AV1 or H.264, AAC, English subtitles
         utmax.download("dQw4w9WgXcQ", "rick.m4a")  # audio only; no ffmpeg needed
         utmax.download("dQw4w9WgXcQ", "videos/")  # the best MP4 (AV1 up to 8K), named by title
         utmax.download("dQw4w9WgXcQ", "rick.mp4", subtitles=[english, turkish])

@@ -184,3 +184,47 @@ def test_caption_requests_need_no_visitor_data() -> None:
     transport.add("POST", "/youtubei/v1/player", json_response(player_payload()))
     InnerTubeClient(transport).player(VIDEO_ID)
     assert [sent(request) for request in transport.requests] == [("ANDROID", None, None)]
+
+
+class FirstVisitorBlocked:
+    """Issues visitor-1, visitor-2, ...; answers players sent as visitor-1 with a bot check, once
+    ``threads`` of them are waiting, so that every thread meets it before any renews."""
+
+    def __init__(self, threads: int) -> None:
+        self.issued = 0
+        self._lock = threading.Lock()
+        self._all_blocked = threading.Barrier(threads, timeout=5)
+
+    def send(self, request: HttpRequest) -> Any:
+        if "/youtubei/v1/visitor_id" in request.url:
+            with self._lock:
+                self.issued += 1
+                return json_response(visitor_payload(f"visitor-{self.issued}"))
+        client = json.loads(request.body or b"{}")["context"]["client"]
+        if client.get("visitorData") == "visitor-1":
+            self._all_blocked.wait()
+            return json_response(BOT_CHECK)
+        return json_response(playable())
+
+
+def test_threads_that_meet_a_bot_check_renew_the_visitor_data_once() -> None:
+    transport = FirstVisitorBlocked(threads=8)
+    innertube = InnerTubeClient(transport)
+    barrier = threading.Barrier(8, timeout=5)
+    errors: list[BaseException] = []
+
+    def work() -> None:
+        try:
+            barrier.wait()
+            innertube.player(VIDEO_ID, purpose="streams")
+        except BaseException as error:  # pragma: no cover - reported below
+            errors.append(error)
+
+    threads = [threading.Thread(target=work) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert transport.issued == 2
+    assert innertube.visitor_data() == "visitor-2"

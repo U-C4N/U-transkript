@@ -14,6 +14,7 @@ from utmax.core.streams import (
     describe_stream,
     file_types,
     parse_streams,
+    pick_video,
 )
 from utmax.errors import FormatNotAvailable
 from utmax.models import Container, Format, Quality
@@ -396,3 +397,21 @@ def test_stream_reprs_hide_the_ip_bound_url() -> None:
     assert "googlevideo" in stream.url
     assert "googlevideo" not in repr(stream)
     assert "itag=137" in repr(stream)
+
+
+def test_pick_video_is_the_choice_of_choose_streams() -> None:
+    found = streams(
+        video(699, "av01.0.08M.10.0.110.09.16.09.0", 1920, 1080, fps=60, qualityLabel="HDR"),
+        video(399, "av01.0.08M.08", 1920, 1080, fps=60),
+        video(299, "avc1.64002a", 1920, 1080, fps=60),
+        audio(140),
+    )
+    formats = [stream.format for stream in found]
+    picked = pick_video(formats, container="mp4")
+    assert picked is not None
+    assert picked.itag == choose(found)[0] == 399
+    assert [
+        getattr(pick_video(formats, container=container, quality=quality), "itag", None)
+        for container, quality in (("mov", "best"), ("mp4", "compat"), ("m4a", "best"))
+    ] == [299, 299, None]
+    assert pick_video(formats, container="mp4", resolution=720) is None

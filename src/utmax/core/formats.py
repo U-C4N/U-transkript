@@ -150,14 +150,16 @@ def parse_subtitles(text: str) -> tuple[Segment, ...]:
 
     Cue numbers and identifiers, WebVTT headers, ``NOTE``/``STYLE``/``REGION`` blocks, cue
     settings and WebVTT tags other than ``<b>``, ``<i>`` and ``<u>`` are left out; the lines of
-    a cue stay separate lines. Any line endings, a byte-order mark and a missing blank line
-    between cues are fine. A cue that ends before it starts lasts no time.
+    a cue stay separate lines. Any line endings, a byte-order mark, a missing blank line between
+    cues and Markdown code fences (lines starting with three backticks, as assistants write) are
+    fine. A cue that ends before it starts lasts no time.
 
     Raises:
-        InvalidOption: the text holds no subtitle cue.
+        InvalidOption: the text holds no subtitle cue, or no cue holds any text.
     """
-    lines = text.removeprefix("\U0000feff").replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    webvtt = lines[0].startswith("WEBVTT")
+    text = text.removeprefix("\U0000feff").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line for line in text.split("\n") if not line.lstrip().startswith("```")]
+    webvtt = next((line for line in lines if line.strip()), "").lstrip().startswith("WEBVTT")
     segments: list[Segment] = []
     index = 0
     while index < len(lines):
@@ -176,6 +178,10 @@ def parse_subtitles(text: str) -> tuple[Segment, ...]:
         segments.append(Segment(start / 1000, max(0, end - start) / 1000, cue))
     if not segments:
         raise InvalidOption("The text holds no subtitle cue; utmax reads SRT and WebVTT.")
+    if not any(segment.text.strip() for segment in segments):
+        raise InvalidOption(
+            "The subtitles hold no text: put each cue's text right below its times."
+        )
     return tuple(segments)
 
 

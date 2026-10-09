@@ -32,14 +32,15 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from utmax import Client, __version__
-from utmax.core.filenames import default_filename
+from utmax.core.filenames import default_filename, safe_name
 from utmax.core.ids import parse_video_id
-from utmax.core.streams import file_types
+from utmax.core.streams import file_types, pick_video
 from utmax.errors import InvalidOption, UTMaxError
 from utmax.mcp.config import Config
 from utmax.models import (
     CollectionKind,
     Container,
+    Format,
     FormatList,
     FormatName,
     Progress,
@@ -185,8 +186,14 @@ ResolutionArg = Annotated[
 ]
 
 
+# A language code such as "tr", "pt-BR" or "zh-Hans": it ends up in file names.
+LANGUAGE_CODE = r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$"
+
+
 class TranslatedSubtitle(BaseModel):
-    language: str = Field(description='The language code of the translation, such as "tr".')
+    language: str = Field(
+        pattern=LANGUAGE_CODE, description='The language code of the translation, such as "tr".'
+    )
     srt: str = Field(description="The translated subtitles as SRT (or WebVTT) text.")
 
 
@@ -209,7 +216,7 @@ TranslatedSrtArg = Annotated[
 ]
 TranslatedLanguageArg = Annotated[
     str | None,
-    Field(description='The language code of translated_srt, such as "tr".'),
+    Field(pattern=LANGUAGE_CODE, description='The language code of translated_srt, such as "tr".'),
 ]
 SubtitleFileArg = Annotated[
     Literal["srt", "vtt"],
@@ -502,7 +509,9 @@ async def download_file(
     chosen: list[str | Transcript] | None = None if subtitles is None else list(subtitles)
     if translations:
         chosen = [*(chosen or ()), *translations]
-    shown = translations[0].language_code if translations else None
+    # The first translation is the track shown by default, where tracks are embedded at all.
+    embeds = format in ("mp4", "mov") and subtitle_mode != "sidecar"
+    shown = translations[0].language_code if translations and embeds else None
     token = anyio.lowlevel.current_token()
     cancel = threading.Event()
     counter = _Counter()
@@ -539,9 +548,9 @@ async def download_file(
                 skipped=True,
             )
         directory.mkdir(parents=True, exist_ok=True)
-        # The search above already kept a finished download. What is left in the way is a
-        # subtitle file of an earlier download, which this one replaces: the tool has no
-        # overwrite argument for the model to follow utmax's suggestion with.
+        # The search above already kept a finished download unless overwrite was asked for.
+        # What is left in the way is a subtitle file of an earlier download (or the file to
+        # replace), which this download replaces.
         result = client.download(
             video_id,
             directory,
@@ -610,28 +619,30 @@ def transcript_out(
 
 
 def formats_out(formats: FormatList) -> FormatsOut:
-    """The ``list_formats`` output: the file types and resolutions ``formats`` allow.
+    """The ``list_formats`` output: the file types ``formats`` allow and, for each height, the
+    picture ``download(resolution=height)`` takes for each video file type.
 
     Video file types need AAC audio too, so a video without it offers none.
     """
     order: tuple[Container, ...] = ("mp4", "mov", "m4a", "mp3")
     has_audio = any(fmt.kind == "audio" and file_types(fmt) for fmt in formats)
-    pictures: dict[tuple[int, int | None, bool], set[Container]] = {}
-    for fmt in formats:
-        side = min((n for n in (fmt.width, fmt.height) if n), default=0)
-        if has_audio and fmt.kind == "video" and side and file_types(fmt):
-            pictures.setdefault((side, fmt.fps, fmt.hdr), set()).update(file_types(fmt))
+    videos = [fmt for fmt in formats if fmt.kind == "video" and file_types(fmt)]
+    heights = sorted({_short_side(fmt) for fmt in videos} - {0}, reverse=True)
+    pictures: dict[tuple[int, int | None, bool], list[Container]] = {}
+    for height in heights if has_audio else ():
+        for kind in ("mp4", "mov"):
+            picked = pick_video(videos, container=kind, resolution=height)
+            if picked is not None and _short_side(picked) == height:
+                pictures.setdefault((height, picked.fps, picked.hdr), []).append(kind)
     resolutions = [
         ResolutionOut(
             resolution=_resolution_label(side, fps, hdr),
             height=side,
             fps=fps,
             hdr=hdr,
-            file_types=[kind for kind in order if kind in kinds],
+            file_types=kinds,
         )
-        for (side, fps, hdr), kinds in sorted(
-            pictures.items(), key=lambda item: (item[0][0], item[0][1] or 0, not item[0][2])
-        )[::-1]
+        for (side, fps, hdr), kinds in pictures.items()
     ]
     held = {kind for resolution in resolutions for kind in resolution.file_types}
     if has_audio:
@@ -677,7 +688,8 @@ def save_subtitle_file(
             include_generated=source != "manual",
         )
     directory.mkdir(parents=True, exist_ok=True)
-    name = default_filename(transcript.video, f"{transcript.language_code}.{format}")
+    language = safe_name(transcript.language_code) or "subtitles"
+    name = default_filename(transcript.video, f"{language}.{format}")
     path = transcript.save(directory / name, format=format)
     return SavedOut(
         path=str(path),
@@ -731,6 +743,10 @@ def _existing_download(directory: Path, video_id: str, container: Container) -> 
 def _bare_video(video_id: str) -> VideoInfo:
     """A video known only by its ID: enough for subtitles the download attaches to it."""
     return VideoInfo(video_id, "", "", "", 0.0, False)
+
+
+def _short_side(fmt: Format) -> int:
+    return min((n for n in (fmt.width, fmt.height) if n), default=0)
 
 
 def _resolution_label(side: int, fps: int | None, hdr: bool) -> str:

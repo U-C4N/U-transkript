@@ -43,9 +43,10 @@ The server's instructions spell this flow out so Claude, Codex and other clients
 - `core/clients.py`: a `VISIONOS` profile (Safari user agent, `deviceMake` Apple,
   `deviceModel` RealityDevice17,1, `osName` visionOS) in `PROFILES`; stream order
   `VISIONOS → ANDROID_VR` (ANDROID and IOS leave it; caption and browse orders stay).
-- `adapters/innertube.py`: a visitor session per `InnerTubeClient`: the first request fetches
-  `visitorData` once (thread-safe) through `visitor_id`; every InnerTube request sends it as
-  `context.client.visitorData` and `X-Goog-Visitor-Id`. A bot-check answer renews it once and
+- `adapters/innertube.py`: a visitor session per `InnerTubeClient`: the first request of a profile
+  that needs one (VISIONOS) fetches `visitorData` once (thread-safe) through `visitor_id`, and
+  that profile's requests send it as `context.client.visitorData` and `X-Goog-Visitor-Id`
+  (caption and browse clients do not need it). A bot-check answer renews it once and
   retries, and a download that refreshes its URLs after a 403 asks as a new visitor (YouTube
   restricted the streams of about one fresh visitor in six). The PO-token probe of the
   downloader stays as a safety net.
@@ -76,12 +77,14 @@ The server's instructions spell this flow out so Claude, Codex and other clients
 ### Library API
 - `utmax.list_formats(video) -> FormatList` (`video` + the downloadable formats).
 - `download(..., quality="best", resolution=None)`; `download_many` the same.
-- `Transcript.from_srt(text, language_code, *, video=None)` parses SRT (and WebVTT) so text
-  from elsewhere, such as an assistant's translation, can be embedded or saved.
+- `Transcript.from_srt(text, language_code, *, video, language=None, translated_from=None,
+  translator=None)` parses SRT (and WebVTT) so text from elsewhere, such as an assistant's
+  translation, can be embedded or saved (a transcript always belongs to a video).
 
 ### MCP tools
-- `list_formats(video)`: title, duration, the resolutions (height, fps, HDR, the file types that
-  hold each), audio languages (original marked) and subtitle tracks.
+- `list_formats(video)`: the video, the file types it can become and, per height, the picture
+  `download(resolution=height)` takes for each video file type (label, fps, HDR); subtitle
+  tracks come from `list_tracks`, and the audio is always the original track.
 - `download(video, format, resolution=None, subtitles=None, translated_subtitles=None,
   subtitle_mode="embed", quality="best")`: `translated_subtitles` is a list of
   `{language, srt}` written by the assistant.
