@@ -20,6 +20,8 @@ import pytest
 from tests.helpers.builders import make_transcript
 from utmax.adapters.files import FileByteSource, write_mux_plan
 from utmax.core.formats import to_srt
+from utmax.core.media.matroska import DocType, plan_matroska
+from utmax.core.media.model import media_tracks
 from utmax.core.media.moov import Flavor
 from utmax.core.media.mux import plan_mux
 from utmax.core.media.progressive import parse_progressive
@@ -241,3 +243,84 @@ def test_av1(tools: Tools, streams: dict[str, Path], tmp_path: Path) -> None:
         brands = parse_progressive(output).compatible_brands
     assert brands == ("isom", "iso2", "av01", "mp41")
     decodes_cleanly(tools, out)
+
+
+@pytest.fixture(scope="module")
+def webm_streams(tools: Tools, tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    """VP9 video and Opus audio as WebM, the way YouTube serves them."""
+    if "libvpx-vp9" not in tools.encoders or "libopus" not in tools.encoders:
+        _unavailable("this ffmpeg build has no libvpx-vp9 or libopus encoder")
+    folder = tmp_path_factory.mktemp("webm")
+    video = ["-f", "lavfi", "-i", "testsrc=size=160x120:rate=25:duration=4", "-pix_fmt", "yuv420p"]
+    vp9 = ["-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-g", "25"]
+    audio = ["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4", "-ac", "2"]
+    made = {
+        "vp9": [*video, *vp9, "-b:v", "200k"],
+        "opus": [*audio, "-c:a", "libopus", "-b:a", "64k"],
+    }
+    paths: dict[str, Path] = {}
+    for name, arguments in made.items():
+        paths[name] = folder / f"{name}.webm"
+        run(
+            [tools.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *arguments, str(paths[name])]
+        )
+    return paths
+
+
+def mux_matroska(
+    inputs: list[tuple[Path, str]],
+    target: Path,
+    doctype: DocType,
+    subtitles: list[Transcript],
+) -> Path:
+    sources = [FileByteSource(path) for path, _ in inputs]
+    try:
+        tracks = [
+            track
+            for number, ((_, container), source) in enumerate(zip(inputs, sources, strict=True))
+            for track in media_tracks(source, number, container=container)
+        ]
+        plan = plan_matroska(tracks, doctype=doctype, subtitles=subtitles)
+        return write_mux_plan(plan, sources, target)
+    finally:
+        for source in sources:
+            source.close()
+
+
+@pytest.mark.parametrize("doctype", ["webm", "matroska"])
+def test_vp9_and_opus_become_a_file_ffmpeg_reads_frame_for_frame(
+    tools: Tools, webm_streams: dict[str, Path], tmp_path: Path, doctype: DocType
+) -> None:
+    subtitles = [ENGLISH] if doctype == "matroska" else []
+    target = mux_matroska(
+        [(webm_streams["vp9"], "webm"), (webm_streams["opus"], "webm")],
+        tmp_path / ("out.webm" if doctype == "webm" else "out.mkv"),
+        doctype,
+        subtitles,
+    )
+    found = probe(tools, target)
+    assert [stream["codec_name"] for stream in found] == [
+        "vp9",
+        "opus",
+        *(["subrip"] if subtitles else []),
+    ]
+    sources = [probe(tools, webm_streams[name])[0] for name in ("vp9", "opus")]
+    assert [stream["nb_read_packets"] for stream in found[:2]] == [
+        stream["nb_read_packets"] for stream in sources
+    ]
+    decodes_cleanly(tools, target)
+    if subtitles:
+        assert "Hello" in extracted_srt(tools, target, 0)
+
+
+def test_mp4_streams_become_an_mkv_with_text_subtitles(
+    tools: Tools, streams: dict[str, Path], tmp_path: Path
+) -> None:
+    inputs = [(streams["h264"], "mp4"), (streams["aac"], "mp4")]
+    if "av1" in streams:
+        inputs.insert(1, (streams["av1"], "mp4"))
+    target = mux_matroska(inputs, tmp_path / "out.mkv", "matroska", [ENGLISH, TURKISH])
+    names = [stream["codec_name"] for stream in probe(tools, target)]
+    assert names == ["h264", *(["av1"] if "av1" in streams else []), "aac", "subrip", "subrip"]
+    decodes_cleanly(tools, target)
+    assert "Merhaba" in extracted_srt(tools, target, 1)

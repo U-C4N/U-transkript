@@ -383,9 +383,11 @@ def download(
 
     Args:
         video: a video ID or any YouTube URL.
-        path: the output file; its extension picks the type (``.mp4``, ``.mov``, ``.m4a``,
-            ``.mp3``). A folder (an existing one, or a path ending with ``/``) gets
-            ``"{title} [{video_id}].{ext}"``.
+        path: the output file; its extension picks the type: ``.mp4`` (AV1 or H.264 with AAC),
+            ``.mkv`` (AV1, VP9 or H.264 with Opus or AAC: every picture YouTube has, such as
+            VP9 in 4K), ``.webm`` (AV1 or VP9 with Opus; subtitles become files next to it),
+            ``.mov``, ``.m4a`` or ``.mp3``. A folder (an existing one, or a path ending with
+            ``/``) gets ``"{title} [{video_id}].{ext}"``.
         format: the file type when ``path`` is a folder or has no extension; it must match the
             extension otherwise.
         quality: ``"best"`` (the largest picture the file type holds: AV1 or H.264 in

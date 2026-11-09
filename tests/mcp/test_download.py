@@ -203,7 +203,9 @@ def test_one_bar_fills_through_the_phases_of_a_download(
         seen.append((progress, total, message))
 
     async def main() -> Any:
-        return await download_file(ScriptedClient(given), tmp_path, VIDEO, report=report)
+        return await download_file(
+            ScriptedClient(given), tmp_path, VIDEO, format="mp4", report=report
+        )
 
     with pytest.raises(ToolError):
         anyio.run(main)
@@ -317,7 +319,7 @@ def test_bad_requests_fail_before_any_request(tmp_path: Path) -> None:
     server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
 
     invalid = call(server, {"video": "not a video"})
-    unknown = call(server, {"video": VIDEO, "format": "webm"})
+    unknown = call(server, {"video": VIDEO, "format": "avi"})
 
     assert invalid.is_error is True
     assert "Suggestion: Pass a YouTube URL" in invalid.content[0].text
@@ -431,7 +433,9 @@ def test_progress_after_the_call_was_cancelled_is_not_reported(tmp_path: Path) -
 
     async def main() -> None:
         async with anyio.create_task_group() as group:
-            group.start_soon(lambda: download_file(client, tmp_path, VIDEO, report=report))
+            group.start_soon(
+                lambda: download_file(client, tmp_path, VIDEO, format="mp4", report=report)
+            )
             assert await anyio.to_thread.run_sync(client.started.wait, 10)
             group.cancel_scope.cancel()
         await anyio.to_thread.run_sync(client.finished.wait, 10)
@@ -447,7 +451,7 @@ def test_cancelling_the_call_stops_the_download(tmp_path: Path) -> None:
 
     async def main() -> None:
         async with anyio.create_task_group() as group:
-            group.start_soon(lambda: download_file(client, tmp_path, VIDEO))
+            group.start_soon(lambda: download_file(client, tmp_path, VIDEO, format="mp4"))
             assert await anyio.to_thread.run_sync(client.started.wait, 10)
             group.cancel_scope.cancel()
 
@@ -463,7 +467,7 @@ def test_utmax_errors_become_tool_errors(tmp_path: Path) -> None:
             raise DownloadCancelled("Stopped.")
 
     async def main() -> Any:
-        return await download_file(FailingClient(), tmp_path, VIDEO)
+        return await download_file(FailingClient(), tmp_path, VIDEO, format="mp4")
 
     with pytest.raises(ToolError, match=r"Stopped\. Suggestion: Run the same download again"):
         anyio.run(main)
@@ -476,7 +480,7 @@ def test_progress_is_optional_and_reads_well(tmp_path: Path) -> None:
             raise DownloadCancelled("Stopped.")
 
     async def main() -> Any:
-        return await download_file(ReportingClient(), tmp_path, VIDEO)
+        return await download_file(ReportingClient(), tmp_path, VIDEO, format="mp4")
 
     with pytest.raises(ToolError):
         anyio.run(main)
@@ -506,7 +510,7 @@ def test_slow_progress_never_holds_up_the_download_threads(tmp_path: Path) -> No
         seen.append(progress)
 
     async def main() -> Any:
-        return await download_file(FastClient(), tmp_path, VIDEO, report=report)
+        return await download_file(FastClient(), tmp_path, VIDEO, format="mp4", report=report)
 
     with pytest.raises(ToolError):
         anyio.run(main)

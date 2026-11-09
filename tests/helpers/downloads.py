@@ -13,6 +13,7 @@ from typing import Any
 from tests.helpers.fake_media import FakeBody, FakeMedia
 from tests.helpers.fake_transport import FakeTransport, json_response
 from tests.helpers.fmp4_factory import Sample, Track, simple_file
+from tests.helpers.webm_factory import OPUS_HEAD, Frame, TrackSpec, webm_file
 from tests.helpers.youtube import MANUAL_JSON3, json3_payload, player_payload, visitor_payload
 from utmax.adapters.ffmpeg import FFmpeg
 from utmax.adapters.files import FileByteSource
@@ -37,6 +38,29 @@ AUDIO_BYTES = simple_file(
     track=Track(handler="soun", codec="mp4a", timescale=44100),
     per_fragment=43,
 )
+# WebM streams for FakeYouTube(webm=True): VP9 in 4K, larger than any MP4 picture, and Opus.
+VP9_BYTES = webm_file(
+    [
+        (
+            TrackSpec(width=3840, height=2160),
+            [Frame(index * 40, 700 + index % 50, keyframe=index % 25 == 0) for index in range(100)],
+        )
+    ]
+)
+OPUS_BYTES = webm_file(
+    [
+        (
+            TrackSpec(
+                kind=2,
+                codec="A_OPUS",
+                private=OPUS_HEAD,
+                codec_delay=6_500_000,
+                seek_pre_roll=80_000_000,
+            ),
+            [Frame(index * 20, 120 + index % 9) for index in range(200)],
+        )
+    ]
+)
 LAST_MODIFIED = "1766957926174250"
 
 
@@ -52,12 +76,37 @@ def _format(itag: int, mime: str, url: str, size: int, **fields: Any) -> dict[st
     }
 
 
-def streaming_data_for(media: FakeMedia) -> dict[str, Any]:
-    """``streamingData`` whose URLs point at ``media``."""
+def streaming_data_for(media: FakeMedia, *, webm: bool = False) -> dict[str, Any]:
+    """``streamingData`` whose URLs point at ``media``; ``webm`` adds VP9 (itag 313, 2160p)
+    and Opus (itag 251) streams."""
     video = {"width": 1920, "height": 1080, "fps": 25}
+    extra = (
+        [
+            _format(
+                313,
+                'video/webm; codecs="vp9"',
+                media.add("313", VP9_BYTES),
+                len(VP9_BYTES),
+                width=3840,
+                height=2160,
+                fps=25,
+            ),
+            _format(
+                251,
+                'audio/webm; codecs="opus"',
+                media.add("251", OPUS_BYTES),
+                len(OPUS_BYTES),
+                audioSampleRate="48000",
+                audioChannels=2,
+            ),
+        ]
+        if webm
+        else []
+    )
     return {
         "expiresInSeconds": "21540",
         "adaptiveFormats": [
+            *extra,
             _format(
                 137,
                 'video/mp4; codecs="avc1.640028"',
@@ -87,13 +136,15 @@ def streaming_data_for(media: FakeMedia) -> dict[str, Any]:
 class FakeYouTube:
     """One transport: InnerTube and captions (``api``) plus googlevideo (``media``)."""
 
-    def __init__(self, *, captions: bool = True) -> None:
+    def __init__(self, *, captions: bool = True, webm: bool = False) -> None:
         self.media = FakeMedia()
         self.api = FakeTransport()
         self.api.add(
             "POST", "/youtubei/v1/visitor_id", json_response(visitor_payload()), repeat=True
         )
-        payload = player_payload(streaming_data=streaming_data_for(self.media), captions=captions)
+        payload = player_payload(
+            streaming_data=streaming_data_for(self.media, webm=webm), captions=captions
+        )
         self.api.add("POST", "/youtubei/v1/player", json_response(payload), repeat=True)
         self.api.add("GET", "lang=en&fmt=json3", json_response(MANUAL_JSON3), repeat=True)
         german = json3_payload((1000, 2000, "Wir sind keine Fremden"))

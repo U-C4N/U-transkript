@@ -128,7 +128,8 @@ def test_tool_arguments_are_described_and_bounded() -> None:
         "overwrite",
     ]
     assert download["translate_to"]["anyOf"][0]["items"]["pattern"] == mcp_server.LANGUAGE_CODE
-    assert download["format"]["enum"] == ["mp4", "mov", "m4a", "mp3"]
+    assert download["format"]["anyOf"][0]["enum"] == ["mp4", "mov", "m4a", "mp3", "mkv", "webm"]
+    assert download["format"]["default"] is None
     assert download["quality"]["enum"] == ["best", "medium", "low", "compat"]
     assert download["quality"]["default"] == "best"
     assert download["resolution"]["anyOf"] == [{"type": "integer", "minimum": 1}, {"type": "null"}]

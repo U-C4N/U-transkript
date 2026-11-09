@@ -26,6 +26,8 @@ from utmax.adapters.innertube import InnerTubeClient
 from utmax.core.downloads import DEFAULT_CHUNK_SIZE, MIN_CHUNK_SIZE
 from utmax.core.filenames import Target, part_name, resolve_target, sidecar_name
 from utmax.core.ids import parse_video_id
+from utmax.core.media.matroska import plan_matroska
+from utmax.core.media.model import media_tracks
 from utmax.core.media.moov import Flavor
 from utmax.core.media.mux import plan_mux
 from utmax.core.media.tx3g import default_subtitle_index
@@ -64,6 +66,8 @@ _QUALITIES = ("best", "medium", "low", "compat")
 # LAME VBR quality of .mp3 files: about 190 kbit/s, or about 115 kbit/s for quality="low".
 _MP3_QUALITY = {"low": 6}
 _MP3_DEFAULT_QUALITY = 2
+# File types that cannot embed subtitles: they get them as .srt files next to them.
+_SIDECARS_ONLY = ("m4a", "mp3", "webm")
 _SUBTITLE_MODES = ("embed", "sidecar", "both")
 
 
@@ -211,14 +215,14 @@ class DownloadService:
         options = _listed(options)
         target, ffmpeg = self._prepare(path, options, video_id=video_id)
         container = target.container
-        audio_only = container in ("m4a", "mp3")
+        sidecars_only = container in _SIDECARS_ONLY
         player = self._player(video_id)
         final = Path(target.path_for(player.video, name=options.name))
         if target.file is None:
             _check_free(final, options.overwrite, video_id)
-        subtitles = self._subtitles(player, options.subtitles, audio_only=audio_only)
+        subtitles = self._subtitles(player, options.subtitles, sidecars_only=sidecars_only)
         embedded, sidecars = _placement(
-            subtitles, final, options, audio_only=audio_only, video_id=video_id
+            subtitles, final, options, sidecars_only=sidecars_only, video_id=video_id
         )
         for sidecar, _ in sidecars:
             _check_free(sidecar, options.overwrite, video_id)
@@ -255,7 +259,7 @@ class DownloadService:
             _mux(
                 jobs,
                 final,
-                flavor=_flavor(container),
+                container=container,
                 embedded=embedded,
                 options=options,
                 reporter=reporter,
@@ -286,10 +290,14 @@ class DownloadService:
         options.check()
         target = resolve_target(path, format=options.format, is_dir=Path(path).is_dir())
         container = target.container
-        if container in ("m4a", "mp3") and options.default_subtitle is not None:
+        if container in _SIDECARS_ONLY and options.default_subtitle is not None:
             raise InvalidOption(
                 f".{container} files cannot embed subtitles, so default_subtitle has no effect.",
-                suggestion="Leave default_subtitle out for audio files.",
+                suggestion=(
+                    "Leave default_subtitle out for audio files."
+                    if container != "webm"
+                    else "Leave default_subtitle out, or download as .mkv to embed subtitles."
+                ),
                 video_id=video_id,
             )
         ffmpeg = self._ffmpeg(options.ffmpeg) if container == "mp3" else None
@@ -307,12 +315,13 @@ class DownloadService:
         player: PlayerData,
         requested: Sequence[str | Transcript] | None,
         *,
-        audio_only: bool,
+        sidecars_only: bool,
     ) -> list[Transcript]:
-        """Fetch every subtitle before any media byte, so a wrong language fails fast."""
+        """Fetch every subtitle before any media byte, so a wrong language fails fast. Files
+        that cannot embed subtitles get none unless they are asked for."""
         video_id = player.video.video_id
         if requested is None:
-            if audio_only:
+            if sidecars_only:
                 return []
             spoken = self._transcripts.track_list(player)
             if not spoken:
@@ -359,11 +368,11 @@ def _placement(
     final: Path,
     options: DownloadOptions,
     *,
-    audio_only: bool,
+    sidecars_only: bool,
     video_id: str,
 ) -> tuple[list[Transcript], list[tuple[Path, Transcript]]]:
     """Which subtitles go into the file, and which are written next to it (and where)."""
-    if audio_only:
+    if sidecars_only:
         return [], [(Path(sidecar_name(final, t.language_code)), t) for t in subtitles]
     mode = options.subtitle_mode
     embedded = subtitles if mode in ("embed", "both") else []
@@ -411,7 +420,7 @@ def _mux(
     jobs: Sequence[Job],
     final: Path,
     *,
-    flavor: Flavor,
+    container: Container,
     embedded: Sequence[Transcript],
     options: DownloadOptions,
     reporter: ProgressReporter,
@@ -429,9 +438,25 @@ def _mux(
 
     with ExitStack() as stack:
         sources = [stack.enter_context(FileByteSource(job.part)) for job in jobs]
-        plan = plan_mux(
-            sources, flavor=flavor, subtitles=embedded, default_subtitle=options.default_subtitle
-        )
+        if container in ("mkv", "webm"):
+            tracks = [
+                track
+                for number, (job, source) in enumerate(zip(jobs, sources, strict=True))
+                for track in media_tracks(source, number, container=job.stream.format.container)
+            ]
+            plan = plan_matroska(
+                tracks,
+                doctype="webm" if container == "webm" else "matroska",
+                subtitles=embedded,
+                default_subtitle=options.default_subtitle,
+            )
+        else:
+            plan = plan_mux(
+                sources,
+                flavor=_flavor(container),
+                subtitles=embedded,
+                default_subtitle=options.default_subtitle,
+            )
         write_mux_plan(plan, sources, final, progress=progress)
 
 

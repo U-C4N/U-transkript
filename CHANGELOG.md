@@ -29,8 +29,21 @@ All notable changes to u-transcript max are listed here. The format follows
 
   Without `UTMAX_TRANSLATOR` nothing changes, and the assistant translates as before.
 
+- `.mkv` and `.webm` downloads (`utmax.download(video, "x.mkv")`, MCP `format`):
+  - `.mkv` holds AV1, VP9 or H.264 video with Opus or AAC audio and text subtitles, so it
+    gets the largest picture YouTube has, such as VP9 in 4K for videos without that size in
+    AV1;
+  - `.webm` holds AV1 or VP9 with Opus, and writes subtitles as `.srt` files next to it.
+
+  utmax's own Matroska writer copies the streams as they are: the Cues come first so players
+  can seek at once, clusters start at video keyframes, and HDR colour information is kept.
+  No ffmpeg is needed.
+
 ### Changed
 
+- The MCP `download` tool picks the file type when none is named: `.mp4`, or `.mkv` when only
+  an `.mkv` holds the largest picture. A finished `.mp4` or `.mkv` of the video counts as
+  already there.
 - The MCP server starts a download at once, in the highest quality, without asking questions
   first. It calls `list_formats` only when you ask what a video offers or name a resolution
   to check.

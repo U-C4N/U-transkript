@@ -42,7 +42,7 @@ __all__ = [
 ]
 
 FormatName = Literal["txt", "srt", "vtt", "json", "pretty"]
-Container = Literal["mp4", "mov", "m4a", "mp3"]
+Container = Literal["mp4", "mov", "m4a", "mp3", "mkv", "webm"]
 Quality = Literal["best", "medium", "low", "compat"]
 SubtitleMode = Literal["embed", "sidecar", "both"]
 ProgressPhase = Literal["downloading", "muxing", "converting", "finished"]

@@ -35,7 +35,14 @@ MAX_NAME_BYTES = 180
 # through write_text_atomic (".<...>.<8 hex digits>.tmp"), is 28 bytes longer than the name, and
 # that of a subtitle sidecar is 15 bytes plus the language code longer (255 for 20 characters).
 MAX_BULK_NAME_BYTES = 220
-_SUFFIXES: dict[str, Container] = {".mp4": "mp4", ".mov": "mov", ".m4a": "m4a", ".mp3": "mp3"}
+_SUFFIXES: dict[str, Container] = {
+    ".mp4": "mp4",
+    ".mov": "mov",
+    ".m4a": "m4a",
+    ".mp3": "mp3",
+    ".mkv": "mkv",
+    ".webm": "webm",
+}
 _WHITESPACE = re.compile(r"\s+")
 _FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
 _GLOB_MAGIC = re.compile(r"([*?[])")
@@ -110,12 +117,13 @@ def resolve_target(
 
     Raises:
         InvalidOption: ``format`` is unknown or contradicts the extension.
-        UnsupportedFormat: the extension is not .mp4, .mov, .m4a or .mp3 and no format was given.
+        UnsupportedFormat: the extension is not .mp4, .mov, .m4a, .mp3, .mkv or .webm and no
+            format was given.
     """
     if format is not None and format not in _SUFFIXES.values():
         raise InvalidOption(
-            f"format={format!r} is not a download format; use mp4, mov, m4a or mp3.",
-            suggestion='Pass format="mp4", "mov", "m4a" or "mp3", or leave it out.',
+            f"format={format!r} is not a download format; use mp4, mov, m4a, mp3, mkv or webm.",
+            suggestion='Pass format="mp4", "mov", "m4a", "mp3", "mkv" or "webm", or leave it out.',
         )
     text = os.fspath(path)
     pure = PurePath(text)
@@ -127,7 +135,8 @@ def resolve_target(
             raise UnsupportedFormat(
                 f"Cannot tell the file type from {pure.name!r}.",
                 suggestion=(
-                    'Use a .mp4, .mov, .m4a or .mp3 file name or a folder, or pass format="mp4".'
+                    "Use a .mp4, .mov, .m4a, .mp3, .mkv or .webm file name or a folder, or pass "
+                    'format="mp4".'
                 ),
             )
         return Target(format, file=pure.with_name(f"{pure.name}.{format}"))

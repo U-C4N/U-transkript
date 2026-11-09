@@ -15,8 +15,10 @@ server lets Claude, Codex and other AI assistants use them too.
 - **AI translation** that keeps every timing (Claude, Gemini, Grok, OpenAI and compatible
   servers such as Ollama, OpenRouter), and bilingual subtitles.
 - **Downloads in the best quality** a file holds: AV1 or H.264 up to 8K, HDR and 60 fps in
-  `.mp4` (also `.mov`, `.m4a`, `.mp3`), with subtitles as switchable tracks and the original
-  audio of dubbed videos. Parallel and resumable; no ffmpeg needed except for `.mp3`.
+  `.mp4`; every picture and Opus audio in `.mkv`, including VP9 in 4K when YouTube has no AV1
+  of that size (also `.webm`, `.mov`, `.m4a`, `.mp3`). Subtitles are switchable tracks, and
+  dubbed videos keep their original audio. Parallel and resumable; no ffmpeg needed except
+  for `.mp3`.
 - **A drop-in replacement** for youtube-transcript-api.
 - **An MCP server** for Claude, Codex and other AI assistants.
 
@@ -55,6 +57,7 @@ turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5-5")  # n
 utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
 utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best picture (AV1 up to 8K), English subtitles
+utmax.download("dQw4w9WgXcQ", "rick.mkv")  # every picture YouTube has (VP9 too) with Opus audio
 utmax.download("dQw4w9WgXcQ", "rick-medium.mp4", quality="medium")  # at most 720p
 utmax.download("dQw4w9WgXcQ", "rick-low.mp4", quality="low")  # at most 360p, smaller audio
 utmax.download("dQw4w9WgXcQ", "rick-1080.mp4", resolution=1080)  # at most 1080p
@@ -76,7 +79,8 @@ from utmax.compat import YouTubeTranscriptApi
 
 `utmax-mcp` gives an AI assistant six tools: `list_tracks`, `get_transcript`, `list_formats`,
 `list_videos`, `download` and `save_subtitles`. It needs no API key. Ask it to download a video
-and it starts at once, in the highest quality with subtitles in the spoken language; say
+and it starts at once, in the highest quality (as `.mp4`, or `.mkv` when only that holds the
+largest picture) with subtitles in the spoken language; say
 "medium quality" (at most 720p), "low quality" (at most 360p), a resolution, a file type or
 other subtitles when you want them. Ask for a translation and it translates the subtitles
 itself. Things to ask:

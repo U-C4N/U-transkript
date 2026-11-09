@@ -77,6 +77,7 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 
 # Seconds between looks at the progress the download threads queued.
 PROGRESS_POLL = 0.1
+_VIDEO_FILE_TYPES: tuple[Container, ...] = ("mp4", "mov", "mkv", "webm")
 # Languages translated at the same time; each also sends its batches in parallel.
 _TRANSLATION_THREADS = 4
 
@@ -172,8 +173,14 @@ KindArg = Annotated[
 ]
 LimitArg = Annotated[int, Field(ge=1, le=5000, description="The most videos to list.")]
 ContainerArg = Annotated[
-    Container,
-    Field(description="mp4 or mov: video with sound; m4a or mp3: audio only (mp3 needs ffmpeg)."),
+    Container | None,
+    Field(
+        description=(
+            "mp4, mkv, webm or mov: video with sound; m4a or mp3: audio only (mp3 needs "
+            "ffmpeg). null, the default: mp4, or mkv when only mkv holds the largest picture "
+            "(often VP9 in 4K). webm takes VP9 or AV1 with Opus, and subtitles only as files."
+        )
+    ),
 ]
 QualityArg = Annotated[
     Quality,
@@ -468,7 +475,7 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
     async def download(
         video: VideoArg,
         *,
-        format: ContainerArg = "mp4",
+        format: ContainerArg = None,
         quality: QualityArg = "best",
         resolution: ResolutionArg = None,
         subtitles: SubtitlesArg = None,
@@ -478,9 +485,10 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
         overwrite: OverwriteArg = False,
         ctx: Context[Any, Any],
     ) -> DownloadOut:
-        """Download a YouTube video (mp4, mov) or its audio (m4a, mp3) into the server's
-        download folder, named after its title, with YouTube's subtitles and/or translated
-        ones. A file that is already there is not downloaded again unless overwrite."""
+        """Download a YouTube video (mp4, mkv, webm, mov) or its audio (m4a, mp3) into the
+        server's download folder, named after its title, with YouTube's subtitles and/or
+        translated ones. A file that is already there is not downloaded again unless
+        overwrite."""
         return await download_file(
             youtube,
             settings.download_dir,
@@ -534,7 +542,7 @@ async def download_file(
     directory: Path,
     video: str,
     *,
-    format: Container = "mp4",
+    format: Container | None = None,
     quality: Quality = "best",
     resolution: int | None = None,
     subtitles: list[str] | None = None,
@@ -547,6 +555,9 @@ async def download_file(
 ) -> DownloadOut:
     """Download ``video`` into ``directory`` on a worker thread, unless it is already there
     (``overwrite`` downloads it again).
+
+    Without a ``format`` the file is an mp4, or an mkv when only an mkv holds the largest
+    picture (see :func:`best_file_type`); a finished mp4 or mkv of the video counts as there.
 
     ``translated_subtitles``, and the translations into ``translate_to`` that ``translator``
     makes on the worker, join ``subtitles`` (or replace the spoken-language default when
@@ -568,24 +579,27 @@ async def download_file(
             )
             for item in translated_subtitles or ()
         ]
-    # The first translation is the track shown by default, where tracks are embedded at all.
-    embeds = format in ("mp4", "mov") and subtitle_mode != "sidecar"
     cancel = threading.Event()
     relay = None if report is None else _ProgressRelay(report, cancel)
 
     def work() -> DownloadOut:
-        existing = None if overwrite else _existing_download(directory, video_id, format)
-        if existing is not None:
-            return DownloadOut(
-                path=str(existing),
-                size_bytes=existing.stat().st_size,
-                video_id=video_id,
-                title=existing.name.removesuffix(f".{format}").removesuffix(f" [{video_id}]"),
-                container=format,
-                embedded_subtitles=[],
-                sidecars=[],
-                skipped=True,
-            )
+        candidates: tuple[Container, ...] = (format,) if format is not None else ("mp4", "mkv")
+        for kind in () if overwrite else candidates:
+            existing = _existing_download(directory, video_id, kind)
+            if existing is not None:
+                return DownloadOut(
+                    path=str(existing),
+                    size_bytes=existing.stat().st_size,
+                    video_id=video_id,
+                    title=existing.name.removesuffix(f".{kind}").removesuffix(f" [{video_id}]"),
+                    container=kind,
+                    embedded_subtitles=[],
+                    sidecars=[],
+                    skipped=True,
+                )
+        kind = format or best_file_type(client.list_formats(video_id), quality, resolution)
+        # The first translation is the track shown by default, where tracks are embedded at all.
+        embeds = kind in ("mp4", "mov", "mkv") and subtitle_mode != "sidecar"
         made: list[Transcript] = []
         if translate_to:
             source = client.fetch(video_id, subtitles[:1] if subtitles else None)
@@ -602,7 +616,7 @@ async def download_file(
         result = client.download(
             video_id,
             directory,
-            format=format,
+            format=kind,
             quality=quality,
             resolution=resolution,
             subtitles=chosen,
@@ -797,19 +811,36 @@ def transcript_out(
     )
 
 
+def best_file_type(formats: FormatList, quality: Quality, resolution: int | None) -> Container:
+    """``"mkv"`` when an mkv holds a larger picture (or a higher frame rate) than an mp4 under
+    these limits, which happens when YouTube offers the video's largest size only as VP9;
+    otherwise ``"mp4"``, which more players take."""
+    in_mp4 = pick_video(formats, container="mp4", quality=quality, resolution=resolution)
+    in_mkv = pick_video(formats, container="mkv", quality=quality, resolution=resolution)
+    if in_mkv is None:
+        return "mp4"
+    if in_mp4 is None:
+        return "mkv"
+    larger = (_short_side(in_mkv), in_mkv.fps or 0) > (_short_side(in_mp4), in_mp4.fps or 0)
+    return "mkv" if larger else "mp4"
+
+
 def formats_out(formats: FormatList) -> FormatsOut:
     """The ``list_formats`` output: the file types ``formats`` allow and, for each height, the
     picture ``download(resolution=height)`` takes for each video file type.
 
-    Video file types need AAC audio too, so a video without it offers none.
+    A video file type also needs audio it can hold (AAC for mp4 and mov, Opus or AAC for mkv,
+    Opus for webm), so a video without it does not offer that type.
     """
-    order: tuple[Container, ...] = ("mp4", "mov", "m4a", "mp3")
-    has_audio = any(fmt.kind == "audio" and file_types(fmt) for fmt in formats)
+    order: tuple[Container, ...] = ("mp4", "mov", "m4a", "mp3", "mkv", "webm")
+    sound = {kind for fmt in formats if fmt.kind == "audio" for kind in file_types(fmt)}
     videos = [fmt for fmt in formats if fmt.kind == "video" and file_types(fmt)]
     heights = sorted({_short_side(fmt) for fmt in videos} - {0}, reverse=True)
     pictures: dict[tuple[int, int | None, bool], list[Container]] = {}
-    for height in heights if has_audio else ():
-        for kind in ("mp4", "mov"):
+    for height in heights:
+        for kind in _VIDEO_FILE_TYPES:
+            if kind not in sound:
+                continue
             picked = pick_video(videos, container=kind, resolution=height)
             if picked is not None and _short_side(picked) == height:
                 pictures.setdefault((height, picked.fps, picked.hdr), []).append(kind)
@@ -824,8 +855,7 @@ def formats_out(formats: FormatList) -> FormatsOut:
         for (side, fps, hdr), kinds in pictures.items()
     ]
     held = {kind for resolution in resolutions for kind in resolution.file_types}
-    if has_audio:
-        held |= {"m4a", "mp3"}
+    held |= sound & {"m4a", "mp3"}
     return FormatsOut(
         video=_video(formats.video),
         file_types=[kind for kind in order if kind in held],
