@@ -7,8 +7,9 @@
 YouTube transcripts, AI translation and downloads for Python — with zero dependencies. Its MCP
 server lets Claude, Codex and other AI assistants use them too.
 
-> **Alpha.** The API can still change before 0.1.0. The design lives in
-> [docs/design](https://github.com/U-C4N/U-transkript/tree/main/docs/design).
+> **Beta.** 0.2 is settled enough to build on. Changes until 1.0 are listed in the
+> [CHANGELOG](https://github.com/U-C4N/U-transkript/blob/main/CHANGELOG.md); the design lives
+> in [docs/design](https://github.com/U-C4N/U-transkript/tree/main/docs/design).
 
 - **Transcripts** of any video, playlist or channel: every language, written by people or
   generated, as SRT, WebVTT, JSON or text.
@@ -171,6 +172,41 @@ claude mcp add --scope user utmax -e UTMAX_TRANSLATOR=gemini=gemini-3.8-flash \
 Any provider works the same way: `grok=grok-4.7` with `[mcp,grok]` and `XAI_API_KEY`,
 `openai=gpt-6-astra` with `[mcp,openai]` and `OPENAI_API_KEY`, or `claude=claude-opus-5-5`
 with `[mcp,claude]` and `ANTHROPIC_API_KEY`.
+
+## How it works
+
+The library has no runtime dependencies: it talks to YouTube with the standard library and
+writes `.mp4`, `.mov`, `.m4a`, `.mkv` and `.webm` files with its own muxers. The extras add
+only the AI providers' SDKs and the MCP SDK.
+
+```
++----------------------------------------------------------------------+
+| Interfaces   utmax (library)     utmax.compat          utmax.mcp     |
+|              fetch, translate,   youtube-transcript-   MCP server    |
+|              download, ...       api drop-in           [mcp] extra   |
++-----------------------------------+----------------------------------+
+                                    |
++-----------------------------------v----------------------------------+
+| Services     transcripts   translation   download   collections      |
++------------------+------------------------------------+--------------+
+                   | uses                               | uses
++------------------v-----------------+  +---------------v--------------+
+| Pure core (no I/O)                 |  | Adapters (all I/O)           |
+|  ids player captions streams       |  |  http: urllib, retry, proxy  |
+|  selection formats bilingual       |  |  innertube  watch_page       |
+|  media: fmp4 mp4-muxer tx3g        |  |  downloader: parallel+resume |
+|         webm matroska              |  |  files  ffmpeg (mp3 only)    |
+|  translate: protocol, batches      |  |  providers: claude gemini    |
+|                                    |  |   grok openai openrouter     |
++------------------------------------+  +------------------------------+
+```
+
+## Legal
+
+utmax is for personal use, with content you have the right to download or translate. Respect
+YouTube's Terms of Service and the rights of the people who made the videos. utmax does not
+download DRM-protected streams or videos that need a sign-in. It is not affiliated with or
+endorsed by YouTube or Google.
 
 ## License
 

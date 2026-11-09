@@ -42,6 +42,7 @@ utmax-mcp = "utmax.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/U-C4N/U-transkript"
+Changelog = "https://github.com/U-C4N/U-transkript/blob/main/CHANGELOG.md"
 Issues = "https://github.com/U-C4N/U-transkript/issues"
 
 [dependency-groups]
@@ -59,7 +60,8 @@ path = "src/utmax/_version.py"
 packages = ["src/utmax"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/README.md", "/LICENSE"]
+# scripts/ belongs here because tests load scripts/compat_manifest.py.
+include = ["/src", "/tests", "/scripts", "/README.md", "/CHANGELOG.md", "/LICENSE"]
 
 [tool.ruff]
 line-length = 100
