@@ -154,7 +154,8 @@ def packet_times(tools: Tools, path: Path, stream: str) -> list[tuple[int, int]]
     ]
 
 
-def decodes_cleanly(tools: Tools, path: Path) -> None:
+def decode_errors(tools: Tools, path: Path) -> list[str]:
+    """What ffmpeg reports while decoding ``path``, without the addresses that differ per run."""
     result = run(
         [
             tools.ffmpeg,
@@ -171,7 +172,33 @@ def decodes_cleanly(tools: Tools, path: Path) -> None:
             "-",
         ]
     )
-    assert result.stderr == ""
+    return sorted(re.sub(r" @ 0x[0-9a-f]+", "", line) for line in result.stderr.splitlines())
+
+
+def decodes_cleanly(tools: Tools, path: Path) -> None:
+    assert decode_errors(tools, path) == []
+
+
+def packet_hashes(tools: Tools, path: Path, stream: str) -> list[tuple[str, str]]:
+    """The size and MD5 of every packet of ``stream``, as ffmpeg reads them."""
+    output = run(
+        [
+            tools.ffmpeg,
+            "-v",
+            "error",
+            "-i",
+            str(path),
+            "-map",
+            f"0:{stream}",
+            "-c",
+            "copy",
+            "-f",
+            "framemd5",
+            "-",
+        ]
+    )
+    rows = (line.split(",") for line in output.stdout.splitlines() if not line.startswith("#"))
+    return [(row[4].strip(), row[5].strip()) for row in rows if len(row) > 5]
 
 
 def extracted_srt(tools: Tools, path: Path, index: int) -> str:
@@ -304,11 +331,17 @@ def test_vp9_and_opus_become_a_file_ffmpeg_reads_frame_for_frame(
         "opus",
         *(["subrip"] if subtitles else []),
     ]
-    sources = [probe(tools, webm_streams[name])[0] for name in ("vp9", "opus")]
-    assert [stream["nb_read_packets"] for stream in found[:2]] == [
-        stream["nb_read_packets"] for stream in sources
+    for stream, name in (("v:0", "vp9"), ("a:0", "opus")):
+        source = packet_hashes(tools, webm_streams[name], stream)
+        assert source
+        assert packet_hashes(tools, target, stream) == source
+    # Some ffmpeg builds complain about their own libopus output: ffmpeg 8.0.1 with libopus
+    # 1.6.1 (Ubuntu 26.04) says "Error parsing Opus packet header." for the source file too.
+    # utmax copies every packet unchanged, so it may add no complaint of its own.
+    expected = [
+        error for name in ("vp9", "opus") for error in decode_errors(tools, webm_streams[name])
     ]
-    decodes_cleanly(tools, target)
+    assert decode_errors(tools, target) == sorted(expected)
     if subtitles:
         assert "Hello" in extracted_srt(tools, target, 0)
 
