@@ -5,11 +5,12 @@ from __future__ import annotations
 from importlib.metadata import entry_points, metadata
 
 EXPECTED_REQUIREMENTS = {
-    "anthropic<2,>=1.8; extra == 'ai'",
-    "google-genai<3,>=2.25; extra == 'ai'",
+    "anthropic<3,>=1.8; extra == 'ai'",
+    "google-genai<4,>=2.30.1; extra == 'ai'",
     "openai<4,>=3.19; extra == 'ai'",
-    "anthropic<2,>=1.8; extra == 'claude'",
-    "google-genai<3,>=2.25; extra == 'gemini'",
+    "anthropic<3,>=1.8; extra == 'claude'",
+    "google-genai<4,>=2.30.1; extra == 'gemini'",
+    "openai<4,>=3.19; extra == 'grok'",
     "openai<4,>=3.19; extra == 'openai'",
     "openai<4,>=3.19; extra == 'openrouter'",
     "mcp<3,>=2.2; extra == 'mcp'",
@@ -19,7 +20,7 @@ EXPECTED_REQUIREMENTS = {
 
 def test_the_extras_are_declared() -> None:
     extras = metadata("u-transcript-max").get_all("Provides-Extra") or []
-    assert sorted(extras) == ["ai", "claude", "gemini", "mcp", "openai", "openrouter"]
+    assert sorted(extras) == ["ai", "claude", "gemini", "grok", "mcp", "openai", "openrouter"]
 
 
 def test_every_requirement_belongs_to_an_extra() -> None:

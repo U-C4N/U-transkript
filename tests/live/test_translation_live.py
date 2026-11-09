@@ -2,7 +2,7 @@
 
 Run with ``uv run pytest -m live tests/live/test_translation_live.py -v``. The model of each
 provider can be overridden with ``UTMAX_LIVE_<PROVIDER>_MODEL``, for example
-``UTMAX_LIVE_OPENAI_MODEL=gpt-5-mini``.
+``UTMAX_LIVE_GEMINI_MODEL=gemini-4-argon``.
 """
 
 from __future__ import annotations
@@ -26,17 +26,18 @@ SOURCE = make_transcript(
 )
 
 PROVIDERS = [
-    pytest.param("claude", ("ANTHROPIC_API_KEY",), "claude-opus-5", "anthropic", id="claude"),
-    pytest.param("openai", ("OPENAI_API_KEY",), "gpt-5-mini", "openai", id="openai"),
+    pytest.param("claude", ("ANTHROPIC_API_KEY",), "claude-opus-5-5", "anthropic", id="claude"),
+    pytest.param("openai", ("OPENAI_API_KEY",), "gpt-6-astra", "openai", id="openai"),
     pytest.param(
         "gemini",
         ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
-        "gemini-2.5-flash",
+        "gemini-3.8-flash",
         "google.genai",
         id="gemini",
     ),
+    pytest.param("grok", ("XAI_API_KEY",), "grok-4.7", "openai", id="grok"),
     pytest.param(
-        "openrouter", ("OPENROUTER_API_KEY",), "openai/gpt-5-mini", "openai", id="openrouter"
+        "openrouter", ("OPENROUTER_API_KEY",), "openai/gpt-6-astra", "openai", id="openrouter"
     ),
 ]
 
@@ -67,7 +68,7 @@ def test_every_cue_is_translated_with_its_timing_kept(
 
 
 def test_fetch_translate_and_save_bilingual_subtitles(tmp_path: Path) -> None:
-    model = live_model("claude", ("ANTHROPIC_API_KEY",), "claude-opus-5", "anthropic")
+    model = live_model("claude", ("ANTHROPIC_API_KEY",), "claude-opus-5-5", "anthropic")
     transcript = utmax.fetch("dQw4w9WgXcQ")
     translation = utmax.translate(transcript, "tr", model=model)
     assert translation.source is not None

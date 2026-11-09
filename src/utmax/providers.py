@@ -4,7 +4,7 @@ Pick one with :func:`utmax.translator` (``"provider=model-id"``) or build it you
 
     from utmax.providers import ClaudeTranslator
 
-    translator = ClaudeTranslator("claude-opus-5", effort="low", batch_items=20)
+    translator = ClaudeTranslator("claude-opus-5-5", effort="low", batch_items=20)
     tr = utmax.translate(transcript, "tr", model=translator)
 
 To use any other model, subclass :class:`Translator` and implement ``name`` and
@@ -17,6 +17,7 @@ from utmax.adapters.providers import (
     ClaudeTranslator,
     EngineOptions,
     GeminiTranslator,
+    GrokTranslator,
     OpenAITranslator,
     OpenRouterTranslator,
     Translator,
@@ -28,6 +29,7 @@ __all__ = [
     "ClaudeTranslator",
     "EngineOptions",
     "GeminiTranslator",
+    "GrokTranslator",
     "InvalidResponse",
     "JsonMode",
     "OpenAITranslator",

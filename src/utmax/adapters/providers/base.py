@@ -22,12 +22,13 @@ __all__ = [
     "EngineOptions",
     "SDKTranslator",
     "Translator",
+    "check_effort",
     "positive_int",
     "redact_secrets",
     "stainless_error",
 ]
 
-_SECRET = re.compile(r"\b(?:sk-[A-Za-z0-9_*-]{6,}|AIza[0-9A-Za-z_-]{20,})")
+_SECRET = re.compile(r"\b(?:sk-[A-Za-z0-9_*-]{6,}|xai-[A-Za-z0-9_-]{6,}|AIza[0-9A-Za-z_-]{20,})")
 
 
 class EngineOptions(TypedDict, total=False):
@@ -45,6 +46,13 @@ def positive_int(option: str, value: object, *, minimum: int = 1) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise InvalidOption(f"{option} must be an integer of at least {minimum}, not {value!r}.")
     return value
+
+
+def check_effort(effort: str | None, allowed: tuple[str, ...]) -> str | None:
+    """``effort`` when it is ``None`` or one of ``allowed``, else :class:`InvalidOption`."""
+    if effort is not None and effort not in allowed:
+        raise InvalidOption(f"effort must be one of {', '.join(allowed)}, not {effort!r}.")
+    return effort
 
 
 def redact_secrets(text: str) -> str:
@@ -88,7 +96,7 @@ class Translator(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """``"provider=model-id"``, for example ``"claude=claude-opus-5"``.
+        """``"provider=model-id"``, for example ``"claude=claude-opus-5-5"``.
 
         Stored as ``Transcript.translator`` on every translation.
         """
@@ -124,6 +132,8 @@ class SDKTranslator(Translator):
 
     PROVIDER: ClassVar[str]
     EXTRA: ClassVar[str]
+    #: The ``effort`` values the provider understands, from least to most thinking.
+    EFFORTS: ClassVar[tuple[str, ...]] = ()
 
     def __init__(self, model: str, **engine: Unpack[EngineOptions]) -> None:
         super().__init__(**engine)

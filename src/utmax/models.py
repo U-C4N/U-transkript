@@ -42,8 +42,8 @@ __all__ = [
 ]
 
 FormatName = Literal["txt", "srt", "vtt", "json", "pretty"]
-Container = Literal["mp4", "mov", "m4a", "mp3"]
-Quality = Literal["best", "compat"]
+Container = Literal["mp4", "mov", "m4a", "mp3", "mkv", "webm"]
+Quality = Literal["best", "medium", "low", "compat"]
 SubtitleMode = Literal["embed", "sidecar", "both"]
 ProgressPhase = Literal["downloading", "muxing", "converting", "finished"]
 Codec = Literal["h264", "av1", "vp9", "aac", "he-aac", "opus", "other"]

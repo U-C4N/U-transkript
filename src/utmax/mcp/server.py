@@ -2,9 +2,11 @@
 as tools.
 
 Every tool returns structured output. A utmax error becomes a tool error that reads
-``"<message> Suggestion: <what to do>"``, so the model can explain it or try again. The server
-calls no AI provider: the assistant that uses it translates transcripts itself, and translation
-with an API key stays a feature of the library (:func:`utmax.translate`).
+``"<message> Suggestion: <what to do>"``, so the model can explain it or try again. By default
+the server calls no AI provider: the assistant that uses it translates transcripts itself.
+With ``UTMAX_TRANSLATOR`` set (see :mod:`utmax.mcp.config`), ``download`` and
+``save_subtitles`` also translate on the server through :func:`utmax.translate`, which is
+faster for long videos.
 """
 
 from __future__ import annotations
@@ -13,17 +15,17 @@ import glob
 import inspect
 import io
 import logging
+import queue
 import sys
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Coroutine, Hashable, Iterator
+from collections.abc import Callable, Coroutine, Hashable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeVar
 
 import anyio
-import anyio.from_thread
-import anyio.lowlevel
 import anyio.to_thread
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
@@ -31,11 +33,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from utmax import Client, __version__
+from utmax import Client, Translator, __version__
 from utmax.core.filenames import default_filename, safe_name
 from utmax.core.ids import parse_video_id
 from utmax.core.streams import file_types, pick_video
-from utmax.errors import InvalidOption, UTMaxError
+from utmax.errors import InvalidOption, ProviderAuthError, ProviderNotInstalled, UTMaxError
 from utmax.mcp.config import Config
 from utmax.models import (
     CollectionKind,
@@ -73,6 +75,12 @@ __all__ = [
 log = logging.getLogger("utmax.mcp")
 _F = TypeVar("_F", bound=Callable[..., Any])
 
+# Seconds between looks at the progress the download threads queued.
+PROGRESS_POLL = 0.1
+_VIDEO_FILE_TYPES: tuple[Container, ...] = ("mp4", "mov", "mkv", "webm")
+# Languages translated at the same time; each also sends its batches in parallel.
+_TRANSLATION_THREADS = 4
+
 INSTRUCTIONS = (
     "Tools for YouTube videos, given as URLs or 11-character video IDs: list a video's subtitle "
     "tracks, get its transcript (plain text, SRT, WebVTT, JSON or timestamped lines), list the "
@@ -80,15 +88,32 @@ INSTRUCTIONS = (
     "video or its audio, and save subtitles as files in the server's download folder. Read long "
     "transcripts in parts with max_chars and next_offset. To translate a transcript, get it as "
     "srt or vtt and translate its text lines yourself, keeping the timing lines as they are. "
-    "When the user asks to download a video, call list_formats, then ask which file type they "
-    "want, which resolution (among those list_formats gives for that file type), and whether "
-    "to embed subtitles: in the original language (list_tracks), translated into a language "
-    "they name (translate them yourself and pass them as translated_subtitles), or none; skip "
-    "the questions the user already answered, then call download. When the user only wants "
-    "subtitles, call save_subtitles; to save a translation, pass your translated text as "
-    "translated_srt. A download that finds its file already there returns skipped=true; call "
-    "it again with overwrite=true when the user wants another resolution or other subtitles."
+    "When the user asks to download a video, call download right away: it takes the highest "
+    "quality by default, with subtitles in the spoken language. Do not ask about options the "
+    "user did not mention; pass the ones they did: a file type (format), a quality level "
+    '(quality="medium" for medium quality, at most 720p; quality="low" for low quality or a '
+    "small file, at most 360p), a resolution such as 1080, or subtitles: other languages "
+    "(list_tracks), a translation into a language they name (translate it yourself and pass "
+    "it as translated_subtitles), or none (subtitles=[]). Call list_formats only when the user "
+    "asks what a video can be downloaded as, or names a resolution you need to check. When "
+    "the user only wants subtitles, call save_subtitles; to save a translation, pass your "
+    "translated text as translated_srt. A download that finds its file already there returns "
+    "skipped=true; call it again with overwrite=true when the user wants another quality, "
+    "resolution or other subtitles."
 )
+
+
+def instructions(translator: str | None = None) -> str:
+    """The server's instructions; with a ``translator``, they let the server translate."""
+    if translator is None:
+        return INSTRUCTIONS
+    return (
+        f"{INSTRUCTIONS} This server translates subtitles itself with {translator}, faster than "
+        "you can: when the user wants subtitles in another language, pass translate_to "
+        "(language codes for download, one code for save_subtitles) instead of translating "
+        "them yourself."
+    )
+
 
 VideoArg = Annotated[str, Field(description="A YouTube video URL or 11-character video ID.")]
 LanguagesArg = Annotated[
@@ -148,15 +173,22 @@ KindArg = Annotated[
 ]
 LimitArg = Annotated[int, Field(ge=1, le=5000, description="The most videos to list.")]
 ContainerArg = Annotated[
-    Container,
-    Field(description="mp4 or mov: video with sound; m4a or mp3: audio only (mp3 needs ffmpeg)."),
+    Container | None,
+    Field(
+        description=(
+            "mp4, mkv, webm or mov: video with sound; m4a or mp3: audio only (mp3 needs "
+            "ffmpeg). null, the default: mp4, or mkv when only mkv holds the largest picture "
+            "(often VP9 in 4K). webm takes VP9 or AV1 with Opus, and subtitles only as files."
+        )
+    ),
 ]
 QualityArg = Annotated[
     Quality,
     Field(
         description=(
-            "best: the largest picture the file type holds (mp4: AV1 or H.264, up to 8K); "
-            "compat: H.264 up to 1080p, plays everywhere."
+            "best (the default): the largest picture the file type holds (mp4: AV1 or H.264, "
+            "up to 8K); medium: the same up to 720p; low: up to 360p with the smallest audio, "
+            "for small files; compat: H.264 up to 1080p, plays everywhere."
         )
     ),
 ]
@@ -204,6 +236,26 @@ TranslatedArg = Annotated[
             "Subtitles you translated, to add like subtitles; the first one is shown by default. "
             "Without subtitles, only these are added."
         )
+    ),
+]
+TranslateToArg = Annotated[
+    list[Annotated[str, Field(pattern=LANGUAGE_CODE)]] | None,
+    Field(
+        description=(
+            'Languages the server translates the subtitles into, such as ["tr"], with the '
+            "model of its UTMAX_TRANSLATOR setting; the first one is shown by default. It "
+            "translates the first of subtitles, else the spoken language."
+        )
+    ),
+]
+TranslateOneArg = Annotated[
+    str | None,
+    Field(
+        pattern=LANGUAGE_CODE,
+        description=(
+            "A language the server translates the subtitles into before saving them, such as "
+            '"tr", with the model of its UTMAX_TRANSLATOR setting.'
+        ),
     ),
 ]
 OverwriteArg = Annotated[
@@ -319,10 +371,15 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
     settings = config if config is not None else Config.from_env()
     youtube = client if client is not None else Client(proxy=settings.proxy)
     reader = _Reader(youtube)
+    translator = (
+        None
+        if settings.translator is None
+        else _ServerTranslator(youtube, settings.translator, settings.translator_effort)
+    )
     server = MCPServer(
         "utmax",
         title="u-transcript max",
-        instructions=INSTRUCTIONS,
+        instructions=instructions(settings.translator),
         version=__version__,
         website_url="https://github.com/U-C4N/U-transkript",
     )
@@ -418,18 +475,20 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
     async def download(
         video: VideoArg,
         *,
-        format: ContainerArg = "mp4",
+        format: ContainerArg = None,
         quality: QualityArg = "best",
         resolution: ResolutionArg = None,
         subtitles: SubtitlesArg = None,
         translated_subtitles: TranslatedArg = None,
+        translate_to: TranslateToArg = None,
         subtitle_mode: SubtitleModeArg = "embed",
         overwrite: OverwriteArg = False,
         ctx: Context[Any, Any],
     ) -> DownloadOut:
-        """Download a YouTube video (mp4, mov) or its audio (m4a, mp3) into the server's
-        download folder, named after its title, with YouTube's subtitles and/or ones you
-        translated. A file that is already there is not downloaded again unless overwrite."""
+        """Download a YouTube video (mp4, mkv, webm, mov) or its audio (m4a, mp3) into the
+        server's download folder, named after its title, with YouTube's subtitles and/or
+        translated ones. A file that is already there is not downloaded again unless
+        overwrite."""
         return await download_file(
             youtube,
             settings.download_dir,
@@ -439,6 +498,8 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
             resolution=resolution,
             subtitles=subtitles,
             translated_subtitles=translated_subtitles,
+            translate_to=translate_to,
+            translator=translator,
             subtitle_mode=subtitle_mode,
             overwrite=overwrite,
             report=ctx.report_progress,
@@ -452,10 +513,12 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
         source: TrackSourceArg = "any",
         translated_srt: TranslatedSrtArg = None,
         translated_language: TranslatedLanguageArg = None,
+        translate_to: TranslateOneArg = None,
         format: SubtitleFileArg = "srt",
     ) -> SavedOut:
         """Save a YouTube video's subtitles as a file in the server's download folder: one of
-        its tracks, or a translation you made (translated_srt and translated_language)."""
+        its tracks, a translation you made (translated_srt and translated_language), or one
+        the server makes (translate_to)."""
         with tool_errors():
             return save_subtitle_file(
                 reader,
@@ -466,6 +529,8 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
                 source=source,
                 translated_srt=translated_srt,
                 translated_language=translated_language,
+                translate_to=translate_to,
+                translator=translator,
                 format=format,
             )
 
@@ -477,11 +542,13 @@ async def download_file(
     directory: Path,
     video: str,
     *,
-    format: Container = "mp4",
+    format: Container | None = None,
     quality: Quality = "best",
     resolution: int | None = None,
     subtitles: list[str] | None = None,
     translated_subtitles: list[TranslatedSubtitle] | None = None,
+    translate_to: list[str] | None = None,
+    translator: Callable[[], Translator] | None = None,
     subtitle_mode: SubtitleMode = "embed",
     overwrite: bool = False,
     report: Callable[[float, float | None, str | None], Coroutine[Any, Any, None]] | None = None,
@@ -489,14 +556,20 @@ async def download_file(
     """Download ``video`` into ``directory`` on a worker thread, unless it is already there
     (``overwrite`` downloads it again).
 
-    ``translated_subtitles`` join ``subtitles`` (or replace the spoken-language default when
-    ``subtitles`` is ``None``), and the first translation is the track shown by default.
+    Without a ``format`` the file is an mp4, or an mkv when only an mkv holds the largest
+    picture (see :func:`best_file_type`); a finished mp4 or mkv of the video counts as there.
+
+    ``translated_subtitles``, and the translations into ``translate_to`` that ``translator``
+    makes on the worker, join ``subtitles`` (or replace the spoken-language default when
+    ``subtitles`` is ``None``); the first translation is the track shown by default.
 
     The worker also looks for the file, so a folder that cannot be searched is a tool error
     like any other file system error. ``report`` receives ``(progress, total, message)`` on the
     event loop, like ``Context.report_progress``: one bar for the whole call that only fills
-    (see ``_Counter``). When the caller is cancelled, the download stops and keeps its partial
-    files, so the next call resumes it.
+    (see ``_Counter``). The download threads only queue their progress and never wait for the
+    event loop; a task on the loop sends it in order, and all of it before the call returns.
+    When the caller is cancelled, the download stops and keeps its partial files, so the next
+    call resumes it.
     """
     with tool_errors():
         video_id = parse_video_id(video)
@@ -506,47 +579,36 @@ async def download_file(
             )
             for item in translated_subtitles or ()
         ]
-    chosen: list[str | Transcript] | None = None if subtitles is None else list(subtitles)
-    if translations:
-        chosen = [*(chosen or ()), *translations]
-    # The first translation is the track shown by default, where tracks are embedded at all.
-    embeds = format in ("mp4", "mov") and subtitle_mode != "sidecar"
-    shown = translations[0].language_code if translations and embeds else None
-    token = anyio.lowlevel.current_token()
     cancel = threading.Event()
-    counter = _Counter()
-    failed = False
-
-    def forward(update: Progress) -> None:
-        nonlocal failed
-        if report is None or cancel.is_set():  # nobody is listening any more
-            return
-        counted = counter.count(update)
-        if counted is None:
-            return
-        progress, total = counted
-        try:
-            anyio.from_thread.run(report, progress, total, _progress_message(update), token=token)
-        except Exception:  # progress is best effort; it must never stop a download
-            # The first failure of a download is a warning, so that progress which never gets
-            # through (an anyio older than 4.11, say) shows in the log; the rest is debugging.
-            level = logging.DEBUG if failed else logging.WARNING
-            failed = True
-            log.log(level, "could not report download progress", exc_info=True)
+    relay = None if report is None else _ProgressRelay(report, cancel)
 
     def work() -> DownloadOut:
-        existing = None if overwrite else _existing_download(directory, video_id, format)
-        if existing is not None:
-            return DownloadOut(
-                path=str(existing),
-                size_bytes=existing.stat().st_size,
-                video_id=video_id,
-                title=existing.name.removesuffix(f".{format}").removesuffix(f" [{video_id}]"),
-                container=format,
-                embedded_subtitles=[],
-                sidecars=[],
-                skipped=True,
-            )
+        candidates: tuple[Container, ...] = (format,) if format is not None else ("mp4", "mkv")
+        for kind in () if overwrite else candidates:
+            existing = _existing_download(directory, video_id, kind)
+            if existing is not None:
+                return DownloadOut(
+                    path=str(existing),
+                    size_bytes=existing.stat().st_size,
+                    video_id=video_id,
+                    title=existing.name.removesuffix(f".{kind}").removesuffix(f" [{video_id}]"),
+                    container=kind,
+                    embedded_subtitles=[],
+                    sidecars=[],
+                    skipped=True,
+                )
+        kind = format or best_file_type(client.list_formats(video_id), quality, resolution)
+        # The first translation is the track shown by default, where tracks are embedded at all.
+        embeds = kind in ("mp4", "mov", "mkv") and subtitle_mode != "sidecar"
+        made: list[Transcript] = []
+        if translate_to:
+            source = client.fetch(video_id, subtitles[:1] if subtitles else None)
+            made = translate_on_server(client, translator, source, translate_to)
+        every = [*translations, *made]
+        chosen: list[str | Transcript] | None = None if subtitles is None else list(subtitles)
+        if every:
+            chosen = [*(chosen or ()), *every]
+        shown = every[0].language_code if every and embeds else None
         directory.mkdir(parents=True, exist_ok=True)
         # The search above already kept a finished download unless overwrite was asked for.
         # What is left in the way is a subtitle file of an earlier download (or the file to
@@ -554,14 +616,14 @@ async def download_file(
         result = client.download(
             video_id,
             directory,
-            format=format,
+            format=kind,
             quality=quality,
             resolution=resolution,
             subtitles=chosen,
             subtitle_mode=subtitle_mode,
             default_subtitle=shown,
             overwrite=True,
-            progress=forward,
+            progress=_ignore if relay is None else relay.forward,
             cancel=cancel,
         )
         return DownloadOut(
@@ -575,12 +637,143 @@ async def download_file(
             skipped=False,
         )
 
+    outcome: list[DownloadOut | Exception] = []
+
+    def attempt() -> None:
+        try:
+            outcome.append(work())
+        except Exception as error:  # raised on the event loop once the progress is sent
+            outcome.append(error)
+
     try:
-        with tool_errors():
-            return await anyio.to_thread.run_sync(work, abandon_on_cancel=True)
+        async with anyio.create_task_group() as group:
+            if relay is not None:
+                group.start_soon(relay.deliver)
+            try:
+                await anyio.to_thread.run_sync(attempt, abandon_on_cancel=True)
+            finally:
+                if relay is not None:
+                    relay.finish()
     except anyio.get_cancelled_exc_class():
         cancel.set()
         raise
+    result = outcome[0]
+    if isinstance(result, Exception):
+        with tool_errors():
+            raise result
+    return result
+
+
+def translate_on_server(
+    client: Client,
+    translator: Callable[[], Translator] | None,
+    source: Transcript,
+    languages: Sequence[str],
+) -> list[Transcript]:
+    """``source`` translated into every one of ``languages`` at the same time, in order.
+
+    Raises:
+        InvalidOption: the server has no translator (``UTMAX_TRANSLATOR`` is not set).
+    """
+    if translator is None:
+        raise InvalidOption(
+            "This server has no translator, so it cannot translate subtitles itself.",
+            suggestion=(
+                "Translate the subtitles yourself and pass translated_subtitles or "
+                "translated_srt, or set UTMAX_TRANSLATOR (such as gemini=gemini-3.8-flash) "
+                "in the MCP server's environment."
+            ),
+        )
+    model = translator()
+    with ThreadPoolExecutor(max_workers=min(_TRANSLATION_THREADS, len(languages))) as pool:
+        return list(pool.map(lambda code: client.translate(source, code, model=model), languages))
+
+
+class _ServerTranslator:
+    """The translator of ``UTMAX_TRANSLATOR``, created on first use and then kept."""
+
+    def __init__(self, client: Client, model: str, effort: str | None) -> None:
+        self._client = client
+        self._model = model
+        self._effort = effort
+        self._translator: Translator | None = None
+        self._lock = threading.Lock()
+
+    def __call__(self) -> Translator:
+        with self._lock:
+            if self._translator is None:
+                options = {} if self._effort is None else {"effort": self._effort}
+                try:
+                    self._translator = self._client.translator(self._model, **options)
+                except ProviderNotInstalled as error:
+                    error.suggestion = (
+                        "Start the MCP server with that extra, such as: uvx --from "
+                        f'"u-transcript-max[mcp,{error.extra}]@latest" utmax-mcp'
+                    )
+                    raise
+                except ProviderAuthError as error:
+                    error.suggestion += " For this server, set it in the MCP server's environment."
+                    raise
+            return self._translator
+
+
+def _ignore(update: Progress) -> None:
+    """The progress callback of a call nobody follows."""
+
+
+class _ProgressRelay:
+    """Carries download progress from the download threads to the event loop.
+
+    The threads only count and queue it (:meth:`forward`) and never wait for the loop.
+    :meth:`deliver`, a task on the loop, sends the queue in order until :meth:`finish` has been
+    called and everything is sent.
+    """
+
+    def __init__(
+        self,
+        report: Callable[[float, float | None, str | None], Coroutine[Any, Any, None]],
+        cancel: threading.Event,
+    ) -> None:
+        self._report = report
+        self._cancel = cancel
+        self._counter = _Counter()
+        self._pending: queue.SimpleQueue[tuple[float, float | None, str]] = queue.SimpleQueue()
+        self._finished = anyio.Event()
+        self._failed = False
+
+    def forward(self, update: Progress) -> None:
+        """Runs on a download thread: count ``update`` and queue it."""
+        if self._cancel.is_set():  # nobody is listening any more
+            return
+        counted = self._counter.count(update)
+        if counted is not None:
+            self._pending.put((*counted, _progress_message(update)))
+
+    def finish(self) -> None:
+        """The download has ended: :meth:`deliver` returns once the queue is empty."""
+        self._finished.set()
+
+    async def deliver(self) -> None:
+        while not self._finished.is_set():
+            await self._send_queued()
+            with anyio.move_on_after(PROGRESS_POLL):
+                await self._finished.wait()
+        await self._send_queued()  # what the download queued before it ended
+
+    async def _send_queued(self) -> None:
+        while True:
+            try:
+                progress, total, message = self._pending.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                await self._report(progress, total, message)
+            except Exception:  # progress is best effort; it must never stop a download
+                # The first failure of a download is a warning, so that progress which never
+                # gets through shows in the log; the rest is debugging.
+                level = logging.DEBUG if self._failed else logging.WARNING
+                self._failed = True
+                log.log(level, "could not report download progress", exc_info=True)
 
 
 @contextmanager
@@ -618,19 +811,36 @@ def transcript_out(
     )
 
 
+def best_file_type(formats: FormatList, quality: Quality, resolution: int | None) -> Container:
+    """``"mkv"`` when an mkv holds a larger picture (or a higher frame rate) than an mp4 under
+    these limits, which happens when YouTube offers the video's largest size only as VP9;
+    otherwise ``"mp4"``, which more players take."""
+    in_mp4 = pick_video(formats, container="mp4", quality=quality, resolution=resolution)
+    in_mkv = pick_video(formats, container="mkv", quality=quality, resolution=resolution)
+    if in_mkv is None:
+        return "mp4"
+    if in_mp4 is None:
+        return "mkv"
+    larger = (_short_side(in_mkv), in_mkv.fps or 0) > (_short_side(in_mp4), in_mp4.fps or 0)
+    return "mkv" if larger else "mp4"
+
+
 def formats_out(formats: FormatList) -> FormatsOut:
     """The ``list_formats`` output: the file types ``formats`` allow and, for each height, the
     picture ``download(resolution=height)`` takes for each video file type.
 
-    Video file types need AAC audio too, so a video without it offers none.
+    A video file type also needs audio it can hold (AAC for mp4 and mov, Opus or AAC for mkv,
+    Opus for webm), so a video without it does not offer that type.
     """
-    order: tuple[Container, ...] = ("mp4", "mov", "m4a", "mp3")
-    has_audio = any(fmt.kind == "audio" and file_types(fmt) for fmt in formats)
+    order: tuple[Container, ...] = ("mp4", "mov", "m4a", "mp3", "mkv", "webm")
+    sound = {kind for fmt in formats if fmt.kind == "audio" for kind in file_types(fmt)}
     videos = [fmt for fmt in formats if fmt.kind == "video" and file_types(fmt)]
     heights = sorted({_short_side(fmt) for fmt in videos} - {0}, reverse=True)
     pictures: dict[tuple[int, int | None, bool], list[Container]] = {}
-    for height in heights if has_audio else ():
-        for kind in ("mp4", "mov"):
+    for height in heights:
+        for kind in _VIDEO_FILE_TYPES:
+            if kind not in sound:
+                continue
             picked = pick_video(videos, container=kind, resolution=height)
             if picked is not None and _short_side(picked) == height:
                 pictures.setdefault((height, picked.fps, picked.hdr), []).append(kind)
@@ -645,8 +855,7 @@ def formats_out(formats: FormatList) -> FormatsOut:
         for (side, fps, hdr), kinds in pictures.items()
     ]
     held = {kind for resolution in resolutions for kind in resolution.file_types}
-    if has_audio:
-        held |= {"m4a", "mp3"}
+    held |= sound & {"m4a", "mp3"}
     return FormatsOut(
         video=_video(formats.video),
         file_types=[kind for kind in order if kind in held],
@@ -664,10 +873,18 @@ def save_subtitle_file(
     source: Literal["any", "manual", "generated"] = "any",
     translated_srt: str | None = None,
     translated_language: str | None = None,
+    translate_to: str | None = None,
+    translator: Callable[[], Translator] | None = None,
     format: Literal["srt", "vtt"] = "srt",
 ) -> SavedOut:
-    """Write a track of ``video``, or ``translated_srt``, to ``directory`` as
+    """Write a track of ``video``, ``translated_srt``, or the track translated into
+    ``translate_to`` by ``translator``, to ``directory`` as
     ``"{title} [{video_id}].{language}.{format}"``."""
+    if translated_srt is not None and translate_to is not None:
+        raise InvalidOption(
+            "translated_srt is a translation already; translate_to asks the server for one.",
+            suggestion="Pass translated_srt or translate_to, not both.",
+        )
     if translated_srt is not None:
         if not translated_language:
             raise InvalidOption(
@@ -687,6 +904,8 @@ def save_subtitle_file(
             include_manual=source != "generated",
             include_generated=source != "manual",
         )
+        if translate_to is not None:
+            (transcript,) = translate_on_server(client, translator, transcript, [translate_to])
     directory.mkdir(parents=True, exist_ok=True)
     language = safe_name(transcript.language_code) or "subtitles"
     name = default_filename(transcript.video, f"{language}.{format}")
@@ -711,8 +930,8 @@ def run() -> None:
         stream=sys.stderr,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    config = Config.from_env()
     try:
+        config = Config.from_env()
         client = Client(proxy=config.proxy)
     except UTMaxError as error:
         raise SystemExit(f"utmax-mcp: {error} Suggestion: {error.suggestion}") from error

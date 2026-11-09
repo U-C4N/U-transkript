@@ -7,5 +7,12 @@ import importlib.util
 collect_ignore = (
     []
     if importlib.util.find_spec("mcp") is not None
-    else ["test_download.py", "test_flow.py", "test_live.py", "test_server.py", "test_stdio.py"]
+    else [
+        "test_download.py",
+        "test_flow.py",
+        "test_live.py",
+        "test_server.py",
+        "test_stdio.py",
+        "test_translate.py",
+    ]
 )

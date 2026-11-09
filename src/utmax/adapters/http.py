@@ -35,6 +35,11 @@ _IPV4_ONLY = ("0.0.0.0", 0)
 class UrllibTransport:
     """Sends requests with the standard library; every request uses a fresh connection.
 
+    Fresh connections are deliberate for media: YouTube slows a connection down after its
+    first burst. On 2026-11-09, keeping connections open across 256 KiB ranges made the
+    transfer about 20 % slower than a new connection per range (3.4 and 4.6 MB/s against 2.6
+    and 3.8 MB/s, four connections), and gave nothing measurable with 2 MiB ranges.
+
     ``force_ipv4=True`` connects over IPv4 only. Stream URLs are bound to the address that
     requested them, so machines whose IPv4 and IPv6 addresses differ may need it.
     """

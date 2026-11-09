@@ -1,7 +1,8 @@
 # High-quality downloads — design
 
 Approved in conversation on 2026-10-09. Adds two milestones before the docs-and-release one:
-**M8** (access, formats, MCP flow; released as 0.1.0a4) and **M9** (MKV/WebM; 0.1.0a5). The old
+**M8** (access, formats, MCP flow; released as 0.1.0a4) and **M9** (MKV/WebM; planned for 0.1.0a5,
+built for 0.2.0, see `2026-11-09-v0.2.0-design.md`). The old
 M8 (docs & release 0.1.0) becomes **M10**.
 
 ## 1. Goal: the MCP conversation
@@ -109,7 +110,7 @@ The server's instructions spell this flow out so Claude, Codex and other clients
   `resolution=144` download of a dubbed video keeps its original audio; a 4K HDR `.mp4` is
   checked by hand with ffprobe.
 
-## 4. M9 — MKV and WebM (0.1.0a5)
+## 4. M9 — MKV and WebM (0.2.0)
 
 - **Shared media model** (`core/media/model.py`): per track the kind, codec, timescale, sample
   table (offset, size, dts, cts, duration, sync), codec configuration, colour/HDR, language,

@@ -133,7 +133,7 @@ def test_translation_error_fields() -> None:
 @pytest.mark.parametrize(
     "error",
     [
-        errors.InvalidModelSpec("claude-opus-5"),
+        errors.InvalidModelSpec("claude-opus-5-5"),
         errors.MissingExtra("no mcp", extra="mcp", video_id="v"),
         errors.TranslationError("failed", provider="openai"),
         errors.ProviderNotInstalled("no sdk", provider="gemini", extra="gemini"),

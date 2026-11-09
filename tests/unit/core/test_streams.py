@@ -242,11 +242,56 @@ def test_file_types_name_where_a_format_fits() -> None:
             audio(251, "opus"),
         )
     )
-    assert file_types(h264) == ("mp4", "mov")
-    assert file_types(av1) == ("mp4",)
-    assert file_types(vp9) == ()
-    assert file_types(aac) == ("mp4", "mov", "m4a", "mp3")
-    assert file_types(opus) == ()
+    assert file_types(h264) == ("mp4", "mov", "mkv")
+    assert file_types(av1) == ("mp4", "mkv", "webm")
+    assert file_types(vp9) == ("mkv", "webm")
+    assert file_types(aac) == ("mp4", "mov", "m4a", "mp3", "mkv")
+    assert file_types(opus) == ("mkv", "webm")
+
+
+def test_mkv_takes_the_vp9_picture_mp4_cannot_hold_and_opus() -> None:
+    found = streams(
+        video(313, "vp9", 3840, 2160),
+        video(137, "avc1.640028", 1920, 1080),
+        video(399, "av01.0.08M.08", 1920, 1080),
+        audio(140, bitrate=130000),
+        audio(251, "opus", bitrate=160000),
+    )
+    assert choose(found, "mp4") == (399, 140)  # mp4: AV1 1080p and AAC
+    assert choose(found, "mkv") == (313, 251)  # mkv: VP9 2160p and Opus
+    assert choose(found, "webm") == (313, 251)
+
+
+def test_at_the_same_size_av1_wins_over_vp9_and_vp9_over_h264() -> None:
+    found = streams(
+        video(248, "vp9", 1920, 1080),
+        video(137, "avc1.640028", 1920, 1080),
+        video(399, "av01.0.08M.08", 1920, 1080),
+        audio(251, "opus"),
+    )
+    assert choose(found, "mkv") == (399, 251)
+    without_av1 = streams(
+        video(248, "vp9", 1920, 1080), video(137, "avc1.640028", 1920, 1080), audio(251, "opus")
+    )
+    assert choose(without_av1, "mkv") == (248, 251)
+
+
+def test_webm_needs_opus_and_mkv_takes_aac_when_opus_is_missing() -> None:
+    found = streams(video(248, "vp9", 1920, 1080), audio(140))
+    with pytest.raises(FormatNotAvailable, match="has no Opus audio"):
+        choose(found, "webm")
+    assert choose(found, "mkv") == (248, 140)
+
+
+def test_low_quality_mkv_prefers_the_smallest_opus() -> None:
+    found = streams(
+        video(242, "vp9", 426, 240),
+        video(243, "vp9", 640, 360),
+        audio(251, "opus", bitrate=160000),
+        audio(249, "opus", bitrate=50000),
+        audio(139, "mp4a.40.5", bitrate=48000),
+    )
+    assert choose(found, "mkv", "low") == (243, 249)
 
 
 def test_audio_tracks_hdr_and_bit_depth_are_parsed() -> None:
@@ -415,3 +460,62 @@ def test_pick_video_is_the_choice_of_choose_streams() -> None:
         for container, quality in (("mov", "best"), ("mp4", "compat"), ("m4a", "best"))
     ] == [299, 299, None]
     assert pick_video(formats, container="mp4", resolution=720) is None
+
+
+LADDER = (
+    video(401, "av01.0.12M.10", 3840, 2160),
+    video(400, "av01.0.08M.08", 2560, 1440),
+    video(399, "av01.0.08M.08", 1920, 1080),
+    video(398, "av01.0.05M.08", 1280, 720),
+    video(397, "av01.0.04M.08", 854, 480),
+    video(396, "av01.0.01M.08", 640, 360),
+    video(395, "av01.0.00M.08", 426, 240),
+    video(137, "avc1.640028", 1920, 1080),
+    video(136, "avc1.4d401f", 1280, 720),
+    video(134, "avc1.4d401e", 640, 360),
+    audio(140, bitrate=130000),
+    audio(139, "mp4a.40.5", bitrate=48000),
+)
+
+
+@pytest.mark.parametrize(
+    ("quality", "resolution", "expected"),
+    [
+        ("best", None, (401, 140)),
+        ("medium", None, (398, 140)),
+        ("low", None, (396, 139)),
+        ("compat", None, (137, 140)),
+        ("medium", 480, (397, 140)),  # the smaller limit wins
+        ("medium", 1080, (398, 140)),
+        ("low", 240, (395, 139)),
+        ("low", 1080, (396, 139)),
+    ],
+)
+def test_quality_levels_cap_the_picture(
+    quality: Quality, resolution: int | None, expected: tuple[int, int]
+) -> None:
+    assert choose(streams(*LADDER), "mp4", quality, resolution) == expected
+
+
+def test_low_quality_takes_the_smallest_audio_of_the_original_track() -> None:
+    found = streams(
+        audio(
+            140,
+            bitrate=130000,
+            audioTrack={"displayName": "English original", "audioIsDefault": True},
+        ),
+        audio(
+            139,
+            "mp4a.40.5",
+            bitrate=48000,
+            audioTrack={"displayName": "English original", "audioIsDefault": True},
+        ),
+        audio(141, bitrate=40000, audioTrack={"displayName": "German", "audioIsDefault": False}),
+    )
+    assert choose(found, "m4a", "low") == (None, 139)
+    assert choose(found, "m4a", "best") == (None, 140)
+
+
+def test_medium_and_low_say_how_large_a_picture_they_wanted() -> None:
+    with pytest.raises(FormatNotAvailable, match="up to 360p"):
+        choose(streams(video(398, "av01.0.05M.08", 1280, 720), audio(140)), "mp4", "low")

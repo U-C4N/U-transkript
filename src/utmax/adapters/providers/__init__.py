@@ -7,6 +7,7 @@ from typing import Any
 from utmax.adapters.providers.base import EngineOptions, SDKTranslator, Translator
 from utmax.adapters.providers.claude import ClaudeTranslator
 from utmax.adapters.providers.gemini import GeminiTranslator
+from utmax.adapters.providers.grok import GrokTranslator
 from utmax.adapters.providers.openai import OpenAITranslator
 from utmax.adapters.providers.openrouter import OpenRouterTranslator
 from utmax.core.translate.spec import parse_model_spec
@@ -17,6 +18,7 @@ __all__ = [
     "ClaudeTranslator",
     "EngineOptions",
     "GeminiTranslator",
+    "GrokTranslator",
     "OpenAITranslator",
     "OpenRouterTranslator",
     "Translator",
@@ -27,6 +29,7 @@ TRANSLATORS: dict[str, type[SDKTranslator]] = {
     "claude": ClaudeTranslator,
     "openai": OpenAITranslator,
     "gemini": GeminiTranslator,
+    "grok": GrokTranslator,
     "openrouter": OpenRouterTranslator,
 }
 

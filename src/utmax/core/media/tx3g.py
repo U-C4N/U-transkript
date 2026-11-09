@@ -27,6 +27,7 @@ __all__ = [
     "encode_sample",
     "normalize_cues",
     "sample_entry",
+    "strip_formatting",
     "subtitle_track",
     "track_languages",
     "track_name",
@@ -120,6 +121,11 @@ def sample_entry() -> bytes:
     )
 
 
+def strip_formatting(text: str) -> str:
+    """``text`` without its ``<b>``, ``<i>`` and ``<u>`` tags."""
+    return _FORMATTING_TAG.sub("", text)
+
+
 def track_name(transcript: Transcript) -> str:
     """The track title players show, e.g. ``"Turkish (AI: claude=...)"`` or ``"English + Turkish"``."""
     label = transcript.language.strip() or " + ".join(
@@ -155,7 +161,7 @@ def subtitle_track(transcript: Transcript, *, limit: int | None = None) -> Subti
     for cue in cues:
         if cue.start > position:
             timeline.append((cue.start - position, ""))
-        timeline.append((cue.end - cue.start, _FORMATTING_TAG.sub("", cue.text)))
+        timeline.append((cue.end - cue.start, strip_formatting(cue.text)))
         position = cue.end
     if limit is not None and position < limit:
         timeline.append((limit - position, ""))

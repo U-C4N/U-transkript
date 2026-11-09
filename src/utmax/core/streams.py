@@ -31,6 +31,14 @@ __all__ = [
 ]
 
 COMPAT_MAX_SIDE = 1080
+MEDIUM_MAX_SIDE = 720
+LOW_MAX_SIDE = 360
+# The size limit of each quality level; "best" has none.
+QUALITY_MAX_SIDE: Mapping[Quality, int] = {
+    "medium": MEDIUM_MAX_SIDE,
+    "low": LOW_MAX_SIDE,
+    "compat": COMPAT_MAX_SIDE,
+}
 QUICKTIME_MAX_RATE = 65535
 _MIME = re.compile(r'(video|audio)/(mp4|webm)\s*;\s*codecs="([^"]*)"')
 _KINDS: Mapping[str, Literal["video", "audio"]] = {"video": "video", "audio": "audio"}
@@ -39,9 +47,29 @@ _HDR_TRANSFERS = frozenset(
     {"COLOR_TRANSFER_CHARACTERISTICS_SMPTEST2084", "COLOR_TRANSFER_CHARACTERISTICS_ARIB_STD_B67"}
 )
 # The video codecs each file type holds, the preferred one first.
-_VIDEO_CODECS: Mapping[Container, tuple[Codec, ...]] = {"mp4": ("av1", "h264"), "mov": ("h264",)}
-_AUDIO_CODECS: tuple[Codec, ...] = ("aac", "he-aac")
-_CODEC_NAMES: tuple[tuple[Codec, str], ...] = (("h264", "H.264"), ("av1", "AV1"))
+_VIDEO_CODECS: Mapping[Container, tuple[Codec, ...]] = {
+    "mp4": ("av1", "h264"),
+    "mov": ("h264",),
+    "mkv": ("av1", "vp9", "h264"),
+    "webm": ("av1", "vp9"),
+}
+_AAC: tuple[Codec, ...] = ("aac", "he-aac")
+# The audio codecs each file type holds; where Opus fits, it is preferred.
+_AUDIO_CODECS: Mapping[Container, tuple[Codec, ...]] = {
+    "mp4": _AAC,
+    "mov": _AAC,
+    "m4a": _AAC,
+    "mp3": _AAC,
+    "mkv": ("opus", *_AAC),
+    "webm": ("opus",),
+}
+_AUDIO_WANTED: Mapping[Container, str] = {
+    "mov": "stereo AAC audio (needed for .mov)",
+    "mkv": "Opus or AAC audio",
+    "webm": "Opus audio",
+}
+_CODEC_NAMES: tuple[tuple[Codec, str], ...] = (("h264", "H.264"), ("vp9", "VP9"), ("av1", "AV1"))
+_FILE_NAMES: Mapping[Container, str] = {"mp4": "MP4", "mkv": "MKV", "webm": "WebM"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,13 +118,8 @@ def describe_stream(stream: Stream) -> str:
 
 def file_types(fmt: Format) -> tuple[Container, ...]:
     """The file types a stream can go into with ``quality="best"``."""
-    if fmt.kind == "video":
-        return tuple(
-            container for container, codecs in _VIDEO_CODECS.items() if fmt.codec in codecs
-        )
-    if fmt.codec in _AUDIO_CODECS:
-        return ("mp4", "mov", "m4a", "mp3")
-    return ()
+    table = _VIDEO_CODECS if fmt.kind == "video" else _AUDIO_CODECS
+    return tuple(container for container, codecs in table.items() if fmt.codec in codecs)
 
 
 def choose_streams(
@@ -112,19 +135,20 @@ def choose_streams(
     Video, sizes measured on the short side so that vertical videos count like their landscape
     twins: ``"best"`` takes the largest picture the file type holds (``.mp4``: AV1 or H.264,
     HDR included; ``.mov``: H.264) up to ``resolution`` lines, then the higher frame rate, then
-    SDR over HDR, then AV1 over H.264, then the higher bitrate. ``"compat"`` takes SDR H.264 up
-    to 1080p (or ``resolution``, when smaller), which plays everywhere. Audio: AAC, preferring
-    the original track of a dubbed video, then YouTube's default track, then streams without
-    dynamic range compression, then the higher bitrate; ``.mov`` accepts only stereo at most
-    65535 Hz.
+    SDR over HDR, then AV1 over H.264, then the higher bitrate. ``"medium"`` and ``"low"`` do
+    the same up to 720p and 360p (or ``resolution``, when smaller). ``"compat"`` takes SDR
+    H.264 up to 1080p (or ``resolution``, when smaller), which plays everywhere. Audio: AAC,
+    preferring the original track of a dubbed video, then YouTube's default track, then
+    streams without dynamic range compression, then the higher bitrate (the lower one for
+    ``"low"``); ``.mov`` accepts only stereo at most 65535 Hz.
 
     Raises:
         FormatNotAvailable: nothing fits; the error lists every stream YouTube offered.
     """
     usable = [stream for stream in streams if stream.problem is None]
-    audio = _best_audio(usable, container)
+    audio = _best_audio(usable, container, smallest=quality == "low")
     if audio is None:
-        wanted = "stereo AAC audio (needed for .mov)" if container == "mov" else "AAC audio in MP4"
+        wanted = _AUDIO_WANTED.get(container, "AAC audio in MP4")
         raise _not_available(streams, wanted, video_id)
     if container in ("m4a", "mp3"):
         return None, audio
@@ -175,24 +199,31 @@ def _video_rule(
     container: Container, quality: Quality, resolution: int | None
 ) -> tuple[tuple[Codec, ...], int | None]:
     """The video codecs, in order of preference, and the size limit of a download."""
-    if quality == "compat":
-        return ("h264",), min(resolution or COMPAT_MAX_SIDE, COMPAT_MAX_SIDE)
-    return _VIDEO_CODECS.get(container, ()), resolution
+    codecs = ("h264",) if quality == "compat" else _VIDEO_CODECS.get(container, ())
+    cap = QUALITY_MAX_SIDE.get(quality)
+    if cap is None:
+        return codecs, resolution
+    return codecs, min(resolution or cap, cap)
 
 
 def _wanted_video(container: Container, codecs: tuple[Codec, ...], limit: int | None) -> str:
     """``"H.264 or AV1 video up to 720p in MP4"`` and the like, for an error message."""
     names = " or ".join(name for codec, name in _CODEC_NAMES if codec in codecs)
     size = f" up to {limit}p" if limit is not None else ""
-    where = " in MP4" if container == "mp4" and len(codecs) > 1 else ""
+    where = f" in {_FILE_NAMES[container]}" if container in _FILE_NAMES and len(codecs) > 1 else ""
     return f"{names} video{size}{where}"
 
 
-def _best_audio(streams: Sequence[Stream], container: Container) -> Stream | None:
+def _best_audio(
+    streams: Sequence[Stream], container: Container, *, smallest: bool = False
+) -> Stream | None:
+    """The audio stream a download into ``container`` takes; ``smallest`` prefers the lowest
+    bitrate of the preferred track instead of the highest."""
+    codecs = _AUDIO_CODECS.get(container, _AAC)
     candidates = [
         stream
         for stream in streams
-        if stream.format.kind == "audio" and stream.format.codec in _AUDIO_CODECS
+        if stream.format.kind == "audio" and stream.format.codec in codecs
     ]
     if container == "mov":
         candidates = [
@@ -207,7 +238,8 @@ def _best_audio(streams: Sequence[Stream], container: Container) -> Stream | Non
             stream.format.is_original,
             stream.format.is_default_audio,
             not stream.format.is_drc,
-            stream.format.bitrate,
+            stream.format.codec == "opus",
+            -stream.format.bitrate if smallest else stream.format.bitrate,
         ),
         default=None,
     )

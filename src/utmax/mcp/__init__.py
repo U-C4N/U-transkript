@@ -6,8 +6,9 @@ Install it with ``pip install "u-transcript-max[mcp]"`` and register the ``utmax
 
     claude mcp add utmax -- utmax-mcp
 
-It needs no API key: the assistant translates transcripts itself. Settings (the download folder
-and a proxy) come from environment variables; see :mod:`utmax.mcp.config`.
+It needs no API key: the assistant translates transcripts itself, unless ``UTMAX_TRANSLATOR``
+names a model for the server to translate with. Settings (the download folder, a proxy and
+that model) come from environment variables; see :mod:`utmax.mcp.config`.
 """
 
 from __future__ import annotations

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Mapping
 from typing import Any, Unpack
@@ -9,6 +10,7 @@ from typing import Any, Unpack
 from utmax.adapters.providers.base import (
     EngineOptions,
     SDKTranslator,
+    check_effort,
     positive_int,
     redact_secrets,
 )
@@ -28,23 +30,28 @@ log = logging.getLogger("utmax.translate")
 _REFUSED = frozenset(
     {"SAFETY", "RECITATION", "LANGUAGE", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}
 )
+# google-genai 3 defaults to API v1; v1beta keeps the behaviour every 2.x release had.
+_API_VERSION = "v1beta"
 
 
 class GeminiTranslator(SDKTranslator):
     """Translates with Google's Gemini models (``pip install "u-transcript-max[gemini]"``).
 
     Args:
-        model: a Gemini model id such as ``"gemini-2.5-flash"``.
+        model: a Gemini model id such as ``"gemini-3.8-flash"`` or ``"gemini-4-argon"``.
         api_key: a Gemini API key; by default the SDK reads ``GEMINI_API_KEY`` or
             ``GOOGLE_API_KEY``.
         retry_attempts: tries per request, the first included, on HTTP 408, 429 and 5xx; the
             SDK does not retry unless asked to.
+        effort: how long the model thinks, ``"low"``, ``"medium"`` or ``"high"``, sent as
+            ``thinking_level``; omitted means the model's default. Lower is faster.
         client: a ready ``google.genai.Client``, used instead of creating one.
         **engine: engine options, see :class:`utmax.providers.Translator`.
     """
 
     PROVIDER = "gemini"
     EXTRA = "gemini"
+    EFFORTS = ("low", "medium", "high")
 
     def __init__(
         self,
@@ -52,18 +59,22 @@ class GeminiTranslator(SDKTranslator):
         *,
         api_key: str | None = None,
         retry_attempts: int = 5,
+        effort: str | None = None,
         client: Any = None,
         **engine: Unpack[EngineOptions],
     ) -> None:
         super().__init__(model, **engine)
         self.retry_attempts = positive_int("retry_attempts", retry_attempts)
+        self.effort = check_effort(effort, self.EFFORTS)
         self._genai = self.import_sdk("google.genai")
         self._types = self.import_sdk("google.genai.types")
         self._errors = self.import_sdk("google.genai.errors")
-        self._httpx = self.import_sdk("httpx")
+        self._transport_errors = _transport_errors()
         if client is None:
             try:
-                client = self._genai.Client(api_key=api_key)
+                client = self._genai.Client(
+                    api_key=api_key, http_options=self._types.HttpOptions(api_version=_API_VERSION)
+                )
             except ValueError as error:
                 raise ProviderAuthError(
                     f"No Gemini API key was found: {redact_secrets(str(error))}",
@@ -83,6 +94,9 @@ class GeminiTranslator(SDKTranslator):
             ),
             # No tools are sent; this skips the SDK's function-calling loop and its log notice.
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            thinking_config=(
+                None if self.effort is None else types.ThinkingConfig(thinking_level=self.effort)
+            ),
         )
         try:
             response = self._client.models.generate_content(
@@ -90,7 +104,7 @@ class GeminiTranslator(SDKTranslator):
             )
         except self._errors.APIError as error:
             raise self._api_error(error) from error
-        except self._httpx.TransportError as error:
+        except self._transport_errors as error:
             raise ProviderError(
                 f"Could not reach Gemini: {redact_secrets(str(error))}", provider=self.PROVIDER
             ) from error
@@ -131,3 +145,21 @@ class GeminiTranslator(SDKTranslator):
 
 def _label(value: object) -> str:
     return str(getattr(value, "value", value) or "")
+
+
+def _transport_errors() -> tuple[type[BaseException], ...]:
+    """The connection errors of the HTTP clients google-genai may use.
+
+    google-genai 3 sends through httpx2 and installs httpx only on request; 2.x used httpx.
+    Neither SDK wraps their network errors, so both are caught when installed.
+    """
+    found: list[type[BaseException]] = []
+    for name in ("httpx2", "httpx"):
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            continue
+        error = getattr(module, "TransportError", None)
+        if isinstance(error, type) and issubclass(error, BaseException):
+            found.append(error)
+    return tuple(found)

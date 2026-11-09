@@ -499,8 +499,11 @@ Compat maps same-named errors 1:1 (upstream constructors); `NetworkError` → `Y
 | M6 | Compat | manifest script, full `utmax.compat`, session transport, error bridge, `install()` | 100 % manifest parity; ported upstream tests pass |
 | M7 | MCP server | config, 4 tools (no AI provider), paging, progress, entry points | In-memory and stdio tests; manual run in Claude Code/Desktop with a config snippet |
 | M8 | Access, formats & MCP flow | VISIONOS + visitorData, `best`/`compat` + `resolution`, HDR AV1 in MP4, `list_formats`, `save_subtitles`, translated subtitles (see `2026-10-09-high-quality-downloads-design.md`) | Ten-video reach test; 4K `.mp4` + ffprobe; 0.1.0a4 |
-| M9 | MKV & WebM | Shared media model, WebM reader, Matroska writer, `.mkv`/`.webm` targets (same document) | Byte-identical MP4; ffprobe-clean `.mkv`/`.webm`; 0.1.0a5 |
-| M10 | Docs & release 0.1.0 | Minimal README (ASCII diagram, install/extras, quickstart, features, MCP setup, compat one-liner, legal/ToS note), CHANGELOG, CONTRIBUTING, `live.yml`, `release.yml` (approval-gated Trusted Publishing) | All gates green; `uv build` + `twine check`; release job waits for approval; publish only when the user says so |
+| M9 | MKV & WebM | Shared media model, WebM reader, Matroska writer, `.mkv`/`.webm` targets (same document) | Byte-identical MP4; ffprobe-clean `.mkv`/`.webm`; moved from 0.1.0a5 (which shipped only a README) to 0.2.0 |
+| M11 | Newest models & Grok | `grok` provider, `effort` for every provider, anthropic 2.x and google-genai 3.x (see `2026-11-09-v0.2.0-design.md`) | Gates green at both ends of every SDK range; live translation per provider key; 0.2.0 |
+| M12 | Faster downloads & quality levels | `medium`/`low`, reused streams, parallel subtitles, MCP downloads without questions, non-blocking MCP progress | Measured MB/s recorded (kept connections were slower, so none are kept); ffprobe checks of the levels; 0.2.0 |
+| M13 | Translation in the MCP server | `UTMAX_TRANSLATOR`, `translate_to` on `download` and `save_subtitles` | In-memory MCP tests; one live MCP translation; 0.2.0 |
+| M10 | Docs & release 0.2.0 | README (ASCII diagram, legal/ToS note, providers, quality levels, MKV/WebM), CHANGELOG, CONTRIBUTING, lowest-direct CI job, Python 3.15, `release.yml` that publishes only a CI-green commit on main, actions pinned by commit | All gates green; `uv build` + `twine check`; release job waits for approval; publish only when the user says so |
 
 ## 10. Risks
 
@@ -516,9 +519,9 @@ Compat maps same-named errors 1:1 (upstream constructors); `NetworkError` → `Y
 | Prompt injection via captions | Protocol rules, schema output, id validation, output used only as subtitle text |
 | Legal / ToS | README disclaimer (personal use, content you have rights to, YouTube ToS); DRM formats excluded; extension subtitle-only |
 
-**Deferred (not in 0.1.0)**: Chrome extension (next sub-project), async API, AI summary/chapters, metadata/cover art,
+**Deferred (not in 0.2.0)**: Chrome extension (next sub-project), async API, AI summary/chapters, metadata/cover art,
 YouTube chapters, hardsub, cookies/auth (age-restricted, members-only), SOCKS/HTTPS proxies (via custom transport
-only), 10-bit/HDR AV1, VP9/WebM sources, REST API, CLI.
+only), REST API, CLI. (10-bit/HDR AV1 arrived with M8, VP9/WebM sources with M9.)
 
 ## 11. Verification (end-to-end)
 

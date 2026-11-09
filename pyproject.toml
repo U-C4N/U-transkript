@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 authors = [{ name = "U-C4N" }]
 keywords = ["youtube", "transcript", "subtitles", "captions", "srt", "vtt", "translation"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3 :: Only",
@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Multimedia :: Video",
     "Topic :: Text Processing :: Linguistic",
     "Typing :: Typed",
@@ -28,11 +29,12 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-claude = ["anthropic>=1.8,<2"]
+claude = ["anthropic>=1.8,<3"]
 openai = ["openai>=3.19,<4"]
-gemini = ["google-genai>=2.25,<3"]
+gemini = ["google-genai>=2.30.1,<4"]
+grok = ["openai>=3.19,<4"]
 openrouter = ["openai>=3.19,<4"]
-ai = ["anthropic>=1.8,<2", "google-genai>=2.25,<3", "openai>=3.19,<4"]
+ai = ["anthropic>=1.8,<3", "google-genai>=2.30.1,<4", "openai>=3.19,<4"]
 mcp = ["mcp>=2.2,<3", "anyio>=4.11,<5"]
 
 [project.scripts]
@@ -40,6 +42,7 @@ utmax-mcp = "utmax.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/U-C4N/U-transkript"
+Changelog = "https://github.com/U-C4N/U-transkript/blob/main/CHANGELOG.md"
 Issues = "https://github.com/U-C4N/U-transkript/issues"
 
 [dependency-groups]
@@ -57,7 +60,8 @@ path = "src/utmax/_version.py"
 packages = ["src/utmax"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/tests", "/README.md", "/LICENSE"]
+# scripts/ belongs here because tests load scripts/compat_manifest.py.
+include = ["/src", "/tests", "/scripts", "/README.md", "/CHANGELOG.md", "/LICENSE"]
 
 [tool.ruff]
 line-length = 100

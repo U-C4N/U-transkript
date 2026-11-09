@@ -15,7 +15,7 @@ from tests.helpers.downloads import FakeYouTube, read_movie
 from tests.helpers.youtube import VIDEO_ID
 from utmax import Client
 from utmax.mcp.config import Config
-from utmax.mcp.server import build_server, formats_out
+from utmax.mcp.server import best_file_type, build_server, formats_out
 from utmax.models import Format, FormatList, VideoInfo
 
 VIDEO = IDS[0]
@@ -55,14 +55,14 @@ def test_list_formats_offers_file_types_and_resolutions() -> None:
     result = output(call(server, "list_formats", {"video": f"https://youtu.be/{VIDEO_ID}"}))
 
     assert result["video"]["title"] == RICK
-    assert result["file_types"] == ["mp4", "mov", "m4a", "mp3"]
+    assert result["file_types"] == ["mp4", "mov", "m4a", "mp3", "mkv"]
     assert result["resolutions"] == [
         {
             "resolution": "1080p",
             "height": 1080,
             "fps": 25,
             "hdr": False,
-            "file_types": ["mp4", "mov"],
+            "file_types": ["mp4", "mov", "mkv"],
         }
     ]
 
@@ -84,14 +84,53 @@ def test_resolutions_are_grouped_labelled_and_largest_first() -> None:
 
     result = formats_out(formats).model_dump()
 
-    assert result["file_types"] == ["mp4", "mov", "m4a", "mp3"]
+    assert result["file_types"] == ["mp4", "mov", "m4a", "mp3", "mkv", "webm"]
     assert [(r["resolution"], r["file_types"]) for r in result["resolutions"]] == [
         ("2160p60 HDR", ["mp4"]),
-        ("1080p60", ["mp4", "mov"]),
-        ("720p", ["mp4", "mov"]),
+        ("2160p60", ["mkv", "webm"]),  # the SDR VP9 picture, preferred over HDR at one size
+        ("1080p60", ["mp4", "mov", "mkv", "webm"]),
+        ("720p", ["mp4", "mov", "mkv"]),
     ]
-    without_aac = formats_out(FormatList(info, (video(399, "av1", 1080), formats[6])))
-    assert (without_aac.file_types, without_aac.resolutions) == ([], [])
+    with_opus_only = formats_out(FormatList(info, (video(399, "av1", 1080), formats[6])))
+    assert with_opus_only.file_types == ["mkv", "webm"]
+    assert [(r.resolution, r.file_types) for r in with_opus_only.resolutions] == [
+        ("1080p", ["mkv", "webm"])
+    ]
+    without_audio = formats_out(FormatList(info, (video(399, "av1", 1080),)))
+    assert (without_audio.file_types, without_audio.resolutions) == ([], [])
+
+
+def test_the_file_type_is_mkv_only_when_mp4_cannot_hold_the_best_picture() -> None:
+    info = VideoInfo("abcdefghijk", "Clip", "Channel", "UC", 60.0, False)
+    aac = Format(140, "audio", "mp4", "aac", "mp4a.40.2")
+    vp9_4k = FormatList(info, (video(315, "vp9", 2160), video(399, "av1", 1080), aac))
+    assert best_file_type(vp9_4k, "best", None) == "mkv"
+    assert best_file_type(vp9_4k, "best", 1080) == "mp4"  # the limit levels them
+    assert best_file_type(vp9_4k, "medium", None) == "mp4"
+    faster = FormatList(info, (video(303, "vp9", 1080, fps=60), video(399, "av1", 1080), aac))
+    assert best_file_type(faster, "best", None) == "mkv"
+    av1_4k = FormatList(info, (video(315, "vp9", 2160), video(401, "av1", 2160), aac))
+    assert best_file_type(av1_4k, "best", None) == "mp4"
+    assert best_file_type(FormatList(info, (video(315, "vp9", 2160), aac)), "best", None) == "mkv"
+    assert best_file_type(FormatList(info, (aac,)), "best", None) == "mp4"
+
+
+def test_a_download_without_a_file_type_takes_mkv_for_a_4k_vp9_picture(tmp_path: Path) -> None:
+    server = build_server(Client(transport=FakeYouTube(webm=True)), Config(download_dir=tmp_path))
+    result = output(call(server, "download", {"video": VIDEO_ID}))
+    assert (result["container"], result["embedded_subtitles"]) == ("mkv", ["en"])
+    assert result["path"].endswith(".mkv")
+    plain = build_server(Client(transport=FakeYouTube()), Config(download_dir=tmp_path / "mp4"))
+    assert output(call(plain, "download", {"video": VIDEO_ID}))["container"] == "mp4"
+
+
+def test_a_finished_mkv_counts_as_there_when_no_file_type_is_named(tmp_path: Path) -> None:
+    (tmp_path / f"{RICK} [{VIDEO_ID}].mkv").write_bytes(b"done")
+    youtube = FakeYouTube(webm=True)
+    server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
+    result = output(call(server, "download", {"video": VIDEO_ID}))
+    assert (result["skipped"], result["container"]) == (True, "mkv")
+    assert youtube.api.requests == []
 
 
 def test_a_translation_is_embedded_and_shown_by_default(tmp_path: Path) -> None:
@@ -167,13 +206,14 @@ def test_overwrite_downloads_a_file_that_is_already_there(tmp_path: Path) -> Non
     youtube = ManyVideos()
     server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
     output(call(server, "download", {"video": VIDEO, "format": "m4a"}))
-    players = len(youtube.players)
+    players, media = len(youtube.players), len(youtube.media.requests)
 
     again = output(call(server, "download", {"video": VIDEO, "format": "m4a", "overwrite": True}))
 
     assert again["skipped"] is False
     assert again["path"] == str(tmp_path / f"{NAME}.m4a")
-    assert len(youtube.players) > players
+    assert len(youtube.media.requests) > media  # downloaded again
+    assert len(youtube.players) == players  # with the streams it asked for a moment ago
 
 
 def test_save_subtitles_writes_youtubes_track(tmp_path: Path) -> None:
@@ -306,9 +346,9 @@ def test_a_resolution_lists_the_picture_download_takes_for_each_file_type() -> N
     )
 
     assert [(r.resolution, r.file_types) for r in formats_out(same_height).resolutions] == [
-        ("1080p60", ["mp4", "mov"])
+        ("1080p60", ["mp4", "mov", "mkv"])
     ]
     assert [(r.resolution, r.file_types) for r in formats_out(differing).resolutions] == [
-        ("1080p60", ["mp4"]),
+        ("1080p60", ["mp4", "mkv"]),
         ("1080p", ["mov"]),
     ]

@@ -36,7 +36,7 @@ ANSWER = '{"items": [{"id": 0, "text": "Merhaba."}]}'
 
 def claude(*replies: object, **options: object) -> tuple[ClaudeTranslator, FakeAnthropic]:
     client = FakeAnthropic(*replies)
-    return ClaudeTranslator("claude-opus-5", client=client, **options), client  # type: ignore[arg-type]
+    return ClaudeTranslator("claude-opus-5-5", client=client, **options), client  # type: ignore[arg-type]
 
 
 def test_the_request_asks_for_json_matching_the_schema() -> None:
@@ -44,7 +44,7 @@ def test_the_request_asks_for_json_matching_the_schema() -> None:
     assert translator.generate_json(SYSTEM, PROMPT, SCHEMA) == ANSWER
     assert client.create.calls == [
         {
-            "model": "claude-opus-5",
+            "model": "claude-opus-5-5",
             "max_tokens": 16000,
             "system": SYSTEM,
             "messages": [{"role": "user", "content": PROMPT}],
@@ -66,7 +66,7 @@ def test_effort_and_max_tokens_are_passed_on() -> None:
 
 @pytest.mark.parametrize("options", [{"effort": "extreme"}, {"max_tokens": 0}, {"model": " "}])
 def test_bad_options_are_rejected(options: dict[str, object]) -> None:
-    arguments: dict[str, object] = {"model": "claude-opus-5", "client": FakeAnthropic()}
+    arguments: dict[str, object] = {"model": "claude-opus-5-5", "client": FakeAnthropic()}
     with pytest.raises(InvalidOption):
         ClaudeTranslator(**(arguments | options))  # type: ignore[arg-type]
 
@@ -141,7 +141,7 @@ def test_a_missing_profile_is_reported_when_the_client_is_built(
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ANTHROPIC_CONFIG_DIR", str(tmp_path))
     with pytest.raises(ProviderAuthError) as caught:
-        ClaudeTranslator("claude-opus-5")
+        ClaudeTranslator("claude-opus-5-5")
     assert isinstance(caught.value.__cause__, anthropic.CredentialsError)
 
 
@@ -168,16 +168,16 @@ def test_keys_never_reach_error_messages() -> None:
 
 
 def test_a_real_client_is_built_without_exposing_the_key() -> None:
-    translator = ClaudeTranslator("claude-opus-5", api_key="sk-ant-api03-SECRETSECRET")
-    assert translator.name == "claude=claude-opus-5"
-    assert repr(translator) == "ClaudeTranslator('claude=claude-opus-5')"
+    translator = ClaudeTranslator("claude-opus-5-5", api_key="sk-ant-api03-SECRETSECRET")
+    assert translator.name == "claude=claude-opus-5-5"
+    assert repr(translator) == "ClaudeTranslator('claude=claude-opus-5-5')"
     assert "SECRET" not in repr(vars(translator).get("_client"))
 
 
 def test_a_missing_sdk_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "anthropic", None)
     with pytest.raises(ProviderNotInstalled) as caught:
-        ClaudeTranslator("claude-opus-5")
+        ClaudeTranslator("claude-opus-5-5")
     assert (caught.value.provider, caught.value.extra) == ("claude", "claude")
     assert 'pip install "u-transcript-max[claude]"' in str(caught.value)
     assert isinstance(caught.value, ImportError)
@@ -186,7 +186,7 @@ def test_a_missing_sdk_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_engine_translates_through_claude() -> None:
     translator, client = claude(claude_message(ANSWER))
     result = translate_transcript(make_transcript(Segment(0.0, 1.0, "Hello.")), "tr", translator)
-    assert (result.text, result.translator) == ("Merhaba.", "claude=claude-opus-5")
+    assert (result.text, result.translator) == ("Merhaba.", "claude=claude-opus-5-5")
     (call,) = client.create.calls
     assert json.loads(call["messages"][0]["content"])["items"] == [{"id": 0, "text": "Hello."}]
     assert call["output_config"]["format"]["schema"] == response_schema()

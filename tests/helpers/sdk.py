@@ -56,7 +56,7 @@ def claude_message(
         id="msg_test",
         type="message",
         role="assistant",
-        model="claude-opus-5",
+        model="claude-opus-5-5",
         content=content,
         stop_reason=stop_reason,
         stop_details=details,
@@ -88,7 +88,7 @@ def openai_completion(
         id="chatcmpl-test",
         object="chat.completion",
         created=0,
-        model="gpt-5-mini",
+        model="gpt-6-astra",
         choices=[Choice(index=0, finish_reason=finish_reason, message=message)] if choices else [],
     )
 

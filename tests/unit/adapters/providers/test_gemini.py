@@ -23,7 +23,6 @@ from utmax.models import Segment
 from utmax.services.translation import translate_transcript
 
 types = pytest.importorskip("google.genai.types")
-httpx = pytest.importorskip("httpx")
 
 SYSTEM = "You translate subtitles."
 PROMPT = '{"items": [{"id": 0, "text": "Hello."}]}'
@@ -33,14 +32,14 @@ ANSWER = '{"items": [{"id": 0, "text": "Bonjour."}]}'
 
 def gemini(*replies: object, **options: object) -> tuple[GeminiTranslator, FakeGenAI]:
     client = FakeGenAI(*replies)
-    return GeminiTranslator("gemini-2.5-flash", client=client, **options), client  # type: ignore[arg-type]
+    return GeminiTranslator("gemini-3.8-flash", client=client, **options), client  # type: ignore[arg-type]
 
 
 def test_the_request_asks_for_json_matching_the_schema_with_retries() -> None:
     translator, client = gemini(gemini_response(ANSWER))
     assert translator.generate_json(SYSTEM, PROMPT, SCHEMA) == ANSWER
     (call,) = client.generate.calls
-    assert (call["model"], call["contents"]) == ("gemini-2.5-flash", PROMPT)
+    assert (call["model"], call["contents"]) == ("gemini-3.8-flash", PROMPT)
     config = call["config"]
     assert isinstance(config, types.GenerateContentConfig)
     assert config.system_instruction == SYSTEM
@@ -48,6 +47,20 @@ def test_the_request_asks_for_json_matching_the_schema_with_retries() -> None:
     assert config.response_json_schema == SCHEMA
     assert config.http_options.retry_options.attempts == 5
     assert config.automatic_function_calling.disable is True
+    assert config.thinking_config is None
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+def test_effort_is_sent_as_the_thinking_level(effort: str) -> None:
+    translator, client = gemini(gemini_response(ANSWER), effort=effort)
+    translator.generate_json(SYSTEM, PROMPT, SCHEMA)
+    level = client.generate.calls[0]["config"].thinking_config.thinking_level
+    assert level == types.ThinkingLevel(effort.upper())
+
+
+def test_xhigh_effort_is_not_a_gemini_value() -> None:
+    with pytest.raises(InvalidOption, match="effort must be one of low, medium, high, not"):
+        gemini(effort="xhigh")
 
 
 def test_retry_attempts_are_configurable() -> None:
@@ -55,7 +68,7 @@ def test_retry_attempts_are_configurable() -> None:
     translator.generate_json(SYSTEM, PROMPT, SCHEMA)
     assert client.generate.calls[0]["config"].http_options.retry_options.attempts == 2
     with pytest.raises(InvalidOption, match="retry_attempts"):
-        GeminiTranslator("gemini-2.5-flash", retry_attempts=0, client=FakeGenAI())
+        GeminiTranslator("gemini-3.8-flash", retry_attempts=0, client=FakeGenAI())
 
 
 def test_thought_parts_are_skipped() -> None:
@@ -113,11 +126,23 @@ def test_api_errors_are_mapped(
         assert caught.value.status_code == status_code
 
 
-def test_network_failures_are_provider_errors() -> None:
-    translator, _ = gemini(httpx.ConnectError("connection refused"))
+@pytest.mark.parametrize("module", ["httpx2", "httpx"])
+def test_network_failures_of_either_http_client_are_provider_errors(module: str) -> None:
+    http = pytest.importorskip(module)
+    translator, _ = gemini(http.ConnectError("connection refused"))
     with pytest.raises(ProviderError, match="Could not reach Gemini") as caught:
         translator.generate_json(SYSTEM, PROMPT, SCHEMA)
     assert caught.value.status_code is None
+
+
+def test_without_any_http_client_installed_nothing_is_caught_as_a_network_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "httpx2", None)
+    monkeypatch.setitem(sys.modules, "httpx", None)
+    translator, _ = gemini(OSError("disk on fire"))
+    with pytest.raises(OSError, match="disk on fire"):
+        translator.generate_json(SYSTEM, PROMPT, SCHEMA)
 
 
 def test_keys_never_reach_error_messages() -> None:
@@ -139,21 +164,27 @@ def test_without_a_key_the_error_names_the_variable(monkeypatch: pytest.MonkeyPa
     ):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ProviderAuthError) as caught:
-        GeminiTranslator("gemini-2.5-flash")
+        GeminiTranslator("gemini-3.8-flash")
     assert "GEMINI_API_KEY" in caught.value.suggestion
     assert isinstance(caught.value.__cause__, ValueError)
 
 
 def test_a_real_client_is_built_from_the_key() -> None:
-    translator = GeminiTranslator("gemini-2.5-flash", api_key="AIzaFAKEKEYFORTESTS")
-    assert translator.name == "gemini=gemini-2.5-flash"
-    assert repr(translator) == "GeminiTranslator('gemini=gemini-2.5-flash')"
+    translator = GeminiTranslator("gemini-3.8-flash", api_key="AIzaFAKEKEYFORTESTS")
+    assert translator.name == "gemini=gemini-3.8-flash"
+    assert repr(translator) == "GeminiTranslator('gemini=gemini-3.8-flash')"
+
+
+def test_the_client_keeps_api_v1beta_whatever_the_sdk_default() -> None:
+    translator = GeminiTranslator("gemini-4-argon", api_key="AIzaFAKEKEYFORTESTS")
+    api_client = vars(translator)["_client"]._api_client
+    assert api_client._http_options.api_version == "v1beta"
 
 
 def test_a_missing_sdk_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "google.genai", None)
     with pytest.raises(ProviderNotInstalled) as caught:
-        GeminiTranslator("gemini-2.5-flash")
+        GeminiTranslator("gemini-3.8-flash")
     assert (caught.value.provider, caught.value.extra) == ("gemini", "gemini")
     assert 'pip install "u-transcript-max[gemini]"' in str(caught.value)
 
@@ -161,4 +192,4 @@ def test_a_missing_sdk_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_engine_translates_through_gemini() -> None:
     translator, _ = gemini(gemini_response(ANSWER))
     result = translate_transcript(make_transcript(Segment(0.0, 1.0, "Hello.")), "fr", translator)
-    assert (result.text, result.translator) == ("Bonjour.", "gemini=gemini-2.5-flash")
+    assert (result.text, result.translator) == ("Bonjour.", "gemini=gemini-3.8-flash")

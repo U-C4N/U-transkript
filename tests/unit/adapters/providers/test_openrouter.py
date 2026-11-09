@@ -21,13 +21,22 @@ ROUTING = {"provider": {"require_parameters": True}}
 
 def test_requests_take_the_openai_path_and_require_every_parameter() -> None:
     client = FakeOpenAI(openai_completion(ANSWER))
-    translator = OpenRouterTranslator("anthropic/claude-opus-5", client=client)
+    translator = OpenRouterTranslator("anthropic/claude-opus-5.5", client=client)
     assert translator.generate_json(SYSTEM, PROMPT, SCHEMA) == ANSWER
     (call,) = client.create.calls
-    assert call["model"] == "anthropic/claude-opus-5"
+    assert call["model"] == "anthropic/claude-opus-5.5"
     assert call["response_format"]["type"] == "json_schema"
     assert call["extra_body"] == ROUTING
-    assert translator.name == "openrouter=anthropic/claude-opus-5"
+    assert translator.name == "openrouter=anthropic/claude-opus-5.5"
+
+
+def test_effort_goes_into_openrouters_reasoning_setting() -> None:
+    client = FakeOpenAI(openai_completion(ANSWER))
+    translator = OpenRouterTranslator("openai/gpt-6-astra", effort="low", client=client)
+    translator.generate_json(SYSTEM, PROMPT, SCHEMA)
+    (call,) = client.create.calls
+    assert call["extra_body"] == {**ROUTING, "reasoning": {"effort": "low"}}
+    assert "reasoning_effort" not in call
 
 
 def test_the_json_mode_steps_down_on_openrouter_too() -> None:
@@ -45,10 +54,10 @@ def test_the_key_comes_from_openrouter_api_key_never_from_openai_api_key(
     monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-OPENAIKEY123")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderAuthError) as caught:
-        OpenRouterTranslator("openai/gpt-5-mini")
+        OpenRouterTranslator("openai/gpt-6-astra")
     assert "OPENROUTER_API_KEY" in caught.value.suggestion
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-ROUTERKEY")
-    client = vars(OpenRouterTranslator("openai/gpt-5-mini", app_name="Subtitle App"))["_client"]
+    client = vars(OpenRouterTranslator("openai/gpt-6-astra", app_name="Subtitle App"))["_client"]
     assert client.api_key == "sk-or-v1-ROUTERKEY"
     assert str(client.base_url) == f"{OPENROUTER_BASE_URL}/"
     assert client.default_headers["X-Title"] == "Subtitle App"
@@ -56,13 +65,13 @@ def test_the_key_comes_from_openrouter_api_key_never_from_openai_api_key(
 
 def test_an_explicit_key_wins(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-FROMENV")
-    translator = OpenRouterTranslator("openai/gpt-5-mini", api_key="sk-or-v1-EXPLICIT")
+    translator = OpenRouterTranslator("openai/gpt-6-astra", api_key="sk-or-v1-EXPLICIT")
     assert vars(translator)["_client"].api_key == "sk-or-v1-EXPLICIT"
 
 
 def test_errors_name_openrouter() -> None:
     client = FakeOpenAI(api_error(openai, "RateLimitError", 429))
-    translator = OpenRouterTranslator("openai/gpt-5-mini", client=client)
+    translator = OpenRouterTranslator("openai/gpt-6-astra", client=client)
     with pytest.raises(ProviderRateLimited, match="OpenRouter") as caught:
         translator.generate_json(SYSTEM, PROMPT, SCHEMA)
     assert caught.value.provider == "openrouter"
@@ -71,6 +80,6 @@ def test_errors_name_openrouter() -> None:
 def test_a_missing_sdk_names_the_openrouter_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "openai", None)
     with pytest.raises(ProviderNotInstalled) as caught:
-        OpenRouterTranslator("openai/gpt-5-mini")
+        OpenRouterTranslator("openai/gpt-6-astra")
     assert (caught.value.provider, caught.value.extra) == ("openrouter", "openrouter")
     assert 'pip install "u-transcript-max[openrouter]"' in str(caught.value)

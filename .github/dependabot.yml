@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # The workflows pin actions by commit; this proposes new versions once a week, in one PR.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

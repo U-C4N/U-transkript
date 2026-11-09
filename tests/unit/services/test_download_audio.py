@@ -86,7 +86,12 @@ def test_folder_targets_are_checked_once_the_title_is_known(tmp_path: Path) -> N
 @pytest.mark.parametrize(
     ("name", "options", "error", "match"),
     [
-        ("rick.mp4", DownloadOptions(quality="max"), InvalidOption, 'is not "best" or "compat"'),
+        (
+            "rick.mp4",
+            DownloadOptions(quality="max"),
+            InvalidOption,
+            'is not "best", "medium", "low" or "compat"',
+        ),
         ("rick.mp4", DownloadOptions(subtitle_mode="burn"), InvalidOption, "subtitle_mode="),
         ("rick.mp4", DownloadOptions(resolution=0), InvalidOption, "resolution must be"),
         ("rick.mp4", DownloadOptions(resolution=True), InvalidOption, "resolution must be"),
@@ -156,6 +161,17 @@ def test_mp3_downloads_convert_the_audio_with_ffmpeg(tmp_path: Path) -> None:
     phases = [progress.phase for progress in seen]
     assert "converting" in phases
     assert phases == sorted(phases, key=["downloading", "converting", "finished"].index)
+
+
+@pytest.mark.parametrize(
+    ("quality", "vbr"), [("best", "2"), ("medium", "2"), ("compat", "2"), ("low", "6")]
+)
+def test_low_quality_mp3s_are_encoded_smaller(tmp_path: Path, quality: str, vbr: str) -> None:
+    runs = FakeFFmpegRuns()
+    options = DownloadOptions(quality=quality)  # type: ignore[arg-type]
+    runs.service(FakeYouTube()).download(VIDEO_ID, tmp_path / "song.mp3", options)
+    conversion = next(call for call in runs.calls if "-i" in call)
+    assert conversion[conversion.index("-q:a") + 1] == vbr
 
 
 def missing_ffmpeg(_: object) -> str:
