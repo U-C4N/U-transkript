@@ -92,12 +92,12 @@ def test_track_names() -> None:
     auto = make_transcript(language="English (auto-generated)", is_generated=True)
     assert track_name(auto) == "English (auto-generated)"
     translated = make_transcript(language_code="tr", language="Turkish")
-    ai = replace(translated, translated_from="en", translator="claude=claude-opus-5")
-    assert track_name(ai) == "Turkish (AI: claude=claude-opus-5)"
+    ai = replace(translated, translated_from="en", translator="claude=claude-opus-5-5")
+    assert track_name(ai) == "Turkish (AI: claude=claude-opus-5-5)"
     assert track_name(make_transcript(language_code="tr", language="")) == "Turkish"
     assert track_name(make_transcript(language_code="xx", language=" ")) == "xx"
     both = make_transcript(language_code="en+tr", language="English + Turkish")
-    assert track_name(replace(both, translator="claude=claude-opus-5")) == "English + Turkish"
+    assert track_name(replace(both, translator="claude=claude-opus-5-5")) == "English + Turkish"
     assert track_name(make_transcript(language_code="en+tr", language="")) == "English + Turkish"
 
 

@@ -69,7 +69,7 @@ SUBTITLE = replace(
     timescale=1000,
     language="tur",
     tag="tr",
-    name="Turkish (AI: claude=claude-opus-5)",
+    name="Turkish (AI: claude=claude-opus-5-5)",
     enabled=False,
     duration=1500,
     media_duration=1500,
@@ -163,7 +163,7 @@ def test_track_headers_follow_ffmpeg() -> None:
     [
         (0, b"vide", b"VideoHandler"),
         (1, b"soun", b"SoundHandler"),
-        (2, b"sbtl", b"Turkish (AI: claude=claude-opus-5)"),
+        (2, b"sbtl", b"Turkish (AI: claude=claude-opus-5-5)"),
     ],
 )
 def test_handler_names_are_c_strings_in_mp4_and_pascal_strings_in_mov(
@@ -211,7 +211,7 @@ def test_languages_are_iso_in_mp4_and_quicktime_codes_in_mov_when_mapped() -> No
 def test_subtitle_tracks_carry_elng_and_a_name() -> None:
     subtitle = trak("mp4", 2)
     assert path(subtitle, "mdia", "elng") == bytes(4) + b"tr\x00"
-    assert path(subtitle, "udta", "name") == b"Turkish (AI: claude=claude-opus-5)"
+    assert path(subtitle, "udta", "name") == b"Turkish (AI: claude=claude-opus-5-5)"
     assert find_child(trak("mp4", 0), "udta", context="trak") is None
     assert find_child(path(trak("mp4", 0), "mdia"), "elng", context="mdia") is None
 

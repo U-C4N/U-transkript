@@ -11,20 +11,24 @@ from utmax.adapters.providers import (
     TRANSLATORS,
     ClaudeTranslator,
     GeminiTranslator,
+    GrokTranslator,
     OpenAITranslator,
     OpenRouterTranslator,
     create_translator,
 )
+from utmax.core.translate.spec import PROVIDERS
 from utmax.errors import InvalidModelSpec, InvalidOption, MissingExtra, ProviderNotInstalled
 
 
 @pytest.mark.parametrize(
     ("spec", "module", "cls", "fake"),
     [
-        ("claude=claude-opus-5", "anthropic", ClaudeTranslator, FakeAnthropic),
+        ("claude=claude-opus-5-5", "anthropic", ClaudeTranslator, FakeAnthropic),
         ("openai=llama3.1:8b", "openai", OpenAITranslator, FakeOpenAI),
-        ("gemini=gemini-2.5-flash", "google.genai", GeminiTranslator, FakeGenAI),
-        ("openrouter=openai/gpt-5-mini", "openai", OpenRouterTranslator, FakeOpenAI),
+        ("gemini=gemini-3.8-flash", "google.genai", GeminiTranslator, FakeGenAI),
+        ("gemini=gemini-4-argon", "google.genai", GeminiTranslator, FakeGenAI),
+        ("grok=grok-4.7", "openai", GrokTranslator, FakeOpenAI),
+        ("openrouter=openai/gpt-6-astra", "openai", OpenRouterTranslator, FakeOpenAI),
     ],
 )
 def test_every_provider_gets_its_translator(spec: str, module: str, cls: type, fake: type) -> None:
@@ -36,12 +40,33 @@ def test_every_provider_gets_its_translator(spec: str, module: str, cls: type, f
 
 
 def test_the_registry_covers_every_provider() -> None:
-    assert set(TRANSLATORS) == {"claude", "openai", "gemini", "openrouter"}
+    assert (
+        set(TRANSLATORS) == set(PROVIDERS) == {"claude", "openai", "gemini", "grok", "openrouter"}
+    )
+
+
+@pytest.mark.parametrize(
+    ("spec", "module", "fake", "allowed"),
+    [
+        ("claude=claude-opus-5-5", "anthropic", FakeAnthropic, "low, medium, high, xhigh, max"),
+        ("openai=gpt-6-astra", "openai", FakeOpenAI, "low, medium, high, xhigh"),
+        ("gemini=gemini-4-argon", "google.genai", FakeGenAI, "low, medium, high"),
+        ("grok=grok-4.7", "openai", FakeOpenAI, "low, medium, high, xhigh"),
+        ("openrouter=openai/gpt-6-astra", "openai", FakeOpenAI, "low, medium, high"),
+    ],
+)
+def test_every_provider_takes_effort_and_names_the_values_it_accepts(
+    spec: str, module: str, fake: type, allowed: str
+) -> None:
+    pytest.importorskip(module)
+    assert create_translator(spec, client=fake(), effort="low").effort == "low"  # type: ignore[attr-defined]
+    with pytest.raises(InvalidOption, match=f"effort must be one of {allowed}, not 'turbo'"):
+        create_translator(spec, client=fake(), effort="turbo")
 
 
 def test_base_url_only_works_with_openai() -> None:
     with pytest.raises(InvalidOption, match="only works with the openai provider"):
-        create_translator("claude=claude-opus-5", base_url="http://localhost:11434/v1")
+        create_translator("claude=claude-opus-5-5", base_url="http://localhost:11434/v1")
 
 
 def test_bad_specs_are_rejected_before_any_import() -> None:
@@ -52,10 +77,11 @@ def test_bad_specs_are_rejected_before_any_import() -> None:
 @pytest.mark.parametrize(
     ("spec", "module", "extra"),
     [
-        ("claude=claude-opus-5", "anthropic", "claude"),
-        ("openai=gpt-5-mini", "openai", "openai"),
-        ("gemini=gemini-2.5-flash", "google.genai", "gemini"),
-        ("openrouter=openai/gpt-5-mini", "openai", "openrouter"),
+        ("claude=claude-opus-5-5", "anthropic", "claude"),
+        ("openai=gpt-6-astra", "openai", "openai"),
+        ("gemini=gemini-3.8-flash", "google.genai", "gemini"),
+        ("grok=grok-4.7", "openai", "grok"),
+        ("openrouter=openai/gpt-6-astra", "openai", "openrouter"),
     ],
 )
 def test_a_missing_sdk_names_the_extra_to_install(

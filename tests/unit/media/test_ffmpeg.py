@@ -40,7 +40,7 @@ TURKISH = replace(
         is_generated=True,
     ),
     translated_from="en",
-    translator="claude=claude-opus-5",
+    translator="claude=claude-opus-5-5",
 )
 
 
@@ -194,7 +194,7 @@ def test_mp4_with_two_subtitle_tracks(
     assert [s["nb_read_packets"] for s in info[:2]] == [s["nb_read_packets"] for s in sources]
     assert [s["disposition"]["default"] for s in info[2:]] == [0, 1]
     assert [s["tags"]["language"] for s in info[2:]] == ["eng", "tur"]
-    assert info[3]["tags"]["handler_name"] == "Turkish (AI: claude=claude-opus-5)"
+    assert info[3]["tags"]["handler_name"] == "Turkish (AI: claude=claude-opus-5-5)"
     assert packet_times(tools, out, "v:0") == packet_times(tools, streams["h264"], "v:0")
     decodes_cleanly(tools, out)
     assert extracted_srt(tools, out, 0) == to_srt(ENGLISH.segments).strip()
@@ -206,7 +206,7 @@ def test_mov_with_a_subtitle_track(tools: Tools, streams: dict[str, Path], tmp_p
     info = probe(tools, out)
     assert [s["codec_name"] for s in info] == ["h264", "aac", "mov_text"]
     assert info[2]["tags"]["language"] == "tur"
-    assert info[2]["tags"]["handler_name"] == "Turkish (AI: claude=claude-opus-5)"
+    assert info[2]["tags"]["handler_name"] == "Turkish (AI: claude=claude-opus-5-5)"
     assert packet_times(tools, out, "a:0") == packet_times(tools, streams["aac"], "a:0")
     decodes_cleanly(tools, out)
     assert extracted_srt(tools, out, 0) == to_srt(TURKISH.segments).strip()

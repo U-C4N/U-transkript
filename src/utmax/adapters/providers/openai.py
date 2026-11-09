@@ -6,10 +6,15 @@ import json
 import logging
 import threading
 from collections.abc import Mapping
-from typing import Any, Literal, Unpack
+from typing import Any, ClassVar, Literal, Unpack
 
 from utmax.adapters.http import redact
-from utmax.adapters.providers.base import EngineOptions, SDKTranslator, stainless_error
+from utmax.adapters.providers.base import (
+    EngineOptions,
+    SDKTranslator,
+    check_effort,
+    stainless_error,
+)
 from utmax.core.translate.batching import InvalidResponse
 from utmax.errors import InvalidOption, ProviderAuthError, TranslationRefused
 
@@ -31,7 +36,7 @@ class OpenAITranslator(SDKTranslator):
     "u-transcript-max[openai]"``): Ollama, LM Studio, vLLM, Groq, DeepSeek and others.
 
     Args:
-        model: a model id such as ``"gpt-5-mini"`` or ``"llama3.1:8b"``.
+        model: a model id such as ``"gpt-6-astra"`` or ``"llama3.1:8b"``.
         api_key: the API key. Without ``base_url`` the SDK falls back to ``OPENAI_API_KEY``;
             with ``base_url`` only this argument is sent, so your OpenAI key never reaches
             another server and keyless local servers need nothing.
@@ -41,12 +46,18 @@ class OpenAITranslator(SDKTranslator):
             output), ``"json_object"``, ``"prompt"`` (instructions only) or ``"auto"``, which
             starts with ``json_schema`` and steps down each time the server rejects the mode,
             remembering the working one for later requests.
+        effort: how long a reasoning model thinks, ``"low"``, ``"medium"``, ``"high"`` or
+            ``"xhigh"``, sent as ``reasoning_effort``; omitted means the model's default.
+            Lower is faster. Models without reasoning reject it.
         client: a ready ``openai.OpenAI`` client, used instead of creating one.
         **engine: engine options, see :class:`utmax.providers.Translator`.
     """
 
     PROVIDER = "openai"
     EXTRA = "openai"
+    EFFORTS: ClassVar[tuple[str, ...]] = ("low", "medium", "high", "xhigh")
+    # The request field that carries ``effort``; subclasses for other APIs may move it.
+    _EFFORT_FIELD: ClassVar[str | None] = "reasoning_effort"
 
     def __init__(
         self,
@@ -55,12 +66,14 @@ class OpenAITranslator(SDKTranslator):
         api_key: str | None = None,
         base_url: str | None = None,
         json_mode: JsonMode = "auto",
+        effort: str | None = None,
         client: Any = None,
         **engine: Unpack[EngineOptions],
     ) -> None:
         super().__init__(model, **engine)
         if json_mode not in _MODES:
             raise InvalidOption(f"json_mode must be one of {', '.join(_MODES)}, not {json_mode!r}.")
+        self.effort = check_effort(effort, self.EFFORTS)
         self.json_mode = json_mode
         self._mode: JsonMode = "json_schema" if json_mode == "auto" else json_mode
         self._lock = threading.Lock()
@@ -127,6 +140,8 @@ class OpenAITranslator(SDKTranslator):
             }
         elif mode == "json_object":
             request["response_format"] = {"type": "json_object"}
+        if self.effort is not None and self._EFFORT_FIELD is not None:
+            request[self._EFFORT_FIELD] = self.effort
         if self._extra_body is not None:
             request["extra_body"] = self._extra_body
         return request

@@ -34,7 +34,7 @@ def ai_translation(source: Transcript, *texts: str) -> Transcript:
             for cue, text in zip(source.segments, texts, strict=True)
         ),
         translated_from=source.language_code,
-        translator="claude=claude-opus-5",
+        translator="claude=claude-opus-5-5",
         source=source,
     )
 
@@ -52,7 +52,7 @@ def test_ai_translations_pair_one_to_one_with_their_source_cues() -> None:
     assert (result.language_code, result.language) == ("en+tr", "English + Turkish")
     assert result.is_bilingual
     assert result.is_generated
-    assert (result.translated_from, result.translator) == ("en", "claude=claude-opus-5")
+    assert (result.translated_from, result.translator) == ("en", "claude=claude-opus-5-5")
     assert result.video == VIDEO
     assert result.source is None
 
@@ -161,7 +161,7 @@ def test_a_source_from_a_different_video_is_ignored() -> None:
         is_generated=True,
         segments=(Segment(1.0, 2.0, LINE_1),),
         translated_from="en",
-        translator="claude=claude-opus-5",
+        translator="claude=claude-opus-5-5",
         source=mismatched_source,
     )
     result = bilingual(original, translation)

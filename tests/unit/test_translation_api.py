@@ -94,7 +94,7 @@ def test_options_cannot_be_combined_with_a_translator_instance() -> None:
 
 
 @pytest.mark.usefixtures("offline")
-@pytest.mark.parametrize("model", ["", "claude", "gpt-5-mini", "anthropic=claude-opus-5", None])
+@pytest.mark.parametrize("model", ["", "claude", "gpt-6-astra", "anthropic=claude-opus-5-5", None])
 def test_bad_model_specs_raise(model: str) -> None:
     with pytest.raises(utmax.InvalidModelSpec):
         utmax.translate(MANUAL, "tr", model=model)
@@ -123,6 +123,7 @@ def test_the_translation_api_is_public() -> None:
         "ClaudeTranslator",
         "EngineOptions",
         "GeminiTranslator",
+        "GrokTranslator",
         "InvalidResponse",
         "JsonMode",
         "OpenAITranslator",

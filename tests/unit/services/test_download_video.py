@@ -20,7 +20,7 @@ TURKISH = replace(
         Segment(1.0, 2.0, "Merhaba"), language_code="tr", language="Turkish", is_generated=True
     ),
     translated_from="en",
-    translator="claude=claude-opus-5",
+    translator="claude=claude-opus-5-5",
 )
 
 
@@ -66,7 +66,7 @@ def test_codes_and_transcripts_mix_and_default_subtitle_picks_the_enabled_track(
     assert result.embedded_subtitles == ("en", "tr")
     english, turkish = read_movie(result.path).tracks[2:]
     assert (english.flags & 1, turkish.flags & 1) == (0, 1)
-    assert turkish.name == "Turkish (AI: claude=claude-opus-5)"
+    assert turkish.name == "Turkish (AI: claude=claude-opus-5-5)"
 
 
 def test_sidecar_mode_writes_srt_files_instead(tmp_path: Path) -> None:

@@ -7,7 +7,7 @@ Quick start::
     transcript = utmax.fetch("https://youtu.be/dQw4w9WgXcQ")
     transcript.save("rick.srt")
 
-    turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5")
+    turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5-5")
     utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
     utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best MP4 (AV1 or H.264), English subtitles
@@ -263,9 +263,12 @@ def translator(model: str, **options: Any) -> Translator:
     """The AI translator for ``model``, written ``"provider=model-id"``.
 
     Providers: ``claude`` (Anthropic), ``openai`` (OpenAI, or any OpenAI-compatible server via
-    ``base_url``), ``gemini`` (Google) and ``openrouter``. There is no default model::
+    ``base_url``), ``gemini`` (Google), ``grok`` (xAI) and ``openrouter``. There is no default
+    model::
 
-        utmax.translator("claude=claude-opus-5", effort="low")
+        utmax.translator("claude=claude-opus-5-5", effort="low")
+        utmax.translator("gemini=gemini-3.8-flash")
+        utmax.translator("grok=grok-4.7", effort="low")
         utmax.translator("openai=llama3.1:8b", base_url="http://localhost:11434/v1")  # Ollama
 
     Args:
@@ -273,7 +276,9 @@ def translator(model: str, **options: Any) -> Translator:
         **options: provider options (``api_key``, ``effort``, ``max_tokens``, ``base_url``,
             ``json_mode``, ``app_name``, ``retry_attempts``, ``client``) and engine options
             (``batch_chars``, ``batch_items``, ``context_items``, ``concurrency``,
-            ``max_attempts``); see :mod:`utmax.providers`.
+            ``max_attempts``); see :mod:`utmax.providers`. ``effort`` sets how long a model
+            thinks, which makes lower values faster: ``"low"``, ``"medium"`` and ``"high"``
+            work everywhere, ``"xhigh"`` with claude, openai and grok, ``"max"`` with claude.
 
     Raises:
         InvalidModelSpec: ``model`` is not ``"provider=model-id"`` with a known provider.
@@ -297,7 +302,7 @@ def translate(
 
     Example::
 
-        turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5")
+        turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5-5")
         turkish.save("rick.tr.srt")
 
     Args:
@@ -576,7 +581,7 @@ def translate_many(
     Example::
 
         videos = utmax.list_videos("@RickAstleyYT", limit=20)
-        utmax.translate_many(videos, "tr", model="claude=claude-opus-5", out_dir="subs")
+        utmax.translate_many(videos, "tr", model="claude=claude-opus-5-5", out_dir="subs")
 
     Args:
         videos: video IDs, URLs and/or entries of a :func:`list_videos` result.

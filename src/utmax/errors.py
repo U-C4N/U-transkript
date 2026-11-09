@@ -106,7 +106,8 @@ class InvalidModelSpec(UTMaxError, ValueError):
     """A translator model string is not ``"provider=model-id"``."""
 
     suggestion = (
-        'Pass model="provider=model-id", where provider is claude, openai, gemini or openrouter.'
+        'Pass model="provider=model-id", where provider is claude, openai, gemini, grok or '
+        "openrouter."
     )
 
 

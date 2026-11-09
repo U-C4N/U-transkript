@@ -1,4 +1,4 @@
-"""Parse ``"provider=model-id"`` model specs such as ``"claude=claude-opus-5"``."""
+"""Parse ``"provider=model-id"`` model specs such as ``"claude=claude-opus-5-5"``."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from utmax.errors import InvalidModelSpec
 
 __all__ = ["PROVIDERS", "ModelSpec", "parse_model_spec"]
 
-PROVIDERS = ("claude", "openai", "gemini", "openrouter")
+PROVIDERS = ("claude", "openai", "gemini", "grok", "openrouter")
 
-_EXAMPLES = '"claude=claude-opus-5" or "openai=llama3.1:8b"'
+_EXAMPLES = '"claude=claude-opus-5-5" or "openai=llama3.1:8b"'
 
 
 @dataclass(frozen=True, slots=True)

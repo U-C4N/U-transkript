@@ -36,7 +36,7 @@ JSON_SCHEMA = {
 
 def gpt(*replies: object, **options: object) -> tuple[OpenAITranslator, FakeOpenAI]:
     client = FakeOpenAI(*replies)
-    return OpenAITranslator("gpt-5-mini", client=client, **options), client  # type: ignore[arg-type]
+    return OpenAITranslator("gpt-6-astra", client=client, **options), client  # type: ignore[arg-type]
 
 
 def rejected(message: str = "response_format json_schema is not supported") -> Exception:
@@ -48,7 +48,7 @@ def test_the_request_uses_strict_structured_outputs() -> None:
     assert translator.generate_json(SYSTEM, PROMPT, SCHEMA) == ANSWER
     assert client.create.calls == [
         {
-            "model": "gpt-5-mini",
+            "model": "gpt-6-astra",
             "messages": [
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": PROMPT},
@@ -57,6 +57,19 @@ def test_the_request_uses_strict_structured_outputs() -> None:
         }
     ]
     assert translator.mode == "json_schema"
+    assert translator.effort is None
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high", "xhigh"])
+def test_effort_is_sent_as_reasoning_effort(effort: str) -> None:
+    translator, client = gpt(openai_completion(ANSWER), effort=effort)
+    translator.generate_json(SYSTEM, PROMPT, SCHEMA)
+    assert client.create.calls[0]["reasoning_effort"] == effort
+
+
+def test_max_effort_is_claude_only() -> None:
+    with pytest.raises(InvalidOption, match="effort must be one of low, medium, high, xhigh"):
+        gpt(effort="max")
 
 
 def test_auto_steps_down_to_json_object_and_remembers_it() -> None:
@@ -124,7 +137,7 @@ def test_parallel_rejections_step_down_only_once() -> None:
 
 def test_an_unknown_json_mode_is_rejected() -> None:
     with pytest.raises(InvalidOption, match="json_mode"):
-        OpenAITranslator("gpt-5-mini", json_mode="yaml", client=FakeOpenAI())  # type: ignore[arg-type]
+        OpenAITranslator("gpt-6-astra", json_mode="yaml", client=FakeOpenAI())  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -213,7 +226,7 @@ def test_without_any_key_the_error_names_the_variable(monkeypatch: pytest.Monkey
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
     with pytest.raises(ProviderAuthError) as caught:
-        OpenAITranslator("gpt-5-mini")
+        OpenAITranslator("gpt-6-astra")
     assert "OPENAI_API_KEY" in caught.value.suggestion
     assert isinstance(caught.value.__cause__, openai.OpenAIError)
 
@@ -221,7 +234,7 @@ def test_without_any_key_the_error_names_the_variable(monkeypatch: pytest.Monkey
 def test_a_missing_sdk_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "openai", None)
     with pytest.raises(ProviderNotInstalled) as caught:
-        OpenAITranslator("gpt-5-mini")
+        OpenAITranslator("gpt-6-astra")
     assert (caught.value.provider, caught.value.extra) == ("openai", "openai")
     assert 'pip install "u-transcript-max[openai]"' in str(caught.value)
 
@@ -229,4 +242,4 @@ def test_a_missing_sdk_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_the_engine_translates_through_openai() -> None:
     translator, _ = gpt(openai_completion(ANSWER))
     result = translate_transcript(make_transcript(Segment(0.0, 1.0, "Hello.")), "de", translator)
-    assert (result.text, result.translator) == ("Hallo.", "openai=gpt-5-mini")
+    assert (result.text, result.translator) == ("Hallo.", "openai=gpt-6-astra")

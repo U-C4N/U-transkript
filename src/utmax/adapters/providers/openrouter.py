@@ -22,16 +22,20 @@ class OpenRouterTranslator(OpenAITranslator):
     steps down like ``OpenAITranslator(json_mode="auto")``.
 
     Args:
-        model: an OpenRouter model id such as ``"anthropic/claude-opus-5"``.
+        model: an OpenRouter model id such as ``"anthropic/claude-opus-5.5"``.
         api_key: the OpenRouter key; by default ``OPENROUTER_API_KEY`` (``OPENAI_API_KEY`` is
             never used).
         app_name: your application's name, sent as OpenRouter's ``X-Title`` header.
+        effort: how long a reasoning model thinks, ``"low"``, ``"medium"`` or ``"high"``,
+            sent as OpenRouter's ``reasoning.effort``; omitted means the model's default.
         client: a ready ``openai.OpenAI`` client pointed at OpenRouter.
         **engine: engine options, see :class:`utmax.providers.Translator`.
     """
 
     PROVIDER = "openrouter"
     EXTRA = "openrouter"
+    EFFORTS = ("low", "medium", "high")
+    _EFFORT_FIELD = None
 
     def __init__(
         self,
@@ -39,13 +43,17 @@ class OpenRouterTranslator(OpenAITranslator):
         *,
         api_key: str | None = None,
         app_name: str | None = None,
+        effort: str | None = None,
         client: Any = None,
         **engine: Unpack[EngineOptions],
     ) -> None:
         self.app_name = app_name
-        super().__init__(model, api_key=api_key, client=client, **engine)
+        super().__init__(model, api_key=api_key, effort=effort, client=client, **engine)
         self._service = "OpenRouter"
-        self._extra_body = {"provider": {"require_parameters": True}}
+        extra: dict[str, Any] = {"provider": {"require_parameters": True}}
+        if self.effort is not None:
+            extra["reasoning"] = {"effort": self.effort}
+        self._extra_body = extra
 
     def _make_client(self, api_key: str | None, base_url: str | None) -> Any:
         key = api_key or os.environ.get("OPENROUTER_API_KEY")

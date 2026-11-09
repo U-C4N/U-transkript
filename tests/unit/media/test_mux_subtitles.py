@@ -28,7 +28,7 @@ TURKISH = replace(
         is_generated=True,
     ),
     translated_from="en",
-    translator="claude=claude-opus-5",
+    translator="claude=claude-opus-5-5",
 )
 BILINGUAL = make_transcript(
     Segment(0.5, 1.0, "Hello\nMerhaba"), language_code="en+tr", language="English + Turkish"
@@ -70,7 +70,7 @@ def test_subtitles_follow_the_media_as_tx3g_tracks() -> None:
     assert all(track.sample_entries == (sample_entry(),) for track in tracks)
     assert [track.handler_name for track in tracks] == [
         "English",
-        "Turkish (AI: claude=claude-opus-5)",
+        "Turkish (AI: claude=claude-opus-5-5)",
         "English + Turkish",
     ]
     assert [track.name for track in tracks] == [track.handler_name for track in tracks]

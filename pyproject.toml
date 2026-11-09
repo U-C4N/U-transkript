@@ -28,11 +28,12 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-claude = ["anthropic>=1.8,<2"]
+claude = ["anthropic>=1.8,<3"]
 openai = ["openai>=3.19,<4"]
-gemini = ["google-genai>=2.25,<3"]
+gemini = ["google-genai>=2.30.1,<4"]
+grok = ["openai>=3.19,<4"]
 openrouter = ["openai>=3.19,<4"]
-ai = ["anthropic>=1.8,<2", "google-genai>=2.25,<3", "openai>=3.19,<4"]
+ai = ["anthropic>=1.8,<3", "google-genai>=2.30.1,<4", "openai>=3.19,<4"]
 mcp = ["mcp>=2.2,<3", "anyio>=4.11,<5"]
 
 [project.scripts]

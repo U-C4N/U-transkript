@@ -9,18 +9,18 @@ from typing import Any, Unpack
 from utmax.adapters.providers.base import (
     EngineOptions,
     SDKTranslator,
+    check_effort,
     positive_int,
     redact_secrets,
     stainless_error,
 )
 from utmax.core.translate.batching import InvalidResponse
-from utmax.errors import InvalidOption, ProviderAuthError, TranslationRefused
+from utmax.errors import ProviderAuthError, TranslationRefused
 
 __all__ = ["ClaudeTranslator"]
 
 log = logging.getLogger("utmax.translate")
 
-_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 _CUT_OFF = frozenset({"max_tokens", "model_context_window_exceeded"})
 
 
@@ -28,7 +28,7 @@ class ClaudeTranslator(SDKTranslator):
     """Translates with Anthropic's Claude models (``pip install "u-transcript-max[claude]"``).
 
     Args:
-        model: a Claude model id such as ``"claude-opus-5"``.
+        model: a Claude model id such as ``"claude-opus-5-5"``.
         api_key: an Anthropic API key; by default the SDK finds one itself
             (``ANTHROPIC_API_KEY``, ``ANTHROPIC_AUTH_TOKEN`` or an ``ant auth login`` profile).
         effort: ``"low"``, ``"medium"``, ``"high"``, ``"xhigh"`` or ``"max"``; omitted means
@@ -40,6 +40,7 @@ class ClaudeTranslator(SDKTranslator):
 
     PROVIDER = "claude"
     EXTRA = "claude"
+    EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
     def __init__(
         self,
@@ -52,9 +53,7 @@ class ClaudeTranslator(SDKTranslator):
         **engine: Unpack[EngineOptions],
     ) -> None:
         super().__init__(model, **engine)
-        if effort is not None and effort not in _EFFORTS:
-            raise InvalidOption(f"effort must be one of {', '.join(_EFFORTS)}, not {effort!r}.")
-        self.effort = effort
+        self.effort = check_effort(effort, self.EFFORTS)
         self.max_tokens = positive_int("max_tokens", max_tokens)
         self._sdk = self.import_sdk("anthropic")
         if client is None:

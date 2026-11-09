@@ -12,8 +12,8 @@ server lets Claude, Codex and other AI assistants use them too.
 
 - **Transcripts** of any video, playlist or channel: every language, written by people or
   generated, as SRT, WebVTT, JSON or text.
-- **AI translation** that keeps every timing (Claude, OpenAI and compatible servers such as
-  Ollama, Gemini, OpenRouter), and bilingual subtitles.
+- **AI translation** that keeps every timing (Claude, Gemini, Grok, OpenAI and compatible
+  servers such as Ollama, OpenRouter), and bilingual subtitles.
 - **Downloads in the best quality** a file holds: AV1 or H.264 up to 8K, HDR and 60 fps in
   `.mp4` (also `.mov`, `.m4a`, `.mp3`), with subtitles as switchable tracks and the original
   audio of dubbed videos. Parallel and resumable; no ffmpeg needed except for `.mp3`.
@@ -30,7 +30,18 @@ pip install "u-transcript-max[mcp]"   # plus the MCP server, utmax-mcp
 ```
 
 AI translation calls the provider's official SDK with your own API key: add the `claude`,
-`openai`, `gemini` or `openrouter` extra, or `ai` for all of them.
+`gemini`, `grok`, `openai` or `openrouter` extra, or `ai` for all of them. Any model id works;
+these are the newest:
+
+| Provider | Models | Key |
+|---|---|---|
+| `claude` | `claude-opus-5-5` and the other Claude 5 models | `ANTHROPIC_API_KEY` |
+| `gemini` | `gemini-3.8-flash`, `gemini-4-argon` | `GEMINI_API_KEY` |
+| `grok` | `grok-4.7` | `XAI_API_KEY` |
+| `openai` | `gpt-6-astra`, or any model of an OpenAI-compatible server | `OPENAI_API_KEY` |
+| `openrouter` | any OpenRouter model, such as `anthropic/claude-opus-5.5` | `OPENROUTER_API_KEY` |
+
+`effort="low"` makes the thinking models answer faster.
 
 ## Quickstart
 
