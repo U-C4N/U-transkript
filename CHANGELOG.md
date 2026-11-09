@@ -20,6 +20,14 @@ All notable changes to u-transcript max are listed here. The format follows
   - `quality="low"` gives at most 360p with the smallest audio stream, and `.mp3` files at
     about 115 kbit/s;
   - with `resolution` as well, the smaller limit wins.
+- The MCP server can translate subtitles itself. When `UTMAX_TRANSLATOR` names a model, such
+  as `gemini=gemini-3.8-flash`:
+  - `download` and `save_subtitles` take `translate_to`, and the server translates with that
+    model, many lines at once, which is much faster than the assistant writing each
+    translation;
+  - `UTMAX_TRANSLATOR_EFFORT` defaults to `low`, the fastest.
+
+  Without `UTMAX_TRANSLATOR` nothing changes, and the assistant translates as before.
 
 ### Changed
 

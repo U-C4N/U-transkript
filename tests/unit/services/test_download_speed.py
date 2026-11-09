@@ -79,3 +79,16 @@ def test_one_subtitle_is_fetched_without_threads() -> None:
     (fetched,) = _fetch_all([track("de", fetcher)])
     assert fetched.language_code == "de"
     assert fetcher.threads == {threading.current_thread().name}
+
+
+def test_only_the_latest_videos_streams_are_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(download_service, "_MAX_PLAYERS", 1)
+    youtube = ManyVideos()
+    client = Client(transport=youtube)
+    client.list_formats(IDS[0])
+    client.list_formats(IDS[1])  # pushes the first video out
+    client.list_formats(IDS[1])
+    client.list_formats(IDS[0])
+    assert youtube.players == [IDS[0], IDS[1], IDS[0]]

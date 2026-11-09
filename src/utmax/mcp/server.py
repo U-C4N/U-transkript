@@ -2,9 +2,11 @@
 as tools.
 
 Every tool returns structured output. A utmax error becomes a tool error that reads
-``"<message> Suggestion: <what to do>"``, so the model can explain it or try again. The server
-calls no AI provider: the assistant that uses it translates transcripts itself, and translation
-with an API key stays a feature of the library (:func:`utmax.translate`).
+``"<message> Suggestion: <what to do>"``, so the model can explain it or try again. By default
+the server calls no AI provider: the assistant that uses it translates transcripts itself.
+With ``UTMAX_TRANSLATOR`` set (see :mod:`utmax.mcp.config`), ``download`` and
+``save_subtitles`` also translate on the server through :func:`utmax.translate`, which is
+faster for long videos.
 """
 
 from __future__ import annotations
@@ -17,7 +19,8 @@ import queue
 import sys
 import threading
 from collections import OrderedDict
-from collections.abc import Callable, Coroutine, Hashable, Iterator
+from collections.abc import Callable, Coroutine, Hashable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeVar
@@ -30,11 +33,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from utmax import Client, __version__
+from utmax import Client, Translator, __version__
 from utmax.core.filenames import default_filename, safe_name
 from utmax.core.ids import parse_video_id
 from utmax.core.streams import file_types, pick_video
-from utmax.errors import InvalidOption, UTMaxError
+from utmax.errors import InvalidOption, ProviderAuthError, ProviderNotInstalled, UTMaxError
 from utmax.mcp.config import Config
 from utmax.models import (
     CollectionKind,
@@ -74,6 +77,8 @@ _F = TypeVar("_F", bound=Callable[..., Any])
 
 # Seconds between looks at the progress the download threads queued.
 PROGRESS_POLL = 0.1
+# Languages translated at the same time; each also sends its batches in parallel.
+_TRANSLATION_THREADS = 4
 
 INSTRUCTIONS = (
     "Tools for YouTube videos, given as URLs or 11-character video IDs: list a video's subtitle "
@@ -95,6 +100,19 @@ INSTRUCTIONS = (
     "skipped=true; call it again with overwrite=true when the user wants another quality, "
     "resolution or other subtitles."
 )
+
+
+def instructions(translator: str | None = None) -> str:
+    """The server's instructions; with a ``translator``, they let the server translate."""
+    if translator is None:
+        return INSTRUCTIONS
+    return (
+        f"{INSTRUCTIONS} This server translates subtitles itself with {translator}, faster than "
+        "you can: when the user wants subtitles in another language, pass translate_to "
+        "(language codes for download, one code for save_subtitles) instead of translating "
+        "them yourself."
+    )
+
 
 VideoArg = Annotated[str, Field(description="A YouTube video URL or 11-character video ID.")]
 LanguagesArg = Annotated[
@@ -213,6 +231,26 @@ TranslatedArg = Annotated[
         )
     ),
 ]
+TranslateToArg = Annotated[
+    list[Annotated[str, Field(pattern=LANGUAGE_CODE)]] | None,
+    Field(
+        description=(
+            'Languages the server translates the subtitles into, such as ["tr"], with the '
+            "model of its UTMAX_TRANSLATOR setting; the first one is shown by default. It "
+            "translates the first of subtitles, else the spoken language."
+        )
+    ),
+]
+TranslateOneArg = Annotated[
+    str | None,
+    Field(
+        pattern=LANGUAGE_CODE,
+        description=(
+            "A language the server translates the subtitles into before saving them, such as "
+            '"tr", with the model of its UTMAX_TRANSLATOR setting.'
+        ),
+    ),
+]
 OverwriteArg = Annotated[
     bool,
     Field(description="Download again a file that is already in the download folder."),
@@ -326,10 +364,15 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
     settings = config if config is not None else Config.from_env()
     youtube = client if client is not None else Client(proxy=settings.proxy)
     reader = _Reader(youtube)
+    translator = (
+        None
+        if settings.translator is None
+        else _ServerTranslator(youtube, settings.translator, settings.translator_effort)
+    )
     server = MCPServer(
         "utmax",
         title="u-transcript max",
-        instructions=INSTRUCTIONS,
+        instructions=instructions(settings.translator),
         version=__version__,
         website_url="https://github.com/U-C4N/U-transkript",
     )
@@ -430,13 +473,14 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
         resolution: ResolutionArg = None,
         subtitles: SubtitlesArg = None,
         translated_subtitles: TranslatedArg = None,
+        translate_to: TranslateToArg = None,
         subtitle_mode: SubtitleModeArg = "embed",
         overwrite: OverwriteArg = False,
         ctx: Context[Any, Any],
     ) -> DownloadOut:
         """Download a YouTube video (mp4, mov) or its audio (m4a, mp3) into the server's
-        download folder, named after its title, with YouTube's subtitles and/or ones you
-        translated. A file that is already there is not downloaded again unless overwrite."""
+        download folder, named after its title, with YouTube's subtitles and/or translated
+        ones. A file that is already there is not downloaded again unless overwrite."""
         return await download_file(
             youtube,
             settings.download_dir,
@@ -446,6 +490,8 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
             resolution=resolution,
             subtitles=subtitles,
             translated_subtitles=translated_subtitles,
+            translate_to=translate_to,
+            translator=translator,
             subtitle_mode=subtitle_mode,
             overwrite=overwrite,
             report=ctx.report_progress,
@@ -459,10 +505,12 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
         source: TrackSourceArg = "any",
         translated_srt: TranslatedSrtArg = None,
         translated_language: TranslatedLanguageArg = None,
+        translate_to: TranslateOneArg = None,
         format: SubtitleFileArg = "srt",
     ) -> SavedOut:
         """Save a YouTube video's subtitles as a file in the server's download folder: one of
-        its tracks, or a translation you made (translated_srt and translated_language)."""
+        its tracks, a translation you made (translated_srt and translated_language), or one
+        the server makes (translate_to)."""
         with tool_errors():
             return save_subtitle_file(
                 reader,
@@ -473,6 +521,8 @@ def build_server(client: Client | None = None, config: Config | None = None) -> 
                 source=source,
                 translated_srt=translated_srt,
                 translated_language=translated_language,
+                translate_to=translate_to,
+                translator=translator,
                 format=format,
             )
 
@@ -489,6 +539,8 @@ async def download_file(
     resolution: int | None = None,
     subtitles: list[str] | None = None,
     translated_subtitles: list[TranslatedSubtitle] | None = None,
+    translate_to: list[str] | None = None,
+    translator: Callable[[], Translator] | None = None,
     subtitle_mode: SubtitleMode = "embed",
     overwrite: bool = False,
     report: Callable[[float, float | None, str | None], Coroutine[Any, Any, None]] | None = None,
@@ -496,8 +548,9 @@ async def download_file(
     """Download ``video`` into ``directory`` on a worker thread, unless it is already there
     (``overwrite`` downloads it again).
 
-    ``translated_subtitles`` join ``subtitles`` (or replace the spoken-language default when
-    ``subtitles`` is ``None``), and the first translation is the track shown by default.
+    ``translated_subtitles``, and the translations into ``translate_to`` that ``translator``
+    makes on the worker, join ``subtitles`` (or replace the spoken-language default when
+    ``subtitles`` is ``None``); the first translation is the track shown by default.
 
     The worker also looks for the file, so a folder that cannot be searched is a tool error
     like any other file system error. ``report`` receives ``(progress, total, message)`` on the
@@ -515,12 +568,8 @@ async def download_file(
             )
             for item in translated_subtitles or ()
         ]
-    chosen: list[str | Transcript] | None = None if subtitles is None else list(subtitles)
-    if translations:
-        chosen = [*(chosen or ()), *translations]
     # The first translation is the track shown by default, where tracks are embedded at all.
     embeds = format in ("mp4", "mov") and subtitle_mode != "sidecar"
-    shown = translations[0].language_code if translations and embeds else None
     cancel = threading.Event()
     relay = None if report is None else _ProgressRelay(report, cancel)
 
@@ -537,6 +586,15 @@ async def download_file(
                 sidecars=[],
                 skipped=True,
             )
+        made: list[Transcript] = []
+        if translate_to:
+            source = client.fetch(video_id, subtitles[:1] if subtitles else None)
+            made = translate_on_server(client, translator, source, translate_to)
+        every = [*translations, *made]
+        chosen: list[str | Transcript] | None = None if subtitles is None else list(subtitles)
+        if every:
+            chosen = [*(chosen or ()), *every]
+        shown = every[0].language_code if every and embeds else None
         directory.mkdir(parents=True, exist_ok=True)
         # The search above already kept a finished download unless overwrite was asked for.
         # What is left in the way is a subtitle file of an earlier download (or the file to
@@ -592,6 +650,59 @@ async def download_file(
     return result
 
 
+def translate_on_server(
+    client: Client,
+    translator: Callable[[], Translator] | None,
+    source: Transcript,
+    languages: Sequence[str],
+) -> list[Transcript]:
+    """``source`` translated into every one of ``languages`` at the same time, in order.
+
+    Raises:
+        InvalidOption: the server has no translator (``UTMAX_TRANSLATOR`` is not set).
+    """
+    if translator is None:
+        raise InvalidOption(
+            "This server has no translator, so it cannot translate subtitles itself.",
+            suggestion=(
+                "Translate the subtitles yourself and pass translated_subtitles or "
+                "translated_srt, or set UTMAX_TRANSLATOR (such as gemini=gemini-3.8-flash) "
+                "in the MCP server's environment."
+            ),
+        )
+    model = translator()
+    with ThreadPoolExecutor(max_workers=min(_TRANSLATION_THREADS, len(languages))) as pool:
+        return list(pool.map(lambda code: client.translate(source, code, model=model), languages))
+
+
+class _ServerTranslator:
+    """The translator of ``UTMAX_TRANSLATOR``, created on first use and then kept."""
+
+    def __init__(self, client: Client, model: str, effort: str | None) -> None:
+        self._client = client
+        self._model = model
+        self._effort = effort
+        self._translator: Translator | None = None
+        self._lock = threading.Lock()
+
+    def __call__(self) -> Translator:
+        with self._lock:
+            if self._translator is None:
+                options = {} if self._effort is None else {"effort": self._effort}
+                try:
+                    self._translator = self._client.translator(self._model, **options)
+                except ProviderNotInstalled as error:
+                    error.suggestion = (
+                        "Start the MCP server with that extra, such as: uvx --from "
+                        f'"u-transcript-max[mcp,{error.extra}]@latest" utmax-mcp'
+                    )
+                    raise
+                except ProviderAuthError as error:
+                    error.suggestion += " For this server, set it in the MCP server's environment."
+                    raise
+            return self._translator
+
+
 def _ignore(update: Progress) -> None:
     """The progress callback of a call nobody follows."""
 
@@ -629,14 +740,11 @@ class _ProgressRelay:
         self._finished.set()
 
     async def deliver(self) -> None:
-        while True:
+        while not self._finished.is_set():
             await self._send_queued()
-            if self._finished.is_set():
-                if self._pending.empty():  # nothing arrived after the last look
-                    return
-                continue
             with anyio.move_on_after(PROGRESS_POLL):
                 await self._finished.wait()
+        await self._send_queued()  # what the download queued before it ended
 
     async def _send_queued(self) -> None:
         while True:
@@ -735,10 +843,18 @@ def save_subtitle_file(
     source: Literal["any", "manual", "generated"] = "any",
     translated_srt: str | None = None,
     translated_language: str | None = None,
+    translate_to: str | None = None,
+    translator: Callable[[], Translator] | None = None,
     format: Literal["srt", "vtt"] = "srt",
 ) -> SavedOut:
-    """Write a track of ``video``, or ``translated_srt``, to ``directory`` as
+    """Write a track of ``video``, ``translated_srt``, or the track translated into
+    ``translate_to`` by ``translator``, to ``directory`` as
     ``"{title} [{video_id}].{language}.{format}"``."""
+    if translated_srt is not None and translate_to is not None:
+        raise InvalidOption(
+            "translated_srt is a translation already; translate_to asks the server for one.",
+            suggestion="Pass translated_srt or translate_to, not both.",
+        )
     if translated_srt is not None:
         if not translated_language:
             raise InvalidOption(
@@ -758,6 +874,8 @@ def save_subtitle_file(
             include_manual=source != "generated",
             include_generated=source != "manual",
         )
+        if translate_to is not None:
+            (transcript,) = translate_on_server(client, translator, transcript, [translate_to])
     directory.mkdir(parents=True, exist_ok=True)
     language = safe_name(transcript.language_code) or "subtitles"
     name = default_filename(transcript.video, f"{language}.{format}")
@@ -782,8 +900,8 @@ def run() -> None:
         stream=sys.stderr,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    config = Config.from_env()
     try:
+        config = Config.from_env()
         client = Client(proxy=config.proxy)
     except UTMaxError as error:
         raise SystemExit(f"utmax-mcp: {error} Suggestion: {error.suggestion}") from error

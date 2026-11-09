@@ -147,9 +147,26 @@ Any MCP client that starts stdio servers can run the same command, or `utmax-mcp
 | `UTMAX_DOWNLOAD_DIR` | `~/Downloads/utmax` | where `download` saves files |
 | `UTMAX_PROXY` | none | an `http://[user:password@]host:port` proxy for YouTube |
 | `UTMAX_FFMPEG` | `ffmpeg` on `PATH` | the ffmpeg that makes `.mp3` files |
+| `UTMAX_TRANSLATOR` | none | a model the server translates subtitles with, such as `gemini=gemini-3.8-flash` |
+| `UTMAX_TRANSLATOR_EFFORT` | `low` | how long that model thinks: `low` is the fastest; `default` leaves it to the model |
 
 Set them with `-e NAME=value` in Claude Code, `--env NAME=value` in Codex, or an `"env"` object
 in Claude Desktop.
+
+### Faster translated subtitles
+
+Without `UTMAX_TRANSLATOR`, the assistant writes every translation itself, which takes a while
+for a long video. With it, the server translates through the provider's API, many lines at
+once. Add the provider's extra and its key, for example Gemini in Claude Code:
+
+```bash
+claude mcp add --scope user utmax -e UTMAX_TRANSLATOR=gemini=gemini-3.8-flash \
+  -e GEMINI_API_KEY=... -- uvx --from "u-transcript-max[mcp,gemini]@latest" utmax-mcp
+```
+
+Any provider works the same way: `grok=grok-4.7` with `[mcp,grok]` and `XAI_API_KEY`,
+`openai=gpt-6-astra` with `[mcp,openai]` and `OPENAI_API_KEY`, or `claude=claude-opus-5-5`
+with `[mcp,claude]` and `ANTHROPIC_API_KEY`.
 
 ## License
 

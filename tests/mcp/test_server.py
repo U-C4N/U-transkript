@@ -123,9 +123,11 @@ def test_tool_arguments_are_described_and_bounded() -> None:
         "resolution",
         "subtitles",
         "translated_subtitles",
+        "translate_to",
         "subtitle_mode",
         "overwrite",
     ]
+    assert download["translate_to"]["anyOf"][0]["items"]["pattern"] == mcp_server.LANGUAGE_CODE
     assert download["format"]["enum"] == ["mp4", "mov", "m4a", "mp3"]
     assert download["quality"]["enum"] == ["best", "medium", "low", "compat"]
     assert download["quality"]["default"] == "best"
@@ -138,6 +140,7 @@ def test_tool_arguments_are_described_and_bounded() -> None:
         "source",
         "translated_srt",
         "translated_language",
+        "translate_to",
         "format",
     ]
     assert save["properties"]["format"]["enum"] == ["srt", "vtt"]
