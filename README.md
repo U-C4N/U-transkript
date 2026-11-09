@@ -55,7 +55,9 @@ turkish = utmax.translate(transcript, "tr", model="claude=claude-opus-5-5")  # n
 utmax.bilingual(transcript, turkish).save("rick.en+tr.srt")
 
 utmax.download("dQw4w9WgXcQ", "rick.mp4")  # the best picture (AV1 up to 8K), English subtitles
-utmax.download("dQw4w9WgXcQ", "rick-720.mp4", resolution=720)  # at most 720p
+utmax.download("dQw4w9WgXcQ", "rick-medium.mp4", quality="medium")  # at most 720p
+utmax.download("dQw4w9WgXcQ", "rick-low.mp4", quality="low")  # at most 360p, smaller audio
+utmax.download("dQw4w9WgXcQ", "rick-1080.mp4", resolution=1080)  # at most 1080p
 utmax.download("dQw4w9WgXcQ", "rick.mp4", quality="compat")  # H.264 up to 1080p, plays anywhere
 utmax.download("dQw4w9WgXcQ", "rick.m4a")  # the audio only
 print([f.label for f in utmax.list_formats("dQw4w9WgXcQ") if f.kind == "video"])
@@ -74,13 +76,15 @@ from utmax.compat import YouTubeTranscriptApi
 
 `utmax-mcp` gives an AI assistant six tools: `list_tracks`, `get_transcript`, `list_formats`,
 `list_videos`, `download` and `save_subtitles`. It needs no API key. Ask it to download a video
-and the assistant asks which file type, which of the video's resolutions and which subtitles
-(original or translated) you want; ask for a translation and it translates the subtitles
+and it starts at once, in the highest quality with subtitles in the spoken language; say
+"medium quality" (at most 720p), "low quality" (at most 360p), a resolution, a file type or
+other subtitles when you want them. Ask for a translation and it translates the subtitles
 itself. Things to ask:
 
-- *"Download https://youtu.be/ZcDFZzsp3_Y in the highest resolution with Turkish subtitles."*
-  The assistant finds 2160p, translates the English subtitles itself and downloads a 4K
-  `.mp4` with English and Turkish tracks (Turkish on by default) plus `.srt` files.
+- *"Download https://youtu.be/ZcDFZzsp3_Y with Turkish subtitles."* The assistant
+  translates the English subtitles itself and downloads a 4K `.mp4` with English and Turkish
+  tracks (Turkish on by default).
+- *"Download this video in low quality."*
 - *"Save the subtitles of this video, translated into German."*
 - *"List the last 20 videos of @RickAstleyYT and summarize the newest one."*
 

@@ -81,18 +81,23 @@ def test_the_assistant_is_told_to_translate_by_itself() -> None:
     assert "keeping the timing lines as they are" in mcp_server.INSTRUCTIONS
 
 
-def test_the_assistant_is_told_what_to_ask_before_a_download() -> None:
+def test_the_assistant_downloads_at_once_in_the_highest_quality() -> None:
     instructions = mcp_server.INSTRUCTIONS
     for words in (
-        "ask which file type",
-        "which resolution",
-        "whether to embed subtitles",
+        "call download right away",
+        "highest quality by default",
+        "Do not ask",
+        'quality="medium"',
+        "at most 720p",
+        'quality="low"',
+        "at most 360p",
+        "Call list_formats only when",
         "translated_subtitles",
         "save_subtitles",
         "overwrite=true",
-        "already answered",
     ):
         assert words in instructions, words
+    assert "ask which file type" not in instructions
 
 
 def test_tool_arguments_are_described_and_bounded() -> None:
@@ -122,7 +127,7 @@ def test_tool_arguments_are_described_and_bounded() -> None:
         "overwrite",
     ]
     assert download["format"]["enum"] == ["mp4", "mov", "m4a", "mp3"]
-    assert download["quality"]["enum"] == ["best", "compat"]
+    assert download["quality"]["enum"] == ["best", "medium", "low", "compat"]
     assert download["quality"]["default"] == "best"
     assert download["resolution"]["anyOf"] == [{"type": "integer", "minimum": 1}, {"type": "null"}]
     save = offered["save_subtitles"].input_schema

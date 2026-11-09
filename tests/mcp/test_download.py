@@ -6,6 +6,7 @@ from __future__ import annotations
 import itertools
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -486,3 +487,28 @@ def test_progress_is_optional_and_reads_well(tmp_path: Path) -> None:
         "downloading: 0.0 of 2.0 MB"
     )
     assert mcp_server._progress_message(Progress(VIDEO, "muxing", 9, 9)) == "muxing"
+
+
+def test_slow_progress_never_holds_up_the_download_threads(tmp_path: Path) -> None:
+    spent: list[float] = []
+    seen: list[float] = []
+
+    class FastClient:
+        def download(self, video: str, path: Path, **options: Any) -> Any:
+            started = time.perf_counter()
+            for done in range(0, 500, 100):
+                options["progress"](Progress(video, "downloading", done, 500))
+            spent.append(time.perf_counter() - started)
+            raise DownloadCancelled("Stopped.")
+
+    async def report(progress: float, total: float | None, message: str | None) -> None:
+        await anyio.sleep(0.1)  # a client that is slow to take notifications
+        seen.append(progress)
+
+    async def main() -> Any:
+        return await download_file(FastClient(), tmp_path, VIDEO, report=report)
+
+    with pytest.raises(ToolError):
+        anyio.run(main)
+    assert spent[0] < 0.1  # five updates were queued, not sent one by one (0.5 s)
+    assert seen == [0, 100, 200, 300, 400]  # and every one still arrived, in order

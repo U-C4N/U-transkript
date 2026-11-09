@@ -95,8 +95,18 @@ class FFmpeg:
                 suggestion="Install an ffmpeg build that includes libmp3lame, or download .m4a.",
             )
 
-    def to_mp3(self, source: Path, target: Path, *, cancel: threading.Event | None = None) -> None:
-        """Convert the first audio stream of ``source`` to MP3 (LAME VBR quality 2) at ``target``.
+    def to_mp3(
+        self,
+        source: Path,
+        target: Path,
+        *,
+        vbr_quality: int = 2,
+        cancel: threading.Event | None = None,
+    ) -> None:
+        """Convert the first audio stream of ``source`` to MP3 at ``target``.
+
+        ``vbr_quality`` is LAME's VBR quality, from 0 (best, about 245 kbit/s) to 9 (about
+        65 kbit/s); 2 is about 190 kbit/s and 6 about 115 kbit/s.
 
         Raises:
             FFmpegFailed: ffmpeg exited with an error; ``stderr_tail`` holds its last words.
@@ -117,7 +127,7 @@ class FFmpeg:
             "-c:a",
             "libmp3lame",
             "-q:a",
-            "2",
+            str(vbr_quality),
             "-map_metadata",
             "-1",
             "-f",

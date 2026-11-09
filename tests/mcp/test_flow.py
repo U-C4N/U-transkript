@@ -167,13 +167,14 @@ def test_overwrite_downloads_a_file_that_is_already_there(tmp_path: Path) -> Non
     youtube = ManyVideos()
     server = build_server(Client(transport=youtube), Config(download_dir=tmp_path))
     output(call(server, "download", {"video": VIDEO, "format": "m4a"}))
-    players = len(youtube.players)
+    players, media = len(youtube.players), len(youtube.media.requests)
 
     again = output(call(server, "download", {"video": VIDEO, "format": "m4a", "overwrite": True}))
 
     assert again["skipped"] is False
     assert again["path"] == str(tmp_path / f"{NAME}.m4a")
-    assert len(youtube.players) > players
+    assert len(youtube.media.requests) > media  # downloaded again
+    assert len(youtube.players) == players  # with the streams it asked for a moment ago
 
 
 def test_save_subtitles_writes_youtubes_track(tmp_path: Path) -> None:

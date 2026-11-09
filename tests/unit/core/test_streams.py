@@ -415,3 +415,62 @@ def test_pick_video_is_the_choice_of_choose_streams() -> None:
         for container, quality in (("mov", "best"), ("mp4", "compat"), ("m4a", "best"))
     ] == [299, 299, None]
     assert pick_video(formats, container="mp4", resolution=720) is None
+
+
+LADDER = (
+    video(401, "av01.0.12M.10", 3840, 2160),
+    video(400, "av01.0.08M.08", 2560, 1440),
+    video(399, "av01.0.08M.08", 1920, 1080),
+    video(398, "av01.0.05M.08", 1280, 720),
+    video(397, "av01.0.04M.08", 854, 480),
+    video(396, "av01.0.01M.08", 640, 360),
+    video(395, "av01.0.00M.08", 426, 240),
+    video(137, "avc1.640028", 1920, 1080),
+    video(136, "avc1.4d401f", 1280, 720),
+    video(134, "avc1.4d401e", 640, 360),
+    audio(140, bitrate=130000),
+    audio(139, "mp4a.40.5", bitrate=48000),
+)
+
+
+@pytest.mark.parametrize(
+    ("quality", "resolution", "expected"),
+    [
+        ("best", None, (401, 140)),
+        ("medium", None, (398, 140)),
+        ("low", None, (396, 139)),
+        ("compat", None, (137, 140)),
+        ("medium", 480, (397, 140)),  # the smaller limit wins
+        ("medium", 1080, (398, 140)),
+        ("low", 240, (395, 139)),
+        ("low", 1080, (396, 139)),
+    ],
+)
+def test_quality_levels_cap_the_picture(
+    quality: Quality, resolution: int | None, expected: tuple[int, int]
+) -> None:
+    assert choose(streams(*LADDER), "mp4", quality, resolution) == expected
+
+
+def test_low_quality_takes_the_smallest_audio_of_the_original_track() -> None:
+    found = streams(
+        audio(
+            140,
+            bitrate=130000,
+            audioTrack={"displayName": "English original", "audioIsDefault": True},
+        ),
+        audio(
+            139,
+            "mp4a.40.5",
+            bitrate=48000,
+            audioTrack={"displayName": "English original", "audioIsDefault": True},
+        ),
+        audio(141, bitrate=40000, audioTrack={"displayName": "German", "audioIsDefault": False}),
+    )
+    assert choose(found, "m4a", "low") == (None, 139)
+    assert choose(found, "m4a", "best") == (None, 140)
+
+
+def test_medium_and_low_say_how_large_a_picture_they_wanted() -> None:
+    with pytest.raises(FormatNotAvailable, match="up to 360p"):
+        choose(streams(video(398, "av01.0.05M.08", 1280, 720), audio(140)), "mp4", "low")

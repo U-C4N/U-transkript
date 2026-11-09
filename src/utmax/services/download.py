@@ -7,7 +7,9 @@ import logging
 import os
 import secrets
 import threading
+import time
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -29,7 +31,7 @@ from utmax.core.media.mux import plan_mux
 from utmax.core.media.tx3g import default_subtitle_index
 from utmax.core.player import PlayerData
 from utmax.core.selection import select_track
-from utmax.core.streams import choose_streams
+from utmax.core.streams import Stream, choose_streams
 from utmax.errors import DownloadCancelled, InvalidOption, OutputExists, UTMaxError
 from utmax.models import (
     Container,
@@ -38,18 +40,30 @@ from utmax.models import (
     Progress,
     Quality,
     SubtitleMode,
+    Track,
     TrackList,
     Transcript,
     VideoInfo,
 )
 from utmax.services.transcripts import TranscriptService
 
-__all__ = ["MAX_CONNECTIONS", "DownloadOptions", "DownloadService"]
+__all__ = ["MAX_CONNECTIONS", "PLAYER_TTL", "DownloadOptions", "DownloadService"]
 
 log = logging.getLogger("utmax.download")
 
 MAX_CONNECTIONS = 16
-_QUALITIES = ("best", "compat")
+# How long the streams of a video are reused, so that list_formats followed by download asks
+# YouTube once; their URLs stay valid for hours, and the downloader refreshes expiring ones.
+PLAYER_TTL = 300.0
+_MAX_PLAYERS = 32
+_CAPTION_THREADS = 4
+# Four connections is the default because more were slower. Measured on 2026-11-09 with the
+# 720p60 AV1 stream of aqz-KE-bpKQ: one connection moved 2.2-2.4 MB/s, four moved 4-6.5 MB/s,
+# and eight fell back to 2.1-2.4 MB/s, the speed of a single connection.
+_QUALITIES = ("best", "medium", "low", "compat")
+# LAME VBR quality of .mp3 files: about 190 kbit/s, or about 115 kbit/s for quality="low".
+_MP3_QUALITY = {"low": 6}
+_MP3_DEFAULT_QUALITY = 2
 _SUBTITLE_MODES = ("embed", "sidecar", "both")
 
 
@@ -79,7 +93,9 @@ class DownloadOptions:
     def check(self) -> None:
         """Reject option values that can never work, before anything is requested."""
         if self.quality not in _QUALITIES:
-            raise InvalidOption(f'quality={self.quality!r} is not "best" or "compat".')
+            raise InvalidOption(
+                f'quality={self.quality!r} is not "best", "medium", "low" or "compat".'
+            )
         if self.resolution is not None and (
             isinstance(self.resolution, bool)
             or not isinstance(self.resolution, int)
@@ -125,12 +141,16 @@ class DownloadService:
         *,
         locate: Callable[[str | os.PathLike[str] | None], str] = locate_ffmpeg,
         make_ffmpeg: Callable[[str], FFmpeg] = FFmpeg,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._innertube = innertube
         self._transcripts = transcripts
         self._opener = opener
         self._locate = locate
         self._make_ffmpeg = make_ffmpeg
+        self._clock = clock
+        self._players: dict[str, tuple[float, PlayerData]] = {}
+        self._players_lock = threading.Lock()
 
     def download(
         self, video: str, path: str | os.PathLike[str], options: DownloadOptions
@@ -144,15 +164,41 @@ class DownloadService:
         try:
             return self._download(video_id, path, options)
         except UTMaxError as error:
+            self._forget(video_id)  # the next attempt starts from fresh streams
             if error.video_id is None:
                 error.video_id = video_id
             raise
 
     def list_formats(self, video: str) -> FormatList:
         """The streams of ``video`` that a download can choose from."""
-        player = self._innertube.player(parse_video_id(video), purpose="streams")
+        player = self._player(parse_video_id(video))
         usable = tuple(stream.format for stream in player.streams if stream.problem is None)
         return FormatList(video=player.video, formats=usable)
+
+    def _player(self, video_id: str) -> PlayerData:
+        """The streams of ``video_id``, asked for once per :data:`PLAYER_TTL` seconds."""
+        now = self._clock()
+        with self._players_lock:
+            cached = self._players.get(video_id)
+        if cached is not None and now - cached[0] < PLAYER_TTL:
+            return cached[1]
+        return self._remember(video_id, self._innertube.player(video_id, purpose="streams"))
+
+    def _fresh_streams(self, video_id: str) -> Sequence[Stream]:
+        """Fresh stream URLs from a new visitor, for a download that YouTube refused."""
+        player = self._innertube.player(video_id, purpose="streams", renew_visitor=True)
+        return self._remember(video_id, player).streams
+
+    def _remember(self, video_id: str, player: PlayerData) -> PlayerData:
+        with self._players_lock:
+            self._players[video_id] = (self._clock(), player)
+            while len(self._players) > _MAX_PLAYERS:
+                del self._players[next(iter(self._players))]
+        return player
+
+    def _forget(self, video_id: str) -> None:
+        with self._players_lock:
+            self._players.pop(video_id, None)
 
     def check(self, path: str | os.PathLike[str], options: DownloadOptions) -> None:
         """Raise what :meth:`download` would raise for ``path`` and ``options`` before its first
@@ -166,7 +212,7 @@ class DownloadService:
         target, ffmpeg = self._prepare(path, options, video_id=video_id)
         container = target.container
         audio_only = container in ("m4a", "mp3")
-        player = self._innertube.player(video_id, purpose="streams")
+        player = self._player(video_id)
         final = Path(target.path_for(player.video, name=options.name))
         if target.file is None:
             _check_free(final, options.overwrite, video_id)
@@ -196,16 +242,15 @@ class DownloadService:
             self._opener,
             connections=options.connections,
             chunk_size=options.chunk_size,
-            refresh=lambda: (
-                self._innertube.player(video_id, purpose="streams", renew_visitor=True).streams
-            ),
+            refresh=lambda: self._fresh_streams(video_id),
             reporter=reporter,
             cancel=options.cancel,
         )
         resumed = downloader.run(jobs, video_id=video_id, resume=options.resume)
         if ffmpeg is not None:
             reporter.report("converting", 0, None, force=True)
-            _convert(ffmpeg, jobs[-1].part, final, options.cancel)
+            vbr = _MP3_QUALITY.get(options.quality, _MP3_DEFAULT_QUALITY)
+            _convert(ffmpeg, jobs[-1].part, final, options.cancel, vbr_quality=vbr)
         else:
             _mux(
                 jobs,
@@ -275,7 +320,7 @@ class DownloadService:
                 return []
             return [spoken.find().fetch()]
         tracks: TrackList | None = None
-        subtitles: list[Transcript] = []
+        chosen: list[Transcript | Track] = []
         for item in requested:
             if isinstance(item, Transcript):
                 if item.video.video_id != video_id:
@@ -284,11 +329,12 @@ class DownloadService:
                         f"not {video_id}.",
                         video_id=video_id,
                     )
-                subtitles.append(item)
+                chosen.append(item)
                 continue
             if tracks is None:
                 tracks = self._transcripts.track_list(player)
-            subtitles.append(select_track(tracks.tracks, item).fetch())
+            chosen.append(select_track(tracks.tracks, item))
+        subtitles = _fetch_all(chosen)
         codes = [transcript.language_code.lower() for transcript in subtitles]
         if len(set(codes)) != len(codes):
             raise InvalidOption(
@@ -296,6 +342,16 @@ class DownloadService:
                 video_id=video_id,
             )
         return subtitles
+
+
+def _fetch_all(chosen: Sequence[Transcript | Track]) -> list[Transcript]:
+    """Fetch the chosen tracks at the same time, keeping their order (and the first error)."""
+    tracks = [item for item in chosen if isinstance(item, Track)]
+    if len(tracks) < 2:
+        return [item if isinstance(item, Transcript) else item.fetch() for item in chosen]
+    with ThreadPoolExecutor(max_workers=min(_CAPTION_THREADS, len(tracks))) as pool:
+        fetched = iter(list(pool.map(Track.fetch, tracks)))
+    return [item if isinstance(item, Transcript) else next(fetched) for item in chosen]
 
 
 def _placement(
@@ -379,11 +435,18 @@ def _mux(
         write_mux_plan(plan, sources, final, progress=progress)
 
 
-def _convert(ffmpeg: FFmpeg, audio: Path, final: Path, cancel: threading.Event | None) -> None:
+def _convert(
+    ffmpeg: FFmpeg,
+    audio: Path,
+    final: Path,
+    cancel: threading.Event | None,
+    *,
+    vbr_quality: int = _MP3_DEFAULT_QUALITY,
+) -> None:
     """Convert to MP3 in a temporary file next to ``final``, then move it into place."""
     temporary = final.with_name(f".{final.name}.{secrets.token_hex(4)}.tmp")
     try:
-        ffmpeg.to_mp3(audio, temporary, cancel=cancel)
+        ffmpeg.to_mp3(audio, temporary, vbr_quality=vbr_quality, cancel=cancel)
         with temporary.open("rb+") as handle:
             os.fsync(handle.fileno())
         replace_with_retry(temporary, final)

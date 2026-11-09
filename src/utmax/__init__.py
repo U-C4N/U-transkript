@@ -389,8 +389,10 @@ def download(
         format: the file type when ``path`` is a folder or has no extension; it must match the
             extension otherwise.
         quality: ``"best"`` (the largest picture the file type holds: AV1 or H.264 in
-            ``.mp4``, HDR where it is the only way to a larger picture; H.264 in ``.mov``) or
-            ``"compat"`` (H.264 up to 1080p, plays everywhere).
+            ``.mp4``, HDR where it is the only way to a larger picture; H.264 in ``.mov``),
+            ``"medium"`` (the same up to 720p), ``"low"`` (up to 360p, with the smallest audio
+            stream; ``.mp3`` at about 115 kbit/s) or ``"compat"`` (H.264 up to 1080p, plays
+            everywhere). With ``resolution`` too, the smaller limit wins.
         resolution: the largest picture to take, in lines of its short side (``1080`` means at
             most 1080p); ``None`` takes the largest. :func:`list_formats` shows what exists.
         subtitles: language codes and/or transcripts (translations and bilingual ones too).

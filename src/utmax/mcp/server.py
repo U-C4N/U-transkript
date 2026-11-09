@@ -13,6 +13,7 @@ import glob
 import inspect
 import io
 import logging
+import queue
 import sys
 import threading
 from collections import OrderedDict
@@ -22,8 +23,6 @@ from pathlib import Path
 from typing import Annotated, Any, Generic, Literal, TypeVar
 
 import anyio
-import anyio.from_thread
-import anyio.lowlevel
 import anyio.to_thread
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Context
@@ -73,6 +72,9 @@ __all__ = [
 log = logging.getLogger("utmax.mcp")
 _F = TypeVar("_F", bound=Callable[..., Any])
 
+# Seconds between looks at the progress the download threads queued.
+PROGRESS_POLL = 0.1
+
 INSTRUCTIONS = (
     "Tools for YouTube videos, given as URLs or 11-character video IDs: list a video's subtitle "
     "tracks, get its transcript (plain text, SRT, WebVTT, JSON or timestamped lines), list the "
@@ -80,14 +82,18 @@ INSTRUCTIONS = (
     "video or its audio, and save subtitles as files in the server's download folder. Read long "
     "transcripts in parts with max_chars and next_offset. To translate a transcript, get it as "
     "srt or vtt and translate its text lines yourself, keeping the timing lines as they are. "
-    "When the user asks to download a video, call list_formats, then ask which file type they "
-    "want, which resolution (among those list_formats gives for that file type), and whether "
-    "to embed subtitles: in the original language (list_tracks), translated into a language "
-    "they name (translate them yourself and pass them as translated_subtitles), or none; skip "
-    "the questions the user already answered, then call download. When the user only wants "
-    "subtitles, call save_subtitles; to save a translation, pass your translated text as "
-    "translated_srt. A download that finds its file already there returns skipped=true; call "
-    "it again with overwrite=true when the user wants another resolution or other subtitles."
+    "When the user asks to download a video, call download right away: it takes the highest "
+    "quality by default, with subtitles in the spoken language. Do not ask about options the "
+    "user did not mention; pass the ones they did: a file type (format), a quality level "
+    '(quality="medium" for medium quality, at most 720p; quality="low" for low quality or a '
+    "small file, at most 360p), a resolution such as 1080, or subtitles: other languages "
+    "(list_tracks), a translation into a language they name (translate it yourself and pass "
+    "it as translated_subtitles), or none (subtitles=[]). Call list_formats only when the user "
+    "asks what a video can be downloaded as, or names a resolution you need to check. When "
+    "the user only wants subtitles, call save_subtitles; to save a translation, pass your "
+    "translated text as translated_srt. A download that finds its file already there returns "
+    "skipped=true; call it again with overwrite=true when the user wants another quality, "
+    "resolution or other subtitles."
 )
 
 VideoArg = Annotated[str, Field(description="A YouTube video URL or 11-character video ID.")]
@@ -155,8 +161,9 @@ QualityArg = Annotated[
     Quality,
     Field(
         description=(
-            "best: the largest picture the file type holds (mp4: AV1 or H.264, up to 8K); "
-            "compat: H.264 up to 1080p, plays everywhere."
+            "best (the default): the largest picture the file type holds (mp4: AV1 or H.264, "
+            "up to 8K); medium: the same up to 720p; low: up to 360p with the smallest audio, "
+            "for small files; compat: H.264 up to 1080p, plays everywhere."
         )
     ),
 ]
@@ -495,8 +502,10 @@ async def download_file(
     The worker also looks for the file, so a folder that cannot be searched is a tool error
     like any other file system error. ``report`` receives ``(progress, total, message)`` on the
     event loop, like ``Context.report_progress``: one bar for the whole call that only fills
-    (see ``_Counter``). When the caller is cancelled, the download stops and keeps its partial
-    files, so the next call resumes it.
+    (see ``_Counter``). The download threads only queue their progress and never wait for the
+    event loop; a task on the loop sends it in order, and all of it before the call returns.
+    When the caller is cancelled, the download stops and keeps its partial files, so the next
+    call resumes it.
     """
     with tool_errors():
         video_id = parse_video_id(video)
@@ -512,27 +521,8 @@ async def download_file(
     # The first translation is the track shown by default, where tracks are embedded at all.
     embeds = format in ("mp4", "mov") and subtitle_mode != "sidecar"
     shown = translations[0].language_code if translations and embeds else None
-    token = anyio.lowlevel.current_token()
     cancel = threading.Event()
-    counter = _Counter()
-    failed = False
-
-    def forward(update: Progress) -> None:
-        nonlocal failed
-        if report is None or cancel.is_set():  # nobody is listening any more
-            return
-        counted = counter.count(update)
-        if counted is None:
-            return
-        progress, total = counted
-        try:
-            anyio.from_thread.run(report, progress, total, _progress_message(update), token=token)
-        except Exception:  # progress is best effort; it must never stop a download
-            # The first failure of a download is a warning, so that progress which never gets
-            # through (an anyio older than 4.11, say) shows in the log; the rest is debugging.
-            level = logging.DEBUG if failed else logging.WARNING
-            failed = True
-            log.log(level, "could not report download progress", exc_info=True)
+    relay = None if report is None else _ProgressRelay(report, cancel)
 
     def work() -> DownloadOut:
         existing = None if overwrite else _existing_download(directory, video_id, format)
@@ -561,7 +551,7 @@ async def download_file(
             subtitle_mode=subtitle_mode,
             default_subtitle=shown,
             overwrite=True,
-            progress=forward,
+            progress=_ignore if relay is None else relay.forward,
             cancel=cancel,
         )
         return DownloadOut(
@@ -575,12 +565,93 @@ async def download_file(
             skipped=False,
         )
 
+    outcome: list[DownloadOut | Exception] = []
+
+    def attempt() -> None:
+        try:
+            outcome.append(work())
+        except Exception as error:  # raised on the event loop once the progress is sent
+            outcome.append(error)
+
     try:
-        with tool_errors():
-            return await anyio.to_thread.run_sync(work, abandon_on_cancel=True)
+        async with anyio.create_task_group() as group:
+            if relay is not None:
+                group.start_soon(relay.deliver)
+            try:
+                await anyio.to_thread.run_sync(attempt, abandon_on_cancel=True)
+            finally:
+                if relay is not None:
+                    relay.finish()
     except anyio.get_cancelled_exc_class():
         cancel.set()
         raise
+    result = outcome[0]
+    if isinstance(result, Exception):
+        with tool_errors():
+            raise result
+    return result
+
+
+def _ignore(update: Progress) -> None:
+    """The progress callback of a call nobody follows."""
+
+
+class _ProgressRelay:
+    """Carries download progress from the download threads to the event loop.
+
+    The threads only count and queue it (:meth:`forward`) and never wait for the loop.
+    :meth:`deliver`, a task on the loop, sends the queue in order until :meth:`finish` has been
+    called and everything is sent.
+    """
+
+    def __init__(
+        self,
+        report: Callable[[float, float | None, str | None], Coroutine[Any, Any, None]],
+        cancel: threading.Event,
+    ) -> None:
+        self._report = report
+        self._cancel = cancel
+        self._counter = _Counter()
+        self._pending: queue.SimpleQueue[tuple[float, float | None, str]] = queue.SimpleQueue()
+        self._finished = anyio.Event()
+        self._failed = False
+
+    def forward(self, update: Progress) -> None:
+        """Runs on a download thread: count ``update`` and queue it."""
+        if self._cancel.is_set():  # nobody is listening any more
+            return
+        counted = self._counter.count(update)
+        if counted is not None:
+            self._pending.put((*counted, _progress_message(update)))
+
+    def finish(self) -> None:
+        """The download has ended: :meth:`deliver` returns once the queue is empty."""
+        self._finished.set()
+
+    async def deliver(self) -> None:
+        while True:
+            await self._send_queued()
+            if self._finished.is_set():
+                if self._pending.empty():  # nothing arrived after the last look
+                    return
+                continue
+            with anyio.move_on_after(PROGRESS_POLL):
+                await self._finished.wait()
+
+    async def _send_queued(self) -> None:
+        while True:
+            try:
+                progress, total, message = self._pending.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                await self._report(progress, total, message)
+            except Exception:  # progress is best effort; it must never stop a download
+                # The first failure of a download is a warning, so that progress which never
+                # gets through shows in the log; the rest is debugging.
+                level = logging.DEBUG if self._failed else logging.WARNING
+                self._failed = True
+                log.log(level, "could not report download progress", exc_info=True)
 
 
 @contextmanager
